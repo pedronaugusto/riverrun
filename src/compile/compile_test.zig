@@ -208,6 +208,29 @@ test "a pass that refuses the story says where, and one that fails saying nothin
     }
 }
 
+test "the facts a registered kind declares are compiled and saved as the story's own" {
+    const quest = @import("../check/errors_test.zig").quest_kind;
+    const t = try Told.init(gpa, &.{
+        \\== pelts (quest)
+        \\= asked
+        \\= late    when { asked }
+        \\== a
+        \\{ pelts.late } Too late.
+        \\-> end
+    }, .{ .kinds = &.{quest} }, &.{}, testing.NoHost{});
+    defer t.deinit();
+    const late = t.fact("pelts.late");
+    try std.testing.expectEqual(facts.Role.game, t.story.fact(late).role);
+    try std.testing.expectEqualStrings("quests", t.story.scope(t.story.fact(late).scope));
+    try t.memory.set(late, .{ .boolean = true });
+    try t.session.start(.fromRaw(0), t.section("a"));
+    try t.line("Too late.");
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    try facts.snapshot.write(&t.memory, &out.writer, t.story.fact(late).scope, t.story.hash());
+    try std.testing.expect(std.mem.find(u8, out.written(), "pelts.late") != null);
+}
+
 test "rules from the text: a slight lowers honor, and time alone brings it back" {
     const t = try Told.init(gpa, &.{
         \\facts (world):

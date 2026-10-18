@@ -563,6 +563,79 @@ test "a package's pass reports inside the check, where the story is written" {
     try o.only(.err, 1, 4, "the quest `pelts` has no stage, so it can never end");
 }
 
+/// A calendar's kind, as a time package declares one: each part's `place` brings a fact holding one of its `names`.
+pub const calendar_kind: check.Kind = .{ .name = "calendar", .declare = Calendar.declare };
+
+const Calendar = struct {
+    fn declare(arena: std.mem.Allocator, s: *const syntax.ast.Section) error{OutOfMemory}![]const check.Declared {
+        var out: std.ArrayList(check.Declared) = .empty;
+        for (s.subsections) |p| {
+            const place = tagOf(p.tags, "place") orelse continue;
+            const words = if (tagOf(p.tags, "names")) |n| n.values else &.{};
+            const names = try arena.alloc(syntax.ast.Name, words.len);
+            for (names, words) |*n, w| n.* = .{ .text = w, .span = place.key.span };
+            try out.append(arena, .{ .scope = "time", .fact = .{ .name = .{ .text = place.values[0], .span = place.key.span }, .type = .{ .one_of = names }, .game = true } });
+        }
+        return out.items;
+    }
+
+    fn tagOf(tags: []const syntax.ast.Tag, key: []const u8) ?*const syntax.ast.Tag {
+        for (tags) |*t| if (std.mem.eql(u8, t.key.text, key) and t.values.len > 0) return t;
+        return null;
+    }
+};
+
+/// A quest's kind, as a quest package declares one: each stage a fact within the quest, true once it is reached.
+pub const quest_kind: check.Kind = .{ .name = "quest", .declare = Quest.declare };
+
+const Quest = struct {
+    fn declare(arena: std.mem.Allocator, s: *const syntax.ast.Section) error{OutOfMemory}![]const check.Declared {
+        const out = try arena.alloc(check.Declared, s.subsections.len);
+        for (out, s.subsections) |*d, p| d.* = .{ .scope = "quests", .fact = .{ .name = p.name, .type = .boolean, .game = true }, .within = true };
+        return out;
+    }
+};
+
+test "a registered kind's sections declare facts, named and typed beside the story's own" {
+    var o = try checkOne(
+        \\facts:
+        \\  day:     int   (game)
+        \\  weekday: int   (game)
+        \\== school (calendar)
+        \\= slot   # place slot · names morning, evening
+        \\= week   # place weekday · names monday, sunday
+        \\== a
+        \\{ slot = evening } Evening.
+        \\{ slot = noon } Noon.
+        \\-> end
+    , .{ .kinds = &.{calendar_kind} });
+    defer o.deinit();
+    try o.has(.err, 6, 12, "`weekday` is declared twice: first at a.river:3:3, then by the calendar `school`");
+    try o.has(.err, 9, 10, "`noon` is not one of morning, evening");
+    try std.testing.expectEqual(@as(usize, 2), o.diags.errors());
+    const slot = o.checked.?.facts[o.checked.?.fact("slot").?.raw()];
+    try std.testing.expectEqualStrings("time", slot.scope.?);
+    try std.testing.expect(slot.game);
+    try std.testing.expectEqualStrings("school", o.checked.?.sections[slot.by.?.raw()].name);
+}
+
+test "what a section declares within it is `section.name` outside it, and `name` inside" {
+    var o = try checkOne(
+        \\facts:
+        \\  day: int   (clock)
+        \\== pelts (quest)
+        \\= asked   when { day > 1 }
+        \\= late    when { asked and day > 3 }
+        \\== a
+        \\{ pelts.late } Too late.
+        \\{ asked } Asked.
+        \\-> end
+    , .{ .kinds = &.{quest_kind} });
+    defer o.deinit();
+    try o.only(.err, 8, 3, "nothing is called `asked`: no fact or constant");
+    try std.testing.expect(o.checked.?.fact("pelts.asked") != null);
+}
+
 test "rules: each a condition and its effects, reached by nothing, their queries stamped" {
     var o = try checkOne(
         \\facts:

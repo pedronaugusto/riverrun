@@ -63,8 +63,8 @@ DAD: Go.
     query declares the stamp of what it reads, keyed by its parameters, `(reads stock(kind))`, so whatever
     evaluates it can be woken when that changes.
 - **Modules.** A file may begin `module name`; what it declares is `name.x` to other modules, and an unqualified
-  name resolves in its own module first, then the root. *Protects:* hundreds of files and many writers without
-  clashes.
+  name resolves in its own module first, then the root; in a section whose kind declares names within it, the
+  section's own come before both. *Protects:* hundreds of files and many writers without clashes.
 - **A story's version,** `version: 3`, which migration rules count from.
 - **Sections:** `== name`, with nested `= name`. A section may have a kind: `(pool)`, `(pool N)`, or a kind a
   package registers with the compiler, such as a quest package's `(quest)`.
@@ -214,6 +214,13 @@ to before the host's, and builtins their conditions may call (`since(stage, fact
 things of the story, never values. The compiled story carries each builtin call for the package to answer, and a
 named, versioned **block** the package owns beside the graph. A query's stamp and a `(clock)` fact are carried too,
 so a package can wake a condition only when what it reads moves.
+
+A kind's sections may bring facts into the story (`Kind.declare`): read from the section's own text before any
+name is resolved, each is a `facts (scope):` entry as the reader would have made it (`check.Declared`), entered in
+the index after the story's own declarations, so it is typed, scoped, read by conditions, compiled and saved in
+snapshots like any other, and a name declared twice is reported with both places. A calendar keeps `weekday` and
+`slot`, which the story then reads and never declares; a quest's stages are declared within it, `the_stranger.named`
+to the rest of the story and `named` inside the quest, so two quests' stages never meet.
 
 A package reports through riverrun's diagnostics, never beside them. Its checks are a pass of the checker's
 (`check.Options.passes`), run inside `check.run` once riverrun's are done, over the checked story: what no schema can

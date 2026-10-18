@@ -44,11 +44,27 @@ pub const Kind = struct {
     schema: ?*const Schema = null,
     /// Functions its sections' conditions may call, which the package evaluates: `since(stage, fact)`.
     builtins: []const Builtin = &.{},
+    /// The facts a section of this kind brings into the story (a calendar's `weekday`, a quest's stages), read
+    /// from the section's own text before any name is resolved. What that text gets wrong is the package's to
+    /// report, in its pass or its tags' judges.
+    declare: ?*const fn (arena: Allocator, section: *const ast.Section) Error![]const Declared = null,
 
     pub fn builtin(k: Kind, name: []const u8) ?u16 {
         for (k.builtins, 0..) |b, i| if (std.mem.eql(u8, b.name, name)) return @intCast(i); // safe: a kind has few builtins
         return null;
     }
+};
+
+/// A fact a registered kind's section declares, as a `facts (scope):` entry declares one: typed and scoped, named
+/// beside the story's own so that a name declared twice is reported, read by conditions and saved in snapshots.
+pub const Declared = struct {
+    /// The scope it is kept in; null for the story's default.
+    scope: ?[]const u8 = null,
+    /// As the reader would have read it, its name's span where the section declares it.
+    fact: ast.Fact,
+    /// Named within its section: `section.name` to the rest of the story and `name` inside the section, as a
+    /// quest's stages are. Otherwise it is named as a fact of the section's file is (a calendar's `weekday`).
+    within: bool = false,
 };
 
 /// What a package checks of the whole story once riverrun has: what no schema can type (a calendar that does not
@@ -165,8 +181,9 @@ pub fn sectionNamed(c: *const Checker, module: sym.ModuleId, name: []const u8) ?
 
 fn qualified(c: *const Checker, comptime V: type, names: *const sym.Names(V), module: sym.ModuleId, name: []const u8) ?V {
     const dot = std.mem.findScalar(u8, name, '.') orelse return names.find(module, name);
-    const other = c.moduleNamed(name[0..dot]) orelse return null;
-    return names.map.get(.{ .module = other, .name = name[dot + 1 ..] });
+    if (c.moduleNamed(name[0..dot])) |other| return names.map.get(.{ .module = other, .name = name[dot + 1 ..] });
+    // what a section declares within it, `quest.stage`, is named so in the section's module
+    return names.find(module, name);
 }
 
 /// The id of a kind of the host's things, entered the first time a type names it.

@@ -34,7 +34,7 @@ pub fn run(c: *Checker) Error!void {
             },
             .cast => |entries| for (entries) |*e| try castEntry(c, module, e),
             .extras => |extras| for (extras) |*n| try extra(c, module, n),
-            .facts => |*f| for (f.entries) |*e| try fact(c, module, f.scope, e),
+            .facts => |*f| for (f.entries) |*e| try fact(c, module, if (f.scope) |sc| sc.text else null, e, null),
             .consts => |consts| for (consts) |*k| try constant(c, module, k),
             .externs => |externs| for (externs) |*e| try external(c, module, e),
         };
@@ -42,6 +42,8 @@ pub fn run(c: *Checker) Error!void {
     for (c.files, 0..) |*file, i| {
         for (file.sections) |*s| try section(c, @intCast(i), s); // safe: a FileId numbers the files
     }
+    // last, so a story's own declarations come first and what a section brings is the second of two names
+    for (0..c.sections.items.len) |i| try brought(c, sym.idOf(sym.SectionId, i));
 }
 
 // ---------------------------------------------------------------- speakers
@@ -77,7 +79,8 @@ fn speaker(c: *Checker, s: sym.Speaker) Error!void {
 
 // ---------------------------------------------------------------- the expression namespace
 
-fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact) Error!void {
+// `by` is the section of a registered kind that brings it, for a fact the story does not declare itself.
+fn fact(c: *Checker, module: sym.ModuleId, scope: ?[]const u8, f: *const ast.Fact, by: ?sym.SectionId) Error!void {
     if (c.facts.items.len == sym.limits.facts) {
         return c.err(f.name.span, "the story declares more than {d} facts", .{sym.limits.facts});
     }
@@ -90,10 +93,10 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
     }
     if (f.bounds != null and f.clock) try c.err(f.name.span, "`{s}` is a clock, which only moves on: it has no bounds", .{f.name.text});
     const id = sym.idOf(sym.FactId, c.facts.items.len);
-    if (!try named(c, module, f.name, .{ .fact = id })) return;
+    if (!try named(c, module, f.name, .{ .fact = id }, by)) return;
     try c.facts.append(c.arena, .{
         .name = f.name.text,
-        .scope = if (scope) |s| s.text else null,
+        .scope = scope,
         .type = t,
         .game = f.game,
         .clock = f.clock,
@@ -102,7 +105,32 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
         .bounds = f.bounds,
         .module = module,
         .span = f.name.span,
+        .by = by,
     });
+}
+
+// The facts a section of a registered kind brings, entered as the story's own.
+fn brought(c: *Checker, id: sym.SectionId) Error!void {
+    const kind = c.kindOfSection(id) orelse return;
+    const declare = kind.declare orelse return;
+    const s = c.section(id);
+    for (try declare(c.arena, s.node)) |d| {
+        var f = d.fact;
+        if (d.within) {
+            if (try shadowed(c, s, f.name)) continue;
+            f.name.text = try c.arena.print("{s}.{s}", .{ s.name, f.name.text });
+            s.declares = true;
+        }
+        try fact(c, s.module, d.scope, &f, id);
+    }
+}
+
+// A name declared within section `s` is read as `s.name`, unless a module of the section's name has a fact so named.
+fn shadowed(c: *Checker, s: *const sym.Section, name: ast.Name) Error!bool {
+    const m = c.moduleNamed(s.name) orelse return false;
+    if (c.value_names.map.get(.{ .module = m, .name = name.text }) == null) return false;
+    try c.err(name.span, "`{s}.{s}` would name the module `{s}`'s `{s}`: rename the section or the module's fact", .{ s.name, name.text, s.name, name.text });
+    return true;
 }
 
 fn constant(c: *Checker, module: sym.ModuleId, k: *const ast.Const) Error!void {
@@ -114,7 +142,7 @@ fn constant(c: *Checker, module: sym.ModuleId, k: *const ast.Const) Error!void {
     };
     const id = sym.idOf(sym.ConstId, c.consts.items.len);
     if (c.consts.items.len == sym.limits.ids) return c.err(k.name.span, "the story has more constants than {d}", .{sym.limits.ids});
-    if (!try named(c, module, k.name, .{ .constant = id })) return;
+    if (!try named(c, module, k.name, .{ .constant = id }, null)) return;
     try c.consts.append(c.arena, .{ .name = k.name.text, .type = t, .value = value, .module = module, .span = k.name.span });
 }
 
@@ -133,7 +161,7 @@ fn external(c: *Checker, module: sym.ModuleId, e: *const ast.Extern) Error!void 
     if (reads != null and (returns == null or e.action)) try c.err(e.name.span, "`(reads …)` stamps a query: `{s}` is an action", .{e.name.text});
     if (c.externs.items.len == sym.limits.ids) return c.err(e.name.span, "the story has more queries and actions than {d}", .{sym.limits.ids});
     const id = sym.idOf(sym.ExternId, c.externs.items.len);
-    if (!try named(c, module, e.name, .{ .external = id })) return;
+    if (!try named(c, module, e.name, .{ .external = id }, null)) return;
     try c.externs.append(c.arena, .{
         .name = e.name.text,
         .params = params,
@@ -165,8 +193,8 @@ fn stamp(c: *Checker, e: *const ast.Extern, st: ast.Stamp, names: []const ?[]con
     return .{ .family = st.family.text, .keys = keys };
 }
 
-// Enters a name in the expression namespace; false when it is already there.
-fn named(c: *Checker, module: sym.ModuleId, name: ast.Name, what: sym.Named) Error!bool {
+// Enters a name in the expression namespace; false when it is already there. `by` is the section that brings it.
+fn named(c: *Checker, module: sym.ModuleId, name: ast.Name, what: sym.Named, by: ?sym.SectionId) Error!bool {
     const slot = try c.value_names.map.getOrPut(c.arena, .{ .module = module, .name = name.text });
     if (!slot.found_existing) {
         slot.value_ptr.* = what;
@@ -177,7 +205,10 @@ fn named(c: *Checker, module: sym.ModuleId, name: ast.Name, what: sym.Named) Err
         .constant => |id| c.consts.items[id.raw()].span,
         .external => |id| c.externs.items[id.raw()].span,
     };
-    try c.err(name.span, "`{s}` is declared twice: first at {f}", .{ name.text, c.place(first) });
+    if (by) |s| {
+        const owner = c.section(s);
+        try c.err(name.span, "`{s}` is declared twice: first at {f}, then by the {s} `{s}`", .{ name.text, c.place(first), owner.kind.other, owner.name });
+    } else try c.err(name.span, "`{s}` is declared twice: first at {f}", .{ name.text, c.place(first) });
     return false;
 }
 

@@ -22,6 +22,7 @@ pub const Options = Checker.Options;
 pub const Mode = Checker.Mode;
 pub const Width = Checker.Width;
 pub const Kind = Checker.Kind;
+pub const Declared = Checker.Declared;
 pub const Pass = Checker.Pass;
 pub const Builtin = Checker.Builtin;
 pub const Things = Checker.Things;

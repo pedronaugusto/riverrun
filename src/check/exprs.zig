@@ -45,6 +45,19 @@ pub fn start(e: *const ast.Expr) syntax.Span {
     return at.span;
 }
 
+// A name as `scope` sees it in the expression namespace: what its section declares within it first (`stage` for
+// `quest.stage`), then its module's names and the root's.
+fn lookup(c: *const Checker, scope: Scope, n: []const u8) ?sym.Named {
+    const s = &c.sections.items[scope.section.raw()];
+    if (s.declares) {
+        var buf: [256]u8 = undefined;
+        if (std.mem.print(&buf, "{s}.{s}", .{ s.name, n })) |own| {
+            if (c.value_names.map.get(.{ .module = s.module, .name = own })) |v| return v;
+        } else |_| {} // a name too long for the buffer is longer than any the section declares
+    }
+    return c.valueNamed(scope.module, n);
+}
+
 fn isVisits(c: *const Checker, e: *const ast.Expr) bool {
     const typed = c.exprs.get(e) orelse return false;
     const ref = typed.ref orelse return false;
@@ -92,7 +105,7 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
         return record(c, e, .{ .one_of = en }, .{ .value = .{ .enumeration = en, .index = ix } });
     };
     // where a thing of a kind is wanted, a name the story does not declare is one of the host's, by its id
-    if (hint != null and hint.? == .ref and c.valueNamed(scope.module, n) == null) {
+    if (hint != null and hint.? == .ref and lookup(c, scope, n) == null) {
         const kind = hint.?.ref;
         if (!c.knowsThing(kind, n)) {
             try c.err(e.span, "the host has no {s} called `{s}`", .{ c.kinds.items[kind.raw()], n });
@@ -100,7 +113,7 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
         }
         return record(c, e, hint.?, .{ .thing = .{ .kind = kind, .id = n } });
     }
-    if (c.valueNamed(scope.module, n)) |named| switch (named) {
+    if (lookup(c, scope, n)) |named| switch (named) {
         .fact => |id| {
             if (c.facts.items[id.raw()].key) |k| {
                 try c.err(e.span, "`{s}` is kept per {s}: read it for one, `{s}(…)`", .{ n, try keyWord(c, k), n });
@@ -129,7 +142,7 @@ fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) E
     if (std.mem.eql(u8, call.name.text, "seen")) return seen(c, scope, e, call);
     if (std.mem.eql(u8, call.name.text, "since_changed")) return sinceChanged(c, scope, e, call);
     if (std.mem.eql(u8, call.name.text, "happened")) return happened(c, scope, e, call);
-    if (c.valueNamed(scope.module, call.name.text)) |named| if (named == .fact) return keyedRead(c, scope, e, call, named.fact);
+    if (lookup(c, scope, call.name.text)) |named| if (named == .fact) return keyedRead(c, scope, e, call, named.fact);
     if (c.kindOfSection(scope.section)) |kind| if (kind.builtin(call.name.text)) |b| return builtin(c, scope, e, call, kind, b);
     const id = try externOf(c, scope, call) orelse return null;
     const ext = c.externs.items[id.raw()];
@@ -151,7 +164,7 @@ fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) E
 
 /// The query or action a call names, its arguments checked against its parameters.
 pub fn externOf(c: *Checker, scope: Scope, call: *const ast.Call) Error!?sym.ExternId {
-    const named = c.valueNamed(scope.module, call.name.text) orelse {
+    const named = lookup(c, scope, call.name.text) orelse {
         try c.err(call.name.span, "nothing is called `{s}`: no query or action", .{call.name.text});
         return null;
     };
@@ -262,7 +275,7 @@ fn constantInt(c: *const Checker, scope: Scope, e: *const ast.Expr) ?i64 {
     switch (e.kind) {
         .int => |n| return n,
         .name => |n| {
-            const named = c.valueNamed(scope.module, n) orelse return null;
+            const named = lookup(c, scope, n) orelse return null;
             if (named != .constant) return null;
             const k = c.consts.items[named.constant.raw()].value;
             return if (k == .int) k.int else null;
@@ -272,7 +285,7 @@ fn constantInt(c: *const Checker, scope: Scope, e: *const ast.Expr) ?i64 {
 }
 
 fn factArg(c: *Checker, scope: Scope, arg: *const ast.Expr) Error!?sym.FactId {
-    const named = c.valueNamed(scope.module, arg.kind.name) orelse {
+    const named = lookup(c, scope, arg.kind.name) orelse {
         try c.err(arg.span, "nothing is called `{s}`: no fact", .{arg.kind.name});
         return null;
     };
@@ -347,7 +360,7 @@ fn builtinArg(c: *Checker, scope: Scope, arg: *const ast.Expr, want: Checker.Bui
             _ = try record(c, arg, .int, .{ .target = .{ .section = id } });
             return .{ .section = id };
         } else try c.err(arg.span, "nothing is called `{s}`: no section", .{n}),
-        .int_fact, .fact => if (c.valueNamed(scope.module, n)) |named| if (named == .fact) {
+        .int_fact, .fact => if (lookup(c, scope, n)) |named| if (named == .fact) {
             const t = c.facts.items[named.fact.raw()].type;
             if (want == .int_fact and t != .int) {
                 try c.err(arg.span, "`{s}` is {s}, where an int fact is wanted", .{ n, try c.describe(t) });
@@ -413,7 +426,7 @@ fn binary(c: *Checker, scope: Scope, e: *const ast.Expr, op: ast.Expr.Op, lhs: *
 fn bare(c: *const Checker, scope: Scope, e: *const ast.Expr) bool {
     return switch (e.kind) {
         .int => true,
-        .name => |n| c.valueNamed(scope.module, n) == null,
+        .name => |n| lookup(c, scope, n) == null,
         else => false,
     };
 }
@@ -449,7 +462,7 @@ pub fn effect(c: *Checker, scope: Scope, eff: *const ast.Effect) Error!void {
 // `~ fact = action(…)`: an action whose outcome the host decides, kept in `fact`. False when the value is no such call.
 fn outcome(c: *Checker, scope: Scope, v: *const ast.Expr, fact: sym.FactId) Error!bool {
     if (v.kind != .call) return false;
-    const named = c.valueNamed(scope.module, v.kind.call.name.text) orelse return false;
+    const named = lookup(c, scope, v.kind.call.name.text) orelse return false;
     if (named != .external or !c.externs.items[named.external.raw()].action) return false;
     const id = try externOf(c, scope, &v.kind.call) orelse return true;
     const ext = c.externs.items[id.raw()];
@@ -480,7 +493,7 @@ fn change(c: *Checker, scope: Scope, ch: *const ast.Change, op: []const u8) Erro
                 _ = try record(c, amount, .int, null);
                 return;
             }
-            const named = c.valueNamed(scope.module, amount.kind.name);
+            const named = lookup(c, scope, amount.kind.name);
             if (named != null and named.? == .constant and c.consts.items[named.?.constant.raw()].type == .int) {
                 _ = try record(c, amount, .int, .{ .constant = named.?.constant });
                 return;
@@ -493,7 +506,7 @@ fn change(c: *Checker, scope: Scope, ch: *const ast.Change, op: []const u8) Erro
 
 // The fact an effect writes, if the story may write it.
 fn settable(c: *Checker, scope: Scope, n: *const ast.Name) Error!?sym.FactId {
-    const named = c.valueNamed(scope.module, n.text) orelse {
+    const named = lookup(c, scope, n.text) orelse {
         try c.err(n.span, "nothing is called `{s}`: no fact", .{n.text});
         return null;
     };
@@ -549,7 +562,7 @@ pub const gender_categories = template.gender_categories;
 
 // What a selection chooses by: a number's plural, or the gender of a cast member (named by its id) or of a thing.
 fn selection(c: *Checker, scope: Scope, operand: *const ast.Expr) Error!?[]const []const u8 {
-    if (operand.kind == .name and c.valueNamed(scope.module, operand.kind.name) == null) {
+    if (operand.kind == .name and lookup(c, scope, operand.kind.name) == null) {
         if (c.speaker_names.find(scope.module, try c.lower(operand.kind.name))) |id| {
             _ = try record(c, operand, .int, .{ .speaker = id });
             return &gender_categories;

@@ -108,6 +108,8 @@ pub const Fact = struct {
     span: Span,
     /// Whether any effect of the story sets it.
     set: bool = false,
+    /// The section of a registered kind that declares it, for a fact the section brings rather than the story.
+    by: ?SectionId = null,
 };
 
 pub const Constant = union(enum) { boolean: bool, int: i64, text: []const u8 };
@@ -163,6 +165,8 @@ pub const Section = struct {
     leads: bool = false,
     /// Something calls it with `->>`.
     called: bool = false,
+    /// Its kind declares facts within it, which its own conditions name without the section's name.
+    declares: bool = false,
 
     pub const Kind = union(enum) {
         scene,
