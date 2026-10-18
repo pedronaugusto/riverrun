@@ -1,0 +1,143 @@
+//! The default store: every fact in memory, a value each, texts owned by the
+//! store's allocator. lantern keeps its facts here; a host with state of its
+//! own implements `Store` over it instead.
+
+const std = @import("std");
+const value = @import("value.zig");
+const schema_ = @import("schema.zig");
+const store_ = @import("store.zig");
+const Changes = @import("changes.zig").Changes;
+
+const FactId = value.FactId;
+const ScopeId = value.ScopeId;
+const Value = value.Value;
+const Schema = schema_.Schema;
+const SetError = store_.SetError;
+
+pub const Memory = struct {
+    gpa: std.mem.Allocator,
+    /// Borrowed: it outlives the store.
+    schema: Schema,
+    values: []Value,
+    changes: Changes,
+
+    /// A store for `schema`'s facts, each at its initial value.
+    pub fn init(gpa: std.mem.Allocator, schema: Schema) (schema_.Error || error{OutOfMemory})!Memory {
+        try schema.validate(gpa);
+        const values = try gpa.alloc(Value, schema.facts.len);
+        errdefer gpa.free(values);
+        for (values, schema.facts) |*v, d| v.* = .initial(d.kind);
+        return .{ .gpa = gpa, .schema = schema, .values = values, .changes = try .init(gpa, schema.facts.len) };
+    }
+
+    pub fn deinit(m: *Memory) void {
+        for (m.values) |v| freeText(m.gpa, v);
+        m.gpa.free(m.values);
+        m.changes.deinit(m.gpa);
+        m.* = undefined;
+    }
+
+    pub fn store(m: *Memory) store_.Store {
+        return .{ .ptr = m, .vtable = &vtable };
+    }
+
+    const vtable: store_.Store.VTable = .{
+        .get = struct {
+            fn f(ptr: *anyopaque, fact: FactId) Value {
+                const m: *Memory = @ptrCast(@alignCast(ptr)); // safe: made by `store` from a *Memory
+                return m.get(fact);
+            }
+        }.f,
+        .set = struct {
+            fn f(ptr: *anyopaque, fact: FactId, v: Value) SetError!void {
+                const m: *Memory = @ptrCast(@alignCast(ptr)); // safe: made by `store` from a *Memory
+                return m.set(fact, v);
+            }
+        }.f,
+        .changes = struct {
+            fn f(ptr: *anyopaque) *const Changes {
+                const m: *Memory = @ptrCast(@alignCast(ptr)); // safe: made by `store` from a *Memory
+                return &m.changes;
+            }
+        }.f,
+    };
+
+    pub fn get(m: *const Memory, fact: FactId) Value {
+        return m.values[fact.raw()];
+    }
+
+    pub fn set(m: *Memory, fact: FactId, v: Value) SetError!void {
+        const d = m.schema.decl(fact);
+        try check(d, v);
+        const slot = &m.values[fact.raw()];
+        if (slot.eql(v)) return;
+        const next: Value = if (v == .text and v.text.len > 0) .{ .text = try m.gpa.dupe(u8, v.text) } else v;
+        freeText(m.gpa, slot.*);
+        slot.* = next;
+        m.changes.mark(fact);
+    }
+
+    /// Every fact of `scope` back to its initial value: a new life, a new game.
+    pub fn reset(m: *Memory, scope: ScopeId) void {
+        for (m.schema.facts, 0..) |d, i| {
+            if (!d.scope.eql(scope)) continue;
+            const id: FactId = .fromRaw(@intCast(i)); // safe: validated to max_facts
+            m.set(id, .initial(d.kind)) catch unreachable; // unreachable: an initial value fits its kind and allocates nothing
+        }
+    }
+};
+
+/// Whether `v` fits the declaration `d`.
+pub fn check(d: schema_.Decl, v: Value) SetError!void {
+    if (@as(value.Kind, v) != d.kind) return error.WrongKind;
+    switch (v) {
+        .one_of => |x| if (x != Value.none and x >= d.items.len) return error.ItemOutOfRange,
+        .set_of => |x| if (x.findLastSet()) |last| {
+            if (last >= d.items.len) return error.ItemOutOfRange;
+        },
+        .text => |x| if (x.len > value.max_text) return error.TextTooLong,
+        .boolean, .int => {},
+    }
+}
+
+fn freeText(gpa: std.mem.Allocator, v: Value) void {
+    if (v == .text and v.text.len > 0) gpa.free(v.text);
+}
+
+const testing = @import("testing.zig");
+
+test "a store holds its facts' kinds and marks what changed" {
+    const gpa = std.testing.allocator;
+    var m: Memory = try .init(gpa, testing.schema);
+    defer m.deinit();
+    const s = m.store();
+    try std.testing.expectEqual(Value.none, s.get(testing.life).one_of);
+    try s.set(testing.life, .{ .one_of = 1 });
+    try std.testing.expectError(error.WrongKind, s.set(testing.life, .{ .int = 1 }));
+    try std.testing.expectError(error.ItemOutOfRange, s.set(testing.life, .{ .one_of = 2 }));
+    const before = s.changes().now();
+    try s.set(testing.life, .{ .one_of = 1 });
+    try std.testing.expectEqual(before, s.changes().now());
+    try s.set(testing.name, .{ .text = "Iris" });
+    try s.set(testing.name, .{ .text = "Iris June" });
+    try std.testing.expectEqualStrings("Iris June", s.get(testing.name).text);
+    var long: [value.max_text + 1]u8 = @splat('a');
+    try std.testing.expectError(error.TextTooLong, s.set(testing.name, .{ .text = &long }));
+}
+
+test "effects are applied by the host, and an action is handed back" {
+    const gpa = std.testing.allocator;
+    var m: Memory = try .init(gpa, testing.schema);
+    defer m.deinit();
+    const s = m.store();
+    try std.testing.expectEqual(@as(?store_.Call, null), try store_.apply(s, .{ .add = .{ .fact = testing.kept, .item = 2 } }));
+    _ = try store_.apply(s, .{ .add = .{ .fact = testing.kept, .item = 0 } });
+    _ = try store_.apply(s, .{ .remove = .{ .fact = testing.kept, .item = 2 } });
+    try std.testing.expectEqual(@as(usize, 1), s.get(testing.kept).set_of.count());
+    try std.testing.expectError(error.ItemOutOfRange, store_.apply(s, .{ .add = .{ .fact = testing.kept, .item = 9 } }));
+    const call = (try store_.apply(s, .{ .call = .{ .action = .fromRaw(0), .args = &.{.{ .one_of = 1 }}, .result = testing.met } })).?;
+    try std.testing.expectEqual(@as(u16, 0), call.action.raw());
+    try std.testing.expect(call.result.?.eql(testing.met));
+    m.reset(testing.life_scope);
+    try std.testing.expectEqual(@as(usize, 0), s.get(testing.kept).set_of.count());
+}
