@@ -6,6 +6,7 @@ const std = @import("std");
 const facts = @import("../facts.zig");
 const story = @import("../story.zig");
 const pool = @import("pool.zig");
+const text = @import("text.zig");
 
 /// The most flows a session holds.
 pub const max_flows = 16;
@@ -38,6 +39,14 @@ pub const Pending = union(enum) {
     outcomes: struct { list: [max_outcomes]facts.FactId, len: u8, given: u8 = 0 },
 };
 
+/// The line a flow last handed over, held until its next step: where it is, and what its slots held.
+pub const Hand = struct {
+    node: story.NodeId,
+    /// As they were filled when it was handed over; null where a restored story's line no longer has the slots it
+    /// was saved with, so it is filled afresh.
+    filled: ?text.Filled,
+};
+
 pub const Flow = struct {
     /// Its place in the session.
     id: u8,
@@ -52,6 +61,8 @@ pub const Flow = struct {
     depth: u8 = 0,
     frames: [story.max_call_depth]Frame = undefined,
     pending: Pending = .none,
+    /// The line handed over and still held: until the next step, a start, a stop or an interruption.
+    hand: ?Hand = null,
     /// What a step hands the host: valid until this flow's next step.
     arena: std.heap.ArenaAllocator,
 
@@ -62,5 +73,6 @@ pub const Flow = struct {
         f.effect_at = 0;
         f.depth = 0;
         f.pending = .none;
+        f.hand = null;
     }
 };

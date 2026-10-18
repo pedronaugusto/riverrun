@@ -157,6 +157,7 @@ pub fn interrupt(s: *Session, id: FlowId, section: story_.SectionId) Error!void 
     const back: ?NodeId = if (f.pending == .choices) f.pending.choices.node else f.at;
     try push(f, .{ .back = back, .effect_at = if (f.pending == .choices) 0 else f.effect_at });
     f.pending = .none;
+    f.hand = null;
     f.effect_at = 0;
     try s.enter(f, section);
 }
@@ -169,6 +170,7 @@ pub fn next(s: *Session, id: FlowId) Error!Step {
         .choices => return error.AwaitingChoice,
         .outcomes => return error.AwaitingOutcome,
     }
+    f.hand = null;
     _ = f.arena.reset(.retain_capacity);
     if (f.ended) return .end;
     var walked: u32 = 0;
@@ -181,6 +183,24 @@ pub fn next(s: *Session, id: FlowId) Error!Step {
         if (try s.walk(f, at)) |step| return step;
     }
     return error.NoProgress;
+}
+
+/// The line `next` last handed over, while `flow` holds it: until its next `next`, `start`, `stop` or
+/// `interrupt`; null when the last step was not a line. Its words are worded again from its slots as they were
+/// filled, so they read as they did; its effects are worked out again from the facts as they are now. Cursors saved
+/// while a line is held hold it again once restored, so a host that saves with a line in hand takes it up here, and
+/// `next` goes on after it as it would have.
+pub fn held(s: *Session, id: FlowId) Error!?Line {
+    const f = try s.startedFlow(id);
+    const hand = f.hand orelse return null;
+    const n = s.story.node(hand.node);
+    const l = n.step.line;
+    const cx = s.evaluation(f);
+    // its outcomes were owed when it was handed over, and are owed or given still
+    var owed: Owed = .{};
+    const list = try lineEffects(cx, l, &owed);
+    if (hand.filled == null) f.hand.?.filled = try text.fill(cx, s.words, l.text, .keep);
+    return try s.worded(cx, f.hand.?, l, n.tags, list);
 }
 
 /// Takes choice `i` of those `next` offered.
@@ -327,16 +347,31 @@ fn count(s: *Session, visits: facts.FactId) Error!void {
     try s.store.set(visits, .{ .int = s.store.get(visits).int +| 1 });
 }
 
-fn line(s: *Session, f: *Flow, at: NodeId, l: @FieldType(story_.Node.Step, "line"), tags: story_.Range) Error!Step {
+const LineStep = @FieldType(story_.Node.Step, "line");
+
+fn line(s: *Session, f: *Flow, at: NodeId, l: LineStep, tags: story_.Range) Error!Step {
     const cx = s.evaluation(f);
-    const where = s.places.where(s.story, at) orelse unreachable; // unreachable: a flow reaches only the steps of sections' walks
-    const t = s.story.text(l.text);
     var owed: Owed = .{};
-    const list = try cx.arena.alloc(facts.Effect, l.effects.len);
-    for (list, 0..) |*e, k| e.* = try emit(cx, s.story.effect(l.effects.start + @as(u32, @intCast(k))), &owed); // safe: below a u32 length
-    const words = try text.render(cx, s.words, l.text);
+    const list = try lineEffects(cx, l, &owed);
+    const hand: flow_.Hand = .{ .node = at, .filled = try text.fill(cx, s.words, l.text, .move) };
+    const said = try s.worded(cx, hand, l, tags, list);
     try owed.hold(f);
-    return .{ .line = .{ .id = t.line, .section = where.section, .part = where.part, .speaker = l.speaker, .text = words, .tags = tags, .effects = list } };
+    f.hand = hand;
+    return .{ .line = said };
+}
+
+// A line's effects, emitted, and the outcomes they owe.
+fn lineEffects(cx: eval.Context, l: LineStep, owed: *Owed) Error![]const facts.Effect {
+    const list = try cx.arena.alloc(facts.Effect, l.effects.len);
+    for (list, 0..) |*e, k| e.* = try emit(cx, cx.story.effect(l.effects.start + @as(u32, @intCast(k))), owed); // safe: below a u32 length
+    return list;
+}
+
+// A line as the host is handed it: worded from its filled slots, with where it is and its effects.
+fn worded(s: *Session, cx: eval.Context, hand: flow_.Hand, l: LineStep, tags: story_.Range, list: []const facts.Effect) Error!Line {
+    const where = s.places.where(s.story, hand.node) orelse unreachable; // unreachable: a flow reaches only the steps of sections' walks
+    const words = try text.write(cx.arena, s.story, s.words, l.text, &hand.filled.?);
+    return .{ .id = s.story.text(l.text).line, .section = where.section, .part = where.part, .speaker = l.speaker, .text = words, .tags = tags, .effects = list };
 }
 
 // The choices offered at `at`, or null when none is open and the flow goes past them.

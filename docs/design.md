@@ -281,7 +281,7 @@ A small data-oriented Zig **executor** walks the graph. There is no virtual mach
 ```
 Story.init(bytes) · Strings.init(bytes) · Host.bind(story, impls)
 Session.init(gpa, story, strings, store, host, options)
-start(flow, section) · next(flow) → line | choices | effects | action | end
+start(flow, section) · next(flow) → line | choices | effects | action | end · held(flow) → line
 choose(flow, i) · outcome(flow, value) · interrupt(flow, section) · stop(flow)
 saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapshot and restore per scope)
 ```
@@ -320,6 +320,16 @@ saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapsho
 - **Cursors are saved by name:** each step by its section, its place in that section and its line id. Restored under
   a recompiled story, a step that moved is found by its line id and one that is gone ends its flow, as the report
   says.
+- **A flow is saved at any step the host is shown,** a line in its hand among them. The line `next` last handed over
+  is held by its flow until the next step, a start, a stop or an interruption, and saved with the cursors with what
+  its slots held. Restored, the flow holds it again: `held` hands it over again, worded as it was, its effects worked
+  out from the facts restored, and `next` goes on after it as it would have. So a host saves where its player is, a
+  line half typed or a count's next line waiting, and going back resumes there rather than at the line before. Why
+  `held` and not `next` handing it again: `next` keeps one meaning, the step after the one in hand, so a host that
+  saved after acting on its line never sees it twice, and one that holds a line asks for it. Why the slots and not
+  the words or the facts: saying a line moves its alternatives on, and the host's writes since (the line's own
+  effects among them) would word it otherwise, while the slots reword it in any translation. Only an outcome owed
+  refuses a save.
 - **A language's rules are the host's:** the plural category of a number in the string table's locale, and a
   thing's gender, given as `Language` in a session's options; without them plurals are English's and every thing's
   gender is `other`. riverrun ships no CLDR tables: a host brings its locales' plural rules.

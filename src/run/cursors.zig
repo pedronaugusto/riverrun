@@ -6,14 +6,21 @@
 //! one that is gone ends its flow, and the report says so. The facts are
 //! saved apart, by their own snapshots.
 //!
+//! A flow holding the line it last handed over saves it too, with what its
+//! slots held, so restored it holds the line again, worded as it was: a host
+//! can save at any step it is shown, a line in hand among them.
+//!
 //!     magic    "RRFLOWS\0"
-//!     version  u16 (1)
+//!     version  u16 (2; 1 is read, without a hand)
 //!     story    u64     the hash of the story it was taken under
 //!     flows    max_flows × flow
 //!     flow     state u8 (0 stopped, 1 telling, 2 ended); when telling:
-//!              at anchor, effect_at u32, depth u8, depth × frame
+//!              at anchor, effect_at u32, depth u8, depth × frame, hand anchor;
+//!              when a hand: slots u8, slots × slot
 //!     frame    back anchor, effect_at u32, pool u8; when a pool:
 //!              section str, given u8, picks u8, picks × candidate name str
+//!     slot     value text, branch u8 (255 none), category text
+//!     text     u32 length, then that many bytes
 //!     anchor   present u8; when present: section str, place u32, kind u8, line u64
 //!     str      u16 length, then that many bytes
 
@@ -21,13 +28,18 @@ const std = @import("std");
 const story = @import("../story.zig");
 const flow_ = @import("flow.zig");
 const pool = @import("pool.zig");
+const text = @import("text.zig");
 const Places = @import("Places.zig");
 
 const NodeId = story.NodeId;
 const SectionId = story.SectionId;
 
 pub const magic = "RRFLOWS\x00".*;
-pub const version: u16 = 1;
+pub const version: u16 = 2;
+/// The first version, saved before a flow saved the line it holds.
+const before_hands: u16 = 1;
+/// A branch slot that writes none: a `once` used up.
+const no_branch: u8 = 255;
 
 pub const SaveError = error{
     OutOfMemory,
@@ -52,6 +64,8 @@ pub const Report = struct {
     lost: u8 = 0,
     /// Pool candidates no longer in their pool, left out.
     dropped: u8 = 0,
+    /// Lines a flow held that are gone from the story: their flows go on from where they were, holding none.
+    released: u8 = 0,
 };
 
 /// The line id a step is checked by: a line's, or the first choice's; 0 for other steps.
@@ -80,6 +94,7 @@ pub fn save(gpa: std.mem.Allocator, s: *const story.Story, places: *const Places
         try w.int(u32, if (f.pending == .choices) 0 else f.effect_at);
         try w.int(u8, f.depth);
         for (f.frames[0..f.depth]) |fr| try w.frame(s, places, fr);
+        try w.hand(s, places, f.hand);
     }
     return out.toOwnedSlice(gpa);
 }
@@ -103,6 +118,11 @@ const Writer = struct {
         try w.bytes(s);
     }
 
+    fn text(w: Writer, s: []const u8) error{OutOfMemory}!void {
+        try w.int(u32, @intCast(s.len)); // safe: a slot's words, far below a u32
+        try w.bytes(s);
+    }
+
     fn anchor(w: Writer, s: *const story.Story, places: *const Places, at: ?NodeId) error{OutOfMemory}!void {
         const id = at orelse return w.int(u8, 0);
         const place = places.of.get(id.raw()) orelse return w.int(u8, 0);
@@ -111,6 +131,20 @@ const Writer = struct {
         try w.int(u32, place.place);
         try w.int(u8, @backingInt(@as(story.format.NodeKind, s.node(id).step)));
         try w.int(u64, lineOf(s, id));
+    }
+
+    fn hand(w: Writer, s: *const story.Story, places: *const Places, held: ?flow_.Hand) error{OutOfMemory}!void {
+        const h = held orelse return w.anchor(s, places, null);
+        if (places.of.get(h.node.raw()) == null) return w.anchor(s, places, null);
+        try w.anchor(s, places, h.node);
+        // restored where its slots changed and not asked for since: saved without them, to be filled afresh again
+        const filled = if (h.filled) |*x| x else return w.int(u8, 0);
+        try w.int(u8, filled.count);
+        for (0..filled.count) |k| {
+            try w.text(filled.values[k]);
+            try w.int(u8, filled.branches[k] orelse no_branch);
+            try w.text(filled.categories[k]);
+        }
     }
 
     fn frame(w: Writer, s: *const story.Story, places: *const Places, fr: flow_.Frame) error{OutOfMemory}!void {
@@ -130,16 +164,25 @@ const Writer = struct {
 pub fn restore(gpa: std.mem.Allocator, s: *const story.Story, places: *const Places, flows: []flow_.Flow, bytes: []const u8) RestoreError!Report {
     var r: Reader = .{ .b = bytes };
     if (!std.mem.eql(u8, try r.take(magic.len), &magic)) return error.BadCursors;
-    if (try r.int(u16) != version) return error.UnsupportedVersion;
+    const saved = try r.int(u16);
+    if (saved != version and saved != before_hands) return error.UnsupportedVersion;
     var report: Report = .{ .same_story = try r.int(u64) == s.hash() };
     // Read whole before anything changes, so a refused save leaves the session as it was.
     const read = try gpa.alloc(flow_.Flow, flows.len);
     defer gpa.free(read);
     for (read, flows) |*f, into| {
         f.* = .{ .id = into.id, .arena = undefined };
-        try readFlow(&r, s, places, f, &report);
+        try readFlow(&r, s, places, f, &report, saved);
     }
     if (r.at != bytes.len) return error.BadCursors;
+    // a held line's words, out of the save and into its flow's arena, where a step's words live
+    for (read, flows) |*from, *into| if (from.hand) |*h| if (h.filled) |*filled| {
+        const a = into.arena.allocator();
+        for (filled.values[0..filled.count], filled.categories[0..filled.count]) |*v, *c| {
+            v.* = try a.dupe(u8, v.*);
+            c.* = try a.dupe(u8, c.*);
+        }
+    };
     for (flows, read) |*into, from| {
         const arena = into.arena;
         into.* = from;
@@ -148,7 +191,7 @@ pub fn restore(gpa: std.mem.Allocator, s: *const story.Story, places: *const Pla
     return report;
 }
 
-fn readFlow(r: *Reader, s: *const story.Story, places: *const Places, f: *flow_.Flow, report: *Report) RestoreError!void {
+fn readFlow(r: *Reader, s: *const story.Story, places: *const Places, f: *flow_.Flow, report: *Report, saved: u16) RestoreError!void {
     switch (try r.int(u8)) {
         0 => return,
         2 => {
@@ -175,10 +218,35 @@ fn readFlow(r: *Reader, s: *const story.Story, places: *const Places, f: *flow_.
     if (f.at) |n| if (f.effect_at > effectsLen(s, n)) {
         f.effect_at = 0;
     };
+    if (saved != before_hands) f.hand = try readHand(r, s, places, report);
     if (lost) {
         f.reset();
         report.lost += 1;
     }
+}
+
+// The line a flow held, found in this story; its slots as they were filled where the line still has them.
+fn readHand(r: *Reader, s: *const story.Story, places: *const Places, report: *Report) RestoreError!?flow_.Hand {
+    const at = try r.anchor(s, places, report);
+    if (at.node == null and !at.lost) return null;
+    const count = try r.int(u8);
+    if (count > story.max_slots) return error.BadCursors;
+    var filled: text.Filled = .{ .count = count };
+    for (0..count) |k| {
+        filled.values[k] = try r.text();
+        const branch = try r.int(u8);
+        filled.branches[k] = if (branch == no_branch) null else branch;
+        filled.categories[k] = try r.text();
+    }
+    const node = at.node orelse {
+        report.released +|= 1;
+        return null;
+    };
+    const l = switch (s.node(node).step) {
+        .line => |l| l,
+        else => return error.BadCursors,
+    };
+    return .{ .node = node, .filled = if (s.text(l.text).slots.len == count) filled else null };
 }
 
 fn effectsLen(s: *const story.Story, n: NodeId) u32 {
@@ -206,6 +274,10 @@ const Reader = struct {
 
     fn str(r: *Reader) RestoreError![]const u8 {
         return r.take(try r.int(u16));
+    }
+
+    fn text(r: *Reader) RestoreError![]const u8 {
+        return r.take(try r.int(u32));
     }
 
     // A saved step found in this story: where it was, else by its line id in its section.

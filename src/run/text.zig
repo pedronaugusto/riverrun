@@ -3,6 +3,8 @@
 //! branch its condition gives; alternatives take the branch their state says
 //! and move it on, once per delivery, however often a translation uses the
 //! slot. A shuffle's order comes from the seed, so a replay says the same.
+//! What the slots hold is worked out apart from the words written with it, so
+//! a line held can be worded again as it was.
 
 const std = @import("std");
 const facts = @import("../facts.zig");
@@ -16,10 +18,18 @@ pub const Error = eval.Error || facts.SetError || error{
     MissingLine,
 };
 
-/// The words of text `id`, in `cx.arena`.
+/// The words of text `id`, in `cx.arena`, its alternatives moved on.
 pub fn render(cx: eval.Context, words: *const story.Strings, id: story.TextId) Error![]const u8 {
+    const filled = try fill(cx, words, id, .move);
+    return write(cx.arena, cx.story, words, id, &filled);
+}
+
+/// Whether filling a text moves its alternatives on, as saying it does, or leaves them where they are.
+pub const Alternatives = enum { move, keep };
+
+/// What each slot of text `id` holds now; its values written in `cx.arena`.
+pub fn fill(cx: eval.Context, words: *const story.Strings, id: story.TextId, alternatives: Alternatives) Error!Filled {
     const t = cx.story.text(id);
-    const template = words.template(t.line) orelse return error.MissingLine;
     var filled: Filled = .{ .count = @intCast(t.slots.len) }; // safe: validated to max_slots
     for (0..t.slots.len) |k| {
         const s = cx.story.slot(t.slots.start + @as(u32, @intCast(k))); // safe: below max_slots
@@ -28,11 +38,17 @@ pub fn render(cx: eval.Context, words: *const story.Strings, id: story.TextId) E
             .choose => filled.branches[k] = if (try eval.condition(cx, s.expr)) 0 else 1,
             .plural => filled.categories[k] = cx.language.pluralOf(words.locale(), (try eval.value(cx, s.expr)).int),
             .gender => filled.categories[k] = try genderOf(cx, s.expr),
-            else => filled.branches[k] = try alternative(cx, s),
+            else => filled.branches[k] = try alternative(cx, s, alternatives),
         }
     }
-    var out: std.Io.Writer.Allocating = .init(cx.arena);
-    story.template.render(template, &filled, &out.writer) catch return error.OutOfMemory;
+    return filled;
+}
+
+/// The words of text `id` with its slots as `filled` holds them, in `arena`.
+pub fn write(arena: std.mem.Allocator, s: *const story.Story, words: *const story.Strings, id: story.TextId, filled: *const Filled) Error![]const u8 {
+    const template = words.template(s.text(id).line) orelse return error.MissingLine;
+    var out: std.Io.Writer.Allocating = .init(arena);
+    story.template.render(template, filled, &out.writer) catch return error.OutOfMemory;
     return out.written();
 }
 
@@ -99,8 +115,8 @@ fn joined(cx: eval.Context, set: facts.Set, e: ?story.EnumId) Error![]const u8 {
     return out.written();
 }
 
-/// The branch an alternative gives now, its state moved on; null once a `once` is used up.
-fn alternative(cx: eval.Context, s: story.Slot) Error!?u8 {
+/// The branch an alternative gives now, its state moved on if asked; null once a `once` is used up.
+fn alternative(cx: eval.Context, s: story.Slot, alternatives: Alternatives) Error!?u8 {
     const fact = s.state.?; // alternatives keep state: validated
     const at = cx.store.get(fact).int;
     const n: i64 = s.arity;
@@ -112,7 +128,7 @@ fn alternative(cx: eval.Context, s: story.Slot) Error!?u8 {
         .shuffle => .{ shuffled(cx, fact, s.arity, state), state +| 1 },
         .value, .choose, .plural, .gender => unreachable, // unreachable: `render` handles them
     };
-    try cx.store.set(fact, .{ .int = next });
+    if (alternatives == .move) try cx.store.set(fact, .{ .int = next });
     return chosen;
 }
 

@@ -466,7 +466,8 @@ test "where the flows are survives a recompiled story, found by line id" {
     defer moved.deinit();
     const report = try moved.session.restoreCursors(gpa, saved);
     try std.testing.expect(!report.same_story);
-    try std.testing.expectEqual(@as(u8, 1), report.moved);
+    // where the flow goes on, and the line it holds: each found again by its id
+    try std.testing.expectEqual(@as(u8, 2), report.moved);
     try moved.expectLine(0, "B.");
     try moved.expectLine(0, "C.");
 
@@ -475,6 +476,89 @@ test "where the flows are survives a recompiled story, found by line id" {
     try std.testing.expectEqual(@as(u8, 1), (try gone.session.restoreCursors(gpa, saved)).lost);
     try std.testing.expectError(error.FlowNotStarted, gone.session.next(.fromRaw(0)));
     try std.testing.expectError(error.BadCursors, gone.session.restoreCursors(gpa, saved[0 .. saved.len - 1]));
+}
+
+// A count said in a sequence, with the hour and an effect, and what a recompile may change of it.
+const Counting = struct {
+    /// A line ahead of the count.
+    before: bool = false,
+    /// The count's line id.
+    id: []const u8 = "count",
+    /// Whether its words say the hour.
+    hour: bool = true,
+};
+
+fn counting(v: Counting) !testing.Built {
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const life = try b.scope("life");
+    const hour = try b.fact(.{ .name = "hour", .scope = life, .kind = .int });
+    const hide = try testing.scene(&b, "hide");
+    const sequence: story.Slot = .{ .kind = .sequence, .arity = 3, .state = try b.state("count") };
+    const words = if (v.hour) try b.text(try b.line(v.id, "{0:One|Two|Three}, at {1}."), &.{
+        sequence,
+        .{ .kind = .value, .expr = try b.expr(&.{.of(.fact, hour.raw())}) },
+    }) else try b.text(try b.line(v.id, "{0:One|Two|Three}."), &.{sequence});
+    const later = try b.effectList(&.{.{ .change = .{ .fact = hour, .by = try b.expr(&.{.of(.int, try b.int(1))}) } }});
+    const count = try b.node(.{ .step = .{ .line = .{ .text = words, .effects = later, .next = try say(&b, "found", "Found.", null) } } });
+    b.enter(hide, if (v.before) try say(&b, "z", "Z.", count) else count);
+    return testing.finish(&b, gpa);
+}
+
+test "a line held when the flows are saved is held again once restored, worded as it was" {
+    const flow: Session.FlowId = .fromRaw(0);
+    const saved = blk: {
+        const t = try Told.plain(gpa, try counting(.{}));
+        defer t.deinit();
+        const s = &t.session;
+        try s.start(flow, t.section("hide"));
+        try std.testing.expect(try s.held(flow) == null);
+        const said = (try s.next(flow)).line;
+        try std.testing.expectEqualStrings("One, at 0.", said.text);
+        // the host delivers it, and it is held still: worded as it was handed over, its sequence not moved again
+        for (said.effects) |e| _ = try facts.apply(t.memory.store(), e);
+        const again = (try s.held(flow)).?;
+        try std.testing.expectEqualStrings("One, at 0.", again.text);
+        try std.testing.expect(again.id.eql(said.id) and again.section.eql(t.section("hide")));
+        try std.testing.expectEqual(@as(i64, 1), again.effects[0].change.by);
+        const bytes = try s.saveCursors(gpa);
+        errdefer gpa.free(bytes);
+        try t.expectLine(0, "Found.");
+        try t.expectEnd(0);
+        try std.testing.expect(try s.held(flow) == null);
+        // restored: the line in hand again, and the flow going on after it as it did
+        const report = try s.restoreCursors(gpa, bytes);
+        try std.testing.expectEqual(@as(u8, 0), report.moved + report.released);
+        try std.testing.expectEqualStrings("One, at 0.", (try s.held(flow)).?.text);
+        try t.expectLine(0, "Found.");
+        try std.testing.expectEqualStrings("Found.", (try s.held(flow)).?.text);
+        try s.interrupt(flow, t.section("hide"));
+        try std.testing.expect(try s.held(flow) == null);
+        break :blk bytes;
+    };
+    defer gpa.free(saved);
+
+    // under a story recompiled with a line before it, the line is found by its id and worded as it was
+    const moved = try Told.plain(gpa, try counting(.{ .before = true }));
+    defer moved.deinit();
+    try std.testing.expectEqual(@as(u8, 2), (try moved.session.restoreCursors(gpa, saved)).moved);
+    try std.testing.expectEqualStrings("One, at 0.", (try moved.session.held(flow)).?.text);
+    try moved.expectLine(0, "Found.");
+
+    // under one where the line is gone, the flow goes on from where it was, holding nothing
+    const gone = try Told.plain(gpa, try counting(.{ .id = "counted" }));
+    defer gone.deinit();
+    try std.testing.expectEqual(@as(u8, 1), (try gone.session.restoreCursors(gpa, saved)).released);
+    try std.testing.expect(try gone.session.held(flow) == null);
+    try gone.expectLine(0, "Found.");
+
+    // under one where the line's slots changed, it is worded afresh: its sequence where it is, once moved
+    const reworded = try Told.plain(gpa, try counting(.{ .hour = false }));
+    defer reworded.deinit();
+    try reworded.memory.set(reworded.story.factNamed("state:count").?, .{ .int = 1 });
+    _ = try reworded.session.restoreCursors(gpa, saved);
+    try std.testing.expectEqualStrings("Two.", (try reworded.session.held(flow)).?.text);
+    try std.testing.expectEqualStrings("Two.", (try reworded.session.held(flow)).?.text);
 }
 
 test "any bytes restore as flows or are refused, never crash" {
@@ -489,7 +573,10 @@ test "any bytes restore as flows or are refused, never crash" {
                 error.OutOfMemory => return err,
                 else => return,
             };
-            for (0..8) |_| _ = t.session.next(.fromRaw(0)) catch break;
+            for (0..8) |_| {
+                _ = t.session.held(.fromRaw(0)) catch break;
+                _ = t.session.next(.fromRaw(0)) catch break;
+            }
         }
     }.one, .{});
 }
