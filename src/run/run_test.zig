@@ -642,7 +642,7 @@ test "a builtin is answered by the package that owns it, and nothing else" {
     defer b.deinit();
     const life = try b.scope("life");
     const day = try b.fact(.{ .name = "day", .scope = life, .kind = .int, .role = .clock });
-    const since = try b.builtinCall("quest", "since", &.{ 0, day.raw() }, .int);
+    const since = try b.builtinCall("quest", "since", &.{ 0, day.raw() }, .int, day);
     const journal = try b.section(.{ .name = "journal", .kind = .other, .kind_name = "quest", .visits = try b.visits("journal") });
     const late = try testing.say(&b, "late", "Too late.", null);
     const soon = try testing.say(&b, "soon", "There is time.", null);

@@ -203,7 +203,9 @@ sections' conditions may call. riverrun compiles such a call and never evaluates
 the package does, when it evaluates the condition.
 
 **BuiltinCall**: `kind: Str` (the registered kind), `name: Str`, `args: Range` into
-builtin_args, `returns: u8` (0 boolean or 1 int), 3 bytes padding. An argument is a
+builtin_args, `returns: u8` (0 boolean or 1 int), 1 byte padding, `clock: u16` (the
+fact of role `clock` an int answer moves with, one for one, while it moves at all,
+as `since(stage, day)` does; `none` for none). An argument is a
 u32 naming something of the story: a section by its index, a part by the index of the
 section it compiles to (a registered kind's parts are sections, `section.part`), or a
 fact by its id; which, the builtin's declaration says, and its package reads them so.

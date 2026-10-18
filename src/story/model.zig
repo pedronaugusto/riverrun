@@ -82,6 +82,9 @@ pub const BuiltinCall = struct {
     /// What each argument names, in `builtin_args`.
     args: Range,
     returns: facts.Kind,
+    /// The `(clock)` its int answer moves with, one for one, while it moves at all (`since` over a clock), so what
+    /// watches it can wait for the number it is compared with in the clock's heap.
+    clock: ?FactId = null,
 };
 
 /// What `since_changed(fact, clock)` reads, and the state that keeps the clock's value at the fact's last change.

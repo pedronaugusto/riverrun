@@ -203,7 +203,7 @@ test "a story carries stamps, builtins and the blocks its packages own" {
     const count = try b.externFn("count", &.{.{ .kind = .ref, .ref_kind = item_kind }}, .{ .kind = .int }, false);
     try b.stamp(count, "stock", 0b1);
     const day = try b.fact(.{ .name = "day", .scope = life, .kind = .int, .role = .clock });
-    const since = try b.builtinCall("quest", "since", &.{ 7, day.raw() }, .int);
+    const since = try b.builtinCall("quest", "since", &.{ 7, day.raw() }, .int, null);
     const quest = try b.section(.{ .name = "pelts", .kind = .other, .kind_name = "quest", .visits = try b.visits("pelts") });
     const when = try b.expr(&.{ .of(.builtin, since), .of(.int, try b.int(3)), .of(.gt, 0) });
     b.enter(quest, try b.node(.{ .step = .{ .branch = .{ .cond = when, .then = null, .otherwise = null } } }));

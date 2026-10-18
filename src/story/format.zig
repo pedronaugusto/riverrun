@@ -326,7 +326,9 @@ pub const BuiltinCall = extern struct {
     args: Range,
     /// The kind it pushes: boolean or int.
     returns: u8,
-    pad: [3]u8 = @splat(0),
+    pad: u8 = 0,
+    /// The `(clock)` an int answer moves with, one for one, while it moves at all; `none16` for none.
+    clock: u16 = none16,
 };
 
 pub const Block = extern struct {

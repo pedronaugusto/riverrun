@@ -71,7 +71,7 @@ pub fn init(gpa: std.mem.Allocator, s: *const story.Story, store: facts.Store, h
             // a migration runs once, when an older save loads, and is never watched
             if (s.candidate(index).migrate != 0) continue;
             // a rule's watched condition is numbered by its place among the rules
-            _ = try w.add(s.candidate(index).when, @intCast(rules.items.len), &.{}); // safe: below a u32 count
+            _ = try w.add(s.candidate(index).when, @intCast(rules.items.len), .{}); // safe: below a u32 count
             try rules.append(gpa, .{ .section = id, .candidate = index });
         }
     }

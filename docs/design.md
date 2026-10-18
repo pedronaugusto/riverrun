@@ -343,8 +343,11 @@ What happens when facts change, rather than when a flow is told, is the `react` 
 
 - **`Watch` evaluates a condition only when what it reads may have changed.** A condition is filed under every
   fact it reads, under the stamp of every query it asks (by the query's keyed arguments where they are constants in
-  the condition, else by the stamp's family), and, where it compares a `(clock)` fact or a `since_changed` with a
-  number, under the clock's value where that comparison can next flip, in a heap per clock. A step takes what
+  the condition, else by the stamp's family), and, where it compares a `(clock)` fact, a `since_changed` or a
+  builtin whose answer moves with a clock (`Builtin.moves`, cairn's `since` over a day) with a number, under the
+  clock's value where that comparison can next flip, in a heap per clock. A condition may be watched for a thing
+  (`this`, a quest's instance) and given roles, constants to it, so `alive(giver)` is filed under its giver's key
+  alone; one removed is taken out of all it was filed under, and its id is the next one's. A step takes what
   changed (the store's stamps, the stamps the host bumped, the clocks' moves) and evaluates what was filed there,
   in the order the conditions were added, each once: a clock ticking wakes only the comparisons whose moment came,
   and one moving back, a restored moment, wakes every comparison with it.
@@ -359,12 +362,13 @@ What happens when facts change, rather than when a flow is told, is the `react` 
   at the first step. A step is one round and returns the rules that fired with their effects, emitted; the host
   applies them and steps again, and `settle` does the rounds for a host that applies at once, bounded by a named
   error, `NoFixedPoint`, after 64.
-- **A package's own conditions** (cairn's quests) are added to a `Watch` with the facts its builtins read, and given
-  the package's meaning on top: one evaluator for every reaction.
+- **A package's own conditions** (cairn's quests) are added to a `Watch` for the thing each is evaluated for, with
+  its roles and the facts its builtins read, and given the package's meaning on top: one evaluator for every
+  reaction.
 
 ```
-Watch.init(gpa, story, store, host, owners, options) · add(terms, user, also) → cond · bump(family, keyed)
-step() → evaluated · holds(cond) · markAll()
+Watch.init(gpa, story, store, host, owners, options) · add(terms, user, for) → cond · remove(cond)
+bump(family, keyed) · step() → evaluated · holds(cond) · markAll()
 Rules.init(gpa, story, store, host, owners, options) · step() → fired · settle(user, apply) → rounds
 start() · migrate() → fired
 ```

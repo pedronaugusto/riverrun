@@ -140,7 +140,7 @@ pub const Story = struct {
 
     pub fn builtin(s: *const Story, i: u32) model.BuiltinCall {
         const b = s.g.get(.builtins, i);
-        return .{ .kind = s.str(b.kind), .name = s.str(b.name), .args = b.args, .returns = @fromBackingInt(b.returns) };
+        return .{ .kind = s.str(b.kind), .name = s.str(b.name), .args = b.args, .returns = @fromBackingInt(b.returns), .clock = codec.optional(facts.FactId, b.clock) };
     }
 
     pub fn builtinArg(s: *const Story, i: u32) u32 {

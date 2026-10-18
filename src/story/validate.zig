@@ -53,7 +53,11 @@ fn extensions(g: *const Graph) Error!void {
         try nonEmptyName(g, b.name);
         try range(g, .builtin_args, b.args);
         if (b.returns != @backingInt(facts.Kind.boolean) and b.returns != @backingInt(facts.Kind.int)) return error.BadKind;
-        if (b.pad[0] | b.pad[1] | b.pad[2] != 0) return error.BadNode;
+        if (b.pad != 0) return error.BadNode;
+        if (b.clock != none16) {
+            try index(g, .facts, b.clock);
+            if (b.returns != @backingInt(facts.Kind.int) or g.get(.facts, b.clock).role != @backingInt(facts.Role.clock)) return error.BadKind;
+        }
     }
     for (0..g.len(.blocks)) |i| {
         const b = g.get(.blocks, @intCast(i)); // safe: below a u32 count

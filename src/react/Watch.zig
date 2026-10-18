@@ -7,9 +7,13 @@
 //! key as a constant, else under the whole fact), under
 //! the stamp of every query it asks (by the query's keyed arguments where
 //! they are written in the condition, else by the stamp's whole family), and,
-//! where it compares a `(clock)` fact or a `since_changed` with a number,
-//! under the clock's value at which the comparison can next flip, in a heap
-//! per clock. A step takes what changed since the last (the store's stamps,
+//! where it compares a `(clock)` fact, a `since_changed` or a builtin that
+//! moves with a clock with a number, under the clock's value at which the
+//! comparison can next flip, in a heap per clock. A condition may be watched
+//! for a thing (`this`, where its section is kept per thing) and given roles:
+//! both are constants to it, so `alive(giver)` is filed under the giver's key
+//! alone. A condition removed is taken out of all it was filed under, and its
+//! id is the next one added's. A step takes what changed since the last (the store's stamps,
 //! the stamps the host bumped, the clocks' moves), marks the conditions filed
 //! there, and evaluates them in the order they were added, each once. A
 //! clock moving wakes only the conditions whose moment came; one moving back
@@ -56,19 +60,44 @@ pub const Options = struct {
 /// One condition evaluated by a step, and what it holds now.
 pub const Evaluated = struct { cond: CondId, holds: bool, user: u32 };
 
+/// A fact a condition reads, for one key where it is kept per thing.
+pub const Read = struct { fact: FactId, key: ?facts.Key = null };
+
+/// What a condition is watched for, beside its terms.
+pub const For = struct {
+    /// The thing it is evaluated for, where its section is kept per thing: what `this` pushes.
+    this: u64 = facts.Value.no_ref,
+    /// The roles it is given, which its terms read as they are: constants to it.
+    roles: []const run.Role = &.{},
+    /// Facts it reads that its terms do not show: what a registered builtin reads.
+    also: []const Read = &.{},
+};
+
 const Cond = struct {
     terms: Range,
     user: u32,
+    this: u64,
+    /// Its own copy of the roles it was given.
+    roles: []const run.Role = &.{},
     /// The clocks it compares with numbers: where in the heap each next flip waits.
-    thresholds: []const Threshold,
+    thresholds: std.ArrayList(Threshold) = .empty,
+    /// Every list it is filed in, so a removal takes it out of each.
+    filed: std.ArrayList(Filed) = .empty,
+    /// Watched: false once removed, its id free.
+    live: bool = true,
 };
 
-// A number a clock-like value is compared with: the clock's own value, or how far it moved since a fact changed.
+const Filed = union(enum) { fact: FactId, key: FactKey, stamp: StampKey };
+
+// A number a clock-like value is compared with: the clock's own value, how far it moved since a fact changed, or
+// a builtin's answer that moves with it.
 const Threshold = struct {
     clock: FactId,
     k: i64,
     /// For `since_changed`: the state that keeps the clock's value at the fact's last change.
     at: ?FactId,
+    /// For a builtin that moves with the clock: its term, whose answer now says where the clock's count began.
+    builtin: ?u32 = null,
     /// This condition's slot in the clock's heap.
     slot: u32,
 };
@@ -110,6 +139,8 @@ changed: []FactId = &.{},
 arena: std.heap.ArenaAllocator,
 evaluated: std.ArrayList(Evaluated) = .empty,
 added_since: bool = false,
+/// The ids of conditions removed, the next added's.
+free: std.ArrayList(u32) = .empty,
 
 /// A watch over `s`'s facts in `store`, its queries answered by `host`; all outlive it. `owners` is whose facts
 /// each scope holds, as a session's are.
@@ -157,8 +188,9 @@ pub fn init(gpa: std.mem.Allocator, s: *const story_.Story, store: facts.Store, 
 
 pub fn deinit(w: *Watch) void {
     const gpa = w.gpa;
-    for (w.conds.items) |c| gpa.free(c.thresholds);
+    for (w.conds.items) |*c| release(gpa, c);
     w.conds.deinit(gpa);
+    w.free.deinit(gpa);
     for (w.by_fact) |*l| l.deinit(gpa);
     gpa.free(w.by_fact);
     var it = w.by_stamp.valueIterator();
@@ -188,23 +220,75 @@ fn clockValue(s: *const story_.Story, store: facts.Store, f: FactId) i64 {
     return if (s.fact(f).role == .clock) store.get(f).int else 0;
 }
 
+fn release(gpa: std.mem.Allocator, c: *Cond) void {
+    c.thresholds.deinit(gpa);
+    c.filed.deinit(gpa);
+    gpa.free(c.roles);
+}
+
 /// Watches the condition `terms`, a range of the story's terms that the reader typed as a condition, for `user`
-/// (a rule, a quest's stage: the client's own number). `also` are facts it reads that its terms do not show:
-/// what a registered builtin reads. It is evaluated at the next step, and whenever what it reads changes.
-pub fn add(w: *Watch, terms: Range, user: u32, also: []const FactId) Error!CondId {
-    if (w.conds.items.len == std.math.maxInt(u32)) return error.TooManyConditions;
-    const id: u32 = @intCast(w.conds.items.len); // safe: checked above
-    const thresholds = try w.file(terms, id, also);
-    errdefer w.gpa.free(thresholds);
-    try w.conds.append(w.gpa, .{ .terms = terms, .user = user, .thresholds = thresholds });
-    try w.marked.resize(w.gpa, w.conds.items.len, true);
+/// (a rule, a quest's stage: the client's own number), for what `f` says. It is evaluated at the next step, and
+/// whenever what it reads changes.
+pub fn add(w: *Watch, terms: Range, user: u32, f: For) Error!CondId {
+    const reuse = w.free.items.len > 0;
+    if (!reuse and w.conds.items.len == std.math.maxInt(u32)) return error.TooManyConditions;
+    const id: u32 = if (reuse) w.free.items[w.free.items.len - 1] else @intCast(w.conds.items.len); // safe: checked above
+    if (!reuse) {
+        try w.conds.ensureUnusedCapacity(w.gpa, 1);
+        try w.marked.resize(w.gpa, w.conds.items.len + 1, false);
+    }
+    var c: Cond = .{ .terms = terms, .user = user, .this = f.this };
+    errdefer {
+        w.unfile(id, &c);
+        release(w.gpa, &c);
+    }
+    c.roles = try w.gpa.dupe(run.Role, f.roles);
+    try w.file(&c, id, f.also);
+    if (reuse) {
+        _ = w.free.pop();
+        w.conds.items[id] = c;
+    } else w.conds.appendAssumeCapacity(c);
+    w.marked.set(id);
     w.added_since = true;
     return .fromRaw(id);
 }
 
+/// Stops watching `cond`: it is taken out of everything it was filed under, never evaluated again, and its id is
+/// the next added condition's.
+pub fn remove(w: *Watch, cond: CondId) error{OutOfMemory}!void {
+    const id = cond.raw();
+    const c = &w.conds.items[id];
+    std.debug.assert(c.live);
+    try w.free.ensureUnusedCapacity(w.gpa, 1);
+    w.unfile(id, c);
+    release(w.gpa, c);
+    c.* = .{ .terms = .empty, .user = 0, .this = facts.Value.no_ref, .live = false };
+    w.marked.unset(id);
+    w.free.appendAssumeCapacity(id);
+}
+
+// Takes condition `id` out of every list it is filed in, and its heaps' slots back.
+fn unfile(w: *Watch, id: u32, c: *const Cond) void {
+    for (c.filed.items) |f| switch (f) {
+        .fact => |fact| drop(&w.by_fact[fact.raw()], id),
+        .key => |k| if (w.by_key.getPtr(k)) |l| drop(l, id),
+        .stamp => |k| if (w.by_stamp.getPtr(k)) |l| drop(l, id),
+    };
+    for (c.thresholds.items) |t| w.heaps[t.clock.raw()].release(t.slot);
+}
+
+// Takes `id` out of a list it is filed in, once.
+fn drop(l: *std.ArrayList(u32), id: u32) void {
+    for (l.items, 0..) |x, i| if (x == id) {
+        _ = l.swapRemove(i);
+        return;
+    };
+}
+
 /// Whether the condition holds now, evaluated on the spot: for a client that needs a condition it was not told of.
 pub fn holds(w: *Watch, cond: CondId) Error!bool {
-    return run.eval.condition(w.context(), w.conds.items[cond.raw()].terms);
+    const c = &w.conds.items[cond.raw()];
+    return run.eval.condition(w.contextOf(c), c.terms);
 }
 
 /// The host's word that what a query reads changed: `family` is the stamp a query declared, `keyed` the values of
@@ -225,17 +309,18 @@ pub fn step(w: *Watch) Error![]const Evaluated {
     if (w.added_since) try w.refreshInterest();
     try w.markChanged();
     w.evaluated.clearRetainingCapacity();
-    const cx = w.context();
     var budget = w.options.budget orelse std.math.maxInt(u32);
     var it = w.marked.iterator(.{});
     while (it.next()) |i| {
         if (budget == 0) break;
         budget -= 1;
         w.marked.unset(i);
-        const c = w.conds.items[i];
+        const c = &w.conds.items[i];
+        if (!c.live) continue;
+        const cx = w.contextOf(c);
         const now = try run.eval.condition(cx, c.terms);
         try w.evaluated.append(w.gpa, .{ .cond = .fromRaw(@intCast(i)), .holds = now, .user = c.user }); // safe: below a u32 count
-        for (c.thresholds) |t| w.arm(t);
+        for (c.thresholds.items) |t| try w.arm(cx, t);
     }
     // a moment is over once every condition has seen it; with a budget it waits for the rest
     if (w.marked.count() == 0) for (w.moments) |m| {
@@ -255,6 +340,14 @@ pub fn context(w: *Watch) run.eval.Context {
         .arena = w.arena.allocator(),
         .builtins = w.options.builtins,
     };
+}
+
+// The context one condition is evaluated in: the thing it is for, and its roles.
+fn contextOf(w: *Watch, c: *const Cond) run.eval.Context {
+    var cx = w.context();
+    cx.call.this = c.this;
+    cx.roles = c.roles;
+    return cx;
 }
 
 // ---------------------------------------------------------------- what changed
@@ -299,9 +392,9 @@ fn clockMoved(w: *Watch, clock: FactId) void {
 }
 
 // Puts the condition's next flip of this comparison in its clock's heap: the least threshold past now.
-fn arm(w: *Watch, t: Threshold) void {
+fn arm(w: *Watch, cx: run.eval.Context, t: Threshold) Error!void {
     const now = w.store.get(t.clock).int;
-    const base = if (t.at) |at| w.store.get(at).int else 0;
+    const base = if (t.at) |at| w.store.get(at).int else if (t.builtin) |b| now -| (try run.eval.value(cx, .{ .start = b, .len = 1 })).int else 0;
     const h = &w.heaps[t.clock.raw()];
     var next: ?i64 = null;
     for ([_]i64{ t.k, t.k +| 1 }) |q| {
@@ -326,45 +419,69 @@ fn refreshInterest(w: *Watch) Error!void {
 
 // ---------------------------------------------------------------- filing a condition
 
-// Files the condition under what it reads; returns its clock comparisons, each given its slot in a heap.
-fn file(w: *Watch, terms: Range, id: u32, also: []const FactId) Error![]const Threshold {
-    var thresholds: std.ArrayList(Threshold) = .empty;
-    errdefer thresholds.deinit(w.gpa);
+// A condition being filed, by its id: where it is filed is noted in it as it is.
+const Filing = struct { id: u32, cond: *Cond };
+
+// Files the condition under what it reads, and its clock comparisons in their heaps.
+fn file(w: *Watch, c: *Cond, id: u32, also: []const Read) Error!void {
+    const terms = c.terms;
+    const at: Filing = .{ .id = id, .cond = c };
     var compared: std.DynamicBitSetUnmanaged = try .initEmpty(w.gpa, terms.len);
     defer compared.deinit(w.gpa);
-    try w.comparisons(terms, &thresholds, &compared, id);
+    try w.comparisons(at, &compared);
     // every term a comparison did not account for is read as it is
     var starts: [story_.max_stack]u32 = undefined;
     var n: usize = 0;
     for (0..terms.len) |k| {
-        const at = terms.start + @as(u32, @intCast(k)); // safe: below a u32 length
-        const t = w.story.term(at);
+        const t = w.story.term(terms.start + @as(u32, @intCast(k))); // safe: below a u32 length
         if (!compared.isSet(k)) switch (t.op) {
-            .fact, .happened => try fileFact(w, .fromRaw(@intCast(t.arg)), id), // safe: validated to a fact id
+            .fact, .happened => try fileFact(w, at, .fromRaw(@intCast(t.arg))), // safe: validated to a fact id
             .since_changed => {
-                const c = w.story.change(t.arg);
-                try fileFact(w, c.fact, id);
-                try fileFact(w, c.clock, id);
+                const ch = w.story.change(t.arg);
+                try fileFact(w, at, ch.fact);
+                try fileFact(w, at, ch.clock);
             },
-            .query => try w.fileQuery(t, starts[0..n], @intCast(k), terms.start, id), // safe: below a u32 length
-            .keyed => try w.fileKeyed(t, starts[0..n], @intCast(k), terms.start, id), // safe: below a u32 length
+            .role => try w.fileRole(at, .fromRaw(@intCast(t.arg))), // safe: validated to a fact id
+            .query => try w.fileQuery(at, t, starts[0..n], @intCast(k)), // safe: below a u32 length
+            .keyed => try w.fileKeyed(at, t, starts[0..n], @intCast(k)), // safe: below a u32 length
             else => {},
         };
         n = stackAfter(w.story, t, &starts, n, @intCast(k)); // safe: below a u32 length
     }
-    for (also) |f| try fileFact(w, f, id);
-    return thresholds.toOwnedSlice(w.gpa);
+    for (also) |r| if (r.key) |key| try w.fileKey(at, r.fact, key) else try fileFact(w, at, r.fact);
 }
 
-fn fileFact(w: *Watch, f: FactId, id: u32) Error!void {
+fn fileFact(w: *Watch, at: Filing, f: FactId) Error!void {
     const l = &w.by_fact[f.raw()];
-    if (l.items.len > 0 and l.items[l.items.len - 1] == id) return;
-    try l.append(w.gpa, id);
+    if (l.items.len > 0 and l.items[l.items.len - 1] == at.id) return;
+    try l.append(w.gpa, at.id);
+    try at.cond.filed.append(w.gpa, .{ .fact = f });
 }
 
-// `clock OP number`, `number OP clock`, `since_changed(…) OP number` and its mirror: the clock is read only through
-// the comparison, which can flip only where the clock passes the number, so it waits in the clock's heap.
-fn comparisons(w: *Watch, terms: Range, out: *std.ArrayList(Threshold), compared: *std.DynamicBitSetUnmanaged, id: u32) Error!void {
+// A role given is a constant, which nothing wakes; one not given reads as its fact, for the thing the condition is
+// for where it is kept per thing.
+fn fileRole(w: *Watch, at: Filing, f: FactId) Error!void {
+    for (at.cond.roles) |r| if (r.fact.eql(f)) return;
+    if (w.story.fact(f).key != .none and at.cond.this != facts.Value.no_ref) return w.fileKey(at, f, at.cond.this);
+    try fileFact(w, at, f);
+}
+
+// A fact kept per thing, read for one key.
+fn fileKey(w: *Watch, at: Filing, f: FactId, key: facts.Key) Error!void {
+    const gop = try w.by_key.getOrPut(w.gpa, .{ .fact = f.raw(), .key = key });
+    if (!gop.found_existing) {
+        gop.value_ptr.* = .empty;
+        try w.keys_of[f.raw()].append(w.gpa, key);
+    }
+    try gop.value_ptr.append(w.gpa, at.id);
+    try at.cond.filed.append(w.gpa, .{ .key = .{ .fact = f.raw(), .key = key } });
+}
+
+// `clock OP number`, `number OP clock`, `since_changed(…) OP number`, a builtin that moves with a clock compared
+// with a number, and their mirrors: the clock is read only through the comparison, which can flip only where the
+// clock passes the number, so it waits in the clock's heap.
+fn comparisons(w: *Watch, at: Filing, compared: *std.DynamicBitSetUnmanaged) Error!void {
+    const terms = at.cond.terms;
     if (terms.len < 3) return;
     for (0..terms.len - 2) |k| {
         const a = w.story.term(terms.start + @as(u32, @intCast(k))); // safe: below a u32 length
@@ -384,14 +501,21 @@ fn comparisons(w: *Watch, terms: Range, out: *std.ArrayList(Threshold), compared
             .since_changed => blk: {
                 const c = w.story.change(clocky.arg);
                 // a change of the fact moves where the comparison flips, so the fact wakes it too
-                try fileFact(w, c.fact, id);
+                try fileFact(w, at, c.fact);
                 break :blk .{ .clock = c.clock, .k = w.story.int(number.arg), .at = c.at, .slot = 0 };
+            },
+            .builtin => blk: {
+                // what else the builtin reads wakes it, its package says: the clock waits in the heap
+                const clock = w.story.builtin(clocky.arg).clock orelse continue;
+                const pos = terms.start + @as(u32, @intCast(if (b.op == .int) k else k + 1)); // safe: below a u32 length
+                break :blk .{ .clock = clock, .k = w.story.int(number.arg), .at = null, .builtin = pos, .slot = 0 };
             },
             else => continue,
         };
         var armed = t;
-        armed.slot = try w.heaps[t.clock.raw()].slot(w.gpa, id);
-        try out.append(w.gpa, armed);
+        try at.cond.thresholds.ensureUnusedCapacity(w.gpa, 1);
+        armed.slot = try w.heaps[t.clock.raw()].slot(w.gpa, at.id);
+        at.cond.thresholds.appendAssumeCapacity(armed);
         compared.set(k);
         compared.set(k + 1);
     }
@@ -401,7 +525,8 @@ fn comparisons(w: *Watch, terms: Range, out: *std.ArrayList(Threshold), compared
 // the stamp's whole family.
 // `starts` are where each value on the stack began, `k` the query's place in the condition: an argument written as
 // one constant term is known now.
-fn fileQuery(w: *Watch, t: Term, starts: []const u32, k: u32, base: u32, id: u32) Error!void {
+fn fileQuery(w: *Watch, at: Filing, t: Term, starts: []const u32, k: u32) Error!void {
+    const base = at.cond.terms.start;
     const x = w.story.externFn(.fromRaw(@intCast(t.arg))); // safe: validated to an extern id
     const st = x.stamp orelse return;
     const family = familyIndex(w.story, st.family) orelse return;
@@ -414,34 +539,31 @@ fn fileQuery(w: *Watch, t: Term, starts: []const u32, k: u32, base: u32, id: u32
         if (st.keys & (@as(u32, 1) << @intCast(p)) == 0) continue; // safe: at most max_params parameters
         const from = starts[first + p];
         const to = if (p + 1 < params) starts[first + p + 1] else k;
-        const v = if (to - from == 1) w.constantAt(base + from) else null;
+        const v = if (to - from == 1) w.constantAt(at.cond, base + from) else null;
         if (v) |value| {
             keyed[nk] = value;
             nk += 1;
         } else exact = false;
     }
-    const key: u64 = if (exact) keyHash(keyed[0..nk]) else 0;
-    const gop = try w.by_stamp.getOrPut(w.gpa, .{ .family = family, .key = key });
+    const key: StampKey = .{ .family = family, .key = if (exact) keyHash(keyed[0..nk]) else 0 };
+    const gop = try w.by_stamp.getOrPut(w.gpa, key);
     if (!gop.found_existing) gop.value_ptr.* = .empty;
-    try gop.value_ptr.append(w.gpa, id);
+    try gop.value_ptr.append(w.gpa, at.id);
+    try at.cond.filed.append(w.gpa, .{ .stamp = key });
 }
 
 // A read of a fact kept per thing: by its key where the key is one constant term, else by the whole fact.
-fn fileKeyed(w: *Watch, t: Term, starts: []const u32, k: u32, base: u32, id: u32) Error!void {
+fn fileKeyed(w: *Watch, at: Filing, t: Term, starts: []const u32, k: u32) Error!void {
     const f: FactId = .fromRaw(@intCast(t.arg)); // safe: validated to a fact id
     const from = starts[starts.len - 1];
-    const key = if (k - from == 1) (if (w.constantAt(base + from)) |v| run.eval.keyOf(v) else null) else null;
-    const exact = key orelse return fileFact(w, f, id);
-    const gop = try w.by_key.getOrPut(w.gpa, .{ .fact = f.raw(), .key = exact });
-    if (!gop.found_existing) {
-        gop.value_ptr.* = .empty;
-        try w.keys_of[f.raw()].append(w.gpa, exact);
-    }
-    try gop.value_ptr.append(w.gpa, id);
+    const key = if (k - from == 1) (if (w.constantAt(at.cond, at.cond.terms.start + from)) |v| run.eval.keyOf(v) else null) else null;
+    const exact = key orelse return fileFact(w, at, f);
+    try w.fileKey(at, f, exact);
 }
 
-// The value a single constant term pushes, if it is one.
-fn constantAt(w: *const Watch, at: u32) ?facts.Value {
+// The value a single constant term pushes, if it is one: a constant written, the thing the condition is for, or a
+// role it was given.
+fn constantAt(w: *const Watch, c: *const Cond, at: u32) ?facts.Value {
     const t = w.story.term(at);
     return switch (t.op) {
         .thing => .{ .ref = w.host.refs[t.arg] },
@@ -449,6 +571,10 @@ fn constantAt(w: *const Watch, at: u32) ?facts.Value {
         .int => .{ .int = w.story.int(t.arg) },
         .true => .{ .boolean = true },
         .false => .{ .boolean = false },
+        .this => .{ .ref = c.this },
+        .role => for (c.roles) |r| {
+            if (r.fact.raw() == t.arg) break r.value;
+        } else null,
         else => null,
     };
 }

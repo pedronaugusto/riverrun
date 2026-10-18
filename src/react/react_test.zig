@@ -10,6 +10,7 @@ const facts = @import("../facts.zig");
 const story = @import("../story.zig");
 const run = @import("../run.zig");
 const Rules = @import("Rules.zig");
+const Watch = @import("Watch.zig");
 const testing = @import("../run/testing.zig");
 
 const gpa = std.testing.allocator;
@@ -224,4 +225,78 @@ test "a stamp wakes only the conditions filed under its keys" {
     try r.watch.bump("stock", &.{.{ .int = 3 }});
     try f.apply(try r.step());
     try std.testing.expect(f.memory.get(f.fact("ten")).boolean);
+}
+
+test "a condition watched for a thing, with its roles, wakes for that thing's keys alone" {
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const world = try b.scope("world");
+    const bounty = try b.refKind("bounty");
+    const person = try b.refKind("person");
+    const alive = try b.fact(.{ .name = "alive", .scope = world, .kind = .boolean, .key = .{ .ref = person } });
+    const asked = try b.fact(.{ .name = "bounty.asked", .scope = world, .kind = .boolean, .key = .{ .ref = bounty } });
+    const giver = try b.fact(.{ .name = "bounty.giver", .scope = world, .kind = .ref, .ref_kind = person, .role = .game, .key = .{ .ref = bounty } });
+    // `asked and not alive(giver)`, in a quest kept per bounty
+    const when = try b.expr(&.{ .of(.this, bounty.raw()), .of(.keyed, asked.raw()), .of(.role, giver.raw()), .of(.keyed, alive.raw()), .of(.not, 0), .of(.@"and", 0) });
+    var f: Fixture = undefined;
+    try f.init(try testing.finish(&b, gpa));
+    defer f.deinit();
+    var w: Watch = try .init(gpa, &f.story, f.memory.store(), &f.host, &f.owners, .{});
+    defer w.deinit();
+    const first = try w.add(when, 1, .{ .this = 7, .roles = &.{.{ .fact = giver, .value = .{ .ref = 41 } }} });
+    _ = try w.add(when, 2, .{ .this = 8, .roles = &.{.{ .fact = giver, .value = .{ .ref = 42 } }} });
+    try std.testing.expectEqual(@as(usize, 2), (try w.step()).len);
+    // the first bounty's giver dies, and another bounty is asked: each wakes its own condition
+    try f.memory.setKey(alive, 41, .{ .boolean = false });
+    try f.memory.setKey(asked, 7, .{ .boolean = true });
+    const after = try w.step();
+    try std.testing.expectEqual(@as(usize, 1), after.len);
+    try std.testing.expectEqual(@as(u32, 1), after[0].user);
+    try std.testing.expect(after[0].holds);
+    try f.memory.setKey(alive, 99, .{ .boolean = true });
+    try std.testing.expectEqual(@as(usize, 0), (try w.step()).len);
+    // removed, it is never evaluated, and its id is the next condition's
+    try w.remove(first);
+    try f.memory.setKey(asked, 7, .{ .boolean = false });
+    try std.testing.expectEqual(@as(usize, 0), (try w.step()).len);
+    try std.testing.expectEqual(first, try w.add(when, 3, .{ .this = 7, .roles = &.{.{ .fact = giver, .value = .{ .ref = 41 } }} }));
+    const again = try w.step();
+    try std.testing.expectEqual(@as(usize, 1), again.len);
+    try std.testing.expectEqual(@as(u32, 3), again[0].user);
+}
+
+test "a builtin that moves with a clock waits in the clock's heap" {
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const world = try b.scope("world");
+    const day = try b.fact(.{ .name = "day", .scope = world, .kind = .int, .role = .clock });
+    const since = try b.builtinCall("quest", "since", &.{ 0, day.raw() }, .int, day);
+    const when = try b.expr(&.{ .of(.builtin, since), .of(.int, try b.int(3)), .of(.gt, 0) });
+    var f: Fixture = undefined;
+    try f.init(try testing.finish(&b, gpa));
+    defer f.deinit();
+    // the package's answer: days since the second
+    const Since = struct {
+        fn call(user: ?*anyopaque, s: *const story.Story, _: u32, _: run.Context) error{BuiltinFailed}!facts.Value {
+            const m: *facts.Memory = @ptrCast(@alignCast(user)); // safe: the test's own store
+            return .{ .int = m.get(s.factNamed("day").?).int - 2 };
+        }
+    };
+    var w: Watch = try .init(gpa, &f.story, f.memory.store(), &f.host, &f.owners, .{ .builtins = .{ .user = &f.memory, .call = Since.call } });
+    defer w.deinit();
+    try f.memory.set(day, .{ .int = 2 });
+    _ = try w.add(when, 0, .{});
+    try std.testing.expect(!(try w.step())[0].holds);
+    var evaluated: usize = 0;
+    var t: i64 = 3;
+    while (t <= 4) : (t += 1) {
+        try f.memory.set(day, .{ .int = t });
+        evaluated += (try w.step()).len;
+    }
+    // nothing is evaluated until the clock comes near the number it is compared with
+    try std.testing.expectEqual(@as(usize, 0), evaluated);
+    try f.memory.set(day, .{ .int = 6 });
+    const due = try w.step();
+    try std.testing.expectEqual(@as(usize, 1), due.len);
+    try std.testing.expect(due[0].holds);
 }

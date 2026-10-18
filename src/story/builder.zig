@@ -296,8 +296,9 @@ pub const Builder = struct {
         e.keys = keys;
     }
 
-    /// A call of a registered kind's builtin, for `Term.of(.builtin, i)`.
-    pub fn builtinCall(b: *Builder, kind: []const u8, name: []const u8, args: []const u32, returns: facts.Kind) Error!u24 {
+    /// A call of a registered kind's builtin, for `Term.of(.builtin, i)`; `clock` is the `(clock)` an int answer
+    /// moves with, if it moves with one.
+    pub fn builtinCall(b: *Builder, kind: []const u8, name: []const u8, args: []const u32, returns: facts.Kind, clock: ?FactId) Error!u24 {
         const start = try count(b.builtin_args.items.len);
         try b.builtin_args.appendSlice(b.gpa, args);
         try b.builtins.append(b.gpa, .{
@@ -305,6 +306,7 @@ pub const Builder = struct {
             .name = try b.declName(name),
             .args = .{ .start = start, .len = try count(args.len) },
             .returns = @backingInt(returns),
+            .clock = if (clock) |k| k.raw() else format.none16,
         });
         return arg(b.builtins.items.len - 1);
     }

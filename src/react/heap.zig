@@ -1,7 +1,8 @@
 //! One clock's waiting comparisons: a binary heap of the instants at which
 //! each next flips, indexed by slot so a condition moves its own entry in
-//! place. A slot is a condition's for good once given; the heap's room is
-//! taken when a slot is, so arming and disarming never allocate.
+//! place. A slot is a condition's until it is released, then the next
+//! slot's; the heap's room is taken when a slot is, so arming and disarming
+//! never allocate.
 
 const std = @import("std");
 
@@ -17,27 +18,42 @@ pub const Heap = struct {
     /// By slot: where its entry is in `items`, or `none` while it waits for nothing.
     pos: std.ArrayList(u32) = .empty,
     items: std.ArrayList(Entry) = .empty,
+    /// Slots released, given again before new ones.
+    free: std.ArrayList(u32) = .empty,
 
     pub fn deinit(h: *Heap, gpa: std.mem.Allocator) void {
         h.conds.deinit(gpa);
         h.pos.deinit(gpa);
         h.items.deinit(gpa);
+        h.free.deinit(gpa);
         h.* = undefined;
     }
 
-    /// A new slot for `cond`, waiting for nothing yet.
+    /// A slot for `cond`, waiting for nothing yet: one released before, or a new one.
     pub fn slot(h: *Heap, gpa: std.mem.Allocator, cond: u32) error{OutOfMemory}!u32 {
+        if (h.free.pop()) |s| {
+            h.conds.items[s] = cond;
+            return s;
+        }
         if (h.conds.items.len == none - 1) return error.OutOfMemory;
         try h.conds.append(gpa, cond);
         errdefer _ = h.conds.pop();
         try h.pos.append(gpa, none);
         errdefer _ = h.pos.pop();
         try h.items.ensureTotalCapacity(gpa, h.conds.items.len);
+        try h.free.ensureTotalCapacity(gpa, h.conds.items.len);
         return @intCast(h.conds.items.len - 1); // safe: checked above
     }
 
+    /// The slots held now.
     pub fn slots(h: *const Heap) usize {
-        return h.conds.items.len;
+        return h.conds.items.len - h.free.items.len;
+    }
+
+    /// `s` waits for nothing, and is no longer its condition's.
+    pub fn release(h: *Heap, s: u32) void {
+        h.remove(s);
+        h.free.appendAssumeCapacity(s);
     }
 
     /// The soonest instant, and whose it is.
@@ -132,4 +148,10 @@ test "the soonest instant comes first, and a slot moves its own entry" {
     h.remove(b);
     try std.testing.expectEqual(@as(?Top, null), h.peek());
     try std.testing.expectEqual(@as(usize, 3), h.slots());
+    // a slot released is the next condition's
+    h.release(b);
+    try std.testing.expectEqual(@as(usize, 2), h.slots());
+    try std.testing.expectEqual(b, try h.slot(gpa, 13));
+    h.set(b, 5);
+    try std.testing.expectEqual(@as(u32, 13), h.peek().?.cond);
 }

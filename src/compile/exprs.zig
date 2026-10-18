@@ -153,8 +153,13 @@ fn builtin(c: *Compiler, b: sym.BuiltinRef) Error!u24 {
         .section => |id| c.section(id).raw(),
         .fact => |id| c.fact(id).raw(),
     };
+    // an answer that moves with a clock its argument names waits in the clock's heap
+    const clock: ?story.FactId = if (def.moves) |i| if (i >= b.args.len) null else switch (b.args[i]) {
+        .fact => |id| if (c.checked.facts[id.raw()].clock) c.fact(id) else null,
+        else => null,
+    } else null;
     return c.b.builtinCall(kind.name, def.name, args, switch (def.returns) {
         .boolean => .boolean,
         .int => .int,
-    });
+    }, clock);
 }

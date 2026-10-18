@@ -12,6 +12,8 @@ pub const Rules = @import("react/Rules.zig");
 pub const CondId = Watch.CondId;
 pub const Evaluated = Watch.Evaluated;
 pub const Options = Watch.Options;
+pub const For = Watch.For;
+pub const Read = Watch.Read;
 pub const Fired = Rules.Fired;
 pub const max_rounds = Rules.max_rounds;
 

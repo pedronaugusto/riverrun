@@ -201,6 +201,10 @@ pub const Builtin = struct {
     name: []const u8,
     params: []const Arg,
     returns: Returns,
+    /// The argument whose fact an int answer moves with, one for one, while it moves at all, where that fact is a
+    /// `(clock)` (`since(stage, day)`): what watches the call waits in the clock's heap for the number it is
+    /// compared with, as for the clock itself.
+    moves: ?u8 = null,
 
     /// What a builtin's argument names: never a value, always something of the story.
     pub const Arg = enum {
