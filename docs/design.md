@@ -159,8 +159,10 @@ A conversation with several speakers needs no construct of its own:
 - **An interface:** riverrun reads and writes facts by id and type through a store the host gives it. The default
   store is in memory; an engine can back facts with its own world state, so they save, replicate and journal as its
   other state does.
-- **A change notifies only what reads it:** a subscriber names facts and learns which changed. A quest system stands
-  on this.
+- **A change notifies only what reads it:** a subscriber names facts and learns which changed. A store marks each
+  change, a fact kept per thing with its key, in a log of its latest marks, so what reads many facts follows the
+  marks rather than asking each one, and asks every stamp only once it has fallen behind the log. A quest system
+  stands on this.
 - **A snapshot** of a scope is versioned bytes with the story's hash. Restored under another version, facts are
   matched by name and the dropped and new ones are reported; a readable JSON form goes through strand.
 

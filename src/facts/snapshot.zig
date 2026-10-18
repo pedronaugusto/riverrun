@@ -312,7 +312,7 @@ fn apply(m: *Memory, scope: ScopeId, staged: []Staged) Error!void {
     for (staged) |st| {
         if (st.key) |key| {
             if (st.value.eql(.initial(st.value))) continue;
-            m.changes.mark(st.id);
+            m.changes.markKey(st.id, key);
             m.keyed[st.id.raw()].putAssumeCapacity(key, .{ .value = st.value, .stamp = m.changes.now() });
             continue;
         }

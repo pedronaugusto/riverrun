@@ -40,6 +40,9 @@ pub const Call = store.Call;
 pub const apply = store.apply;
 
 pub const Changes = changes.Changes;
+pub const Mark = changes.Mark;
+/// The most marks a store's log keeps.
+pub const log_size = changes.log_size;
 pub const Watcher = changes.Watcher;
 
 pub const Memory = @import("facts/memory.zig").Memory;

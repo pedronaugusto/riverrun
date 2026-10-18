@@ -300,3 +300,29 @@ test "a builtin that moves with a clock waits in the clock's heap" {
     try std.testing.expectEqual(@as(usize, 1), due.len);
     try std.testing.expect(due[0].holds);
 }
+
+test "what changed is read from the store's log, or from every stamp once the log is left behind" {
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const world = try b.scope("world");
+    const lit = try b.fact(.{ .name = "lit", .scope = world, .kind = .boolean });
+    const noise = try b.fact(.{ .name = "noise", .scope = world, .kind = .int });
+    const when = try b.expr(&.{.of(.fact, lit.raw())});
+    var f: Fixture = undefined;
+    try f.init(try testing.finish(&b, gpa));
+    defer f.deinit();
+    var w: Watch = try .init(gpa, &f.story, f.memory.store(), &f.host, &f.owners, .{});
+    defer w.deinit();
+    _ = try w.add(when, 0, .{});
+    _ = try w.step();
+    for ([_]usize{ 10, facts.log_size }) |n| {
+        // many marks of what nothing reads, and one of what the condition reads, among them
+        for (0..n) |k| try f.memory.set(noise, .{ .int = @intCast(k + 1) }); // safe: a small count
+        try f.memory.set(lit, .{ .boolean = !f.memory.get(lit).boolean });
+        const after = try w.step();
+        try std.testing.expectEqual(@as(usize, 1), after.len);
+        try std.testing.expectEqual(f.memory.get(lit).boolean, after[0].holds);
+        try f.memory.set(noise, .{ .int = 0 });
+        try std.testing.expectEqual(@as(usize, 0), (try w.step()).len);
+    }
+}

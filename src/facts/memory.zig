@@ -128,7 +128,7 @@ pub const Memory = struct {
             if (have.value.eql(v)) return;
         } else if (v.eql(.initial(d.kind))) return;
         if (!map.contains(key) and map.count() == value.max_keys) return error.TooManyKeys;
-        m.changes.mark(fact);
+        m.changes.markKey(fact, key);
         try map.put(m.gpa, key, .{ .value = v, .stamp = m.changes.now() });
     }
 

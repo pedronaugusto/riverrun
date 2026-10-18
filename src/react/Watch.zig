@@ -13,11 +13,13 @@
 //! for a thing (`this`, where its section is kept per thing) and given roles:
 //! both are constants to it, so `alive(giver)` is filed under the giver's key
 //! alone. A condition removed is taken out of all it was filed under, and its
-//! id is the next one added's. A step takes what changed since the last (the store's stamps,
-//! the stamps the host bumped, the clocks' moves), marks the conditions filed
-//! there, and evaluates them in the order they were added, each once. A
-//! clock moving wakes only the conditions whose moment came; one moving back
-//! (a restored moment) wakes all that read it.
+//! id is the next one added's. A step takes what changed since the last (the
+//! store's marks, the stamps the host bumped, the clocks' moves), marks the
+//! conditions filed there, and evaluates them in the order they were added,
+//! each once. It reads what changed from the store's log while it keeps up,
+//! so a step's work follows the marks, not the facts watched. A clock moving
+//! wakes only the conditions whose moment came; one moving back (a restored
+//! moment) wakes all that read it.
 //!
 //! A `(moment)` is what happened: it holds the value the host wrote until a
 //! step has evaluated every condition marked, then goes back to its initial
@@ -352,21 +354,17 @@ fn contextOf(w: *Watch, c: *const Cond) run.eval.Context {
 
 // ---------------------------------------------------------------- what changed
 
+// What changed since the last step, from the store's log while it holds it, so the work follows the marks; else
+// from the stamps of every fact read.
 fn markChanged(w: *Watch) Error!void {
     const changes = w.store.changes();
     const before = w.watcher.seen;
-    const changed = w.watcher.take(changes, w.changed) catch unreachable; // unreachable: `changed` holds the whole interest
-    // a fact `since_changed` watches keeps the clock's value at its change, before anything reads it
-    for (changed) |f| for (w.changes_of[f.raw()].items) |ci| {
-        const c = w.story.change(ci);
-        try w.store.set(c.at, .{ .int = w.store.get(c.clock).int });
-    };
-    for (changed) |f| {
-        for (w.by_fact[f.raw()].items) |ci| w.marked.set(ci);
-        for (w.keys_of[f.raw()].items) |key| if (w.store.keyStamp(f, key) > before) {
-            if (w.by_key.get(.{ .fact = f.raw(), .key = key })) |l| for (l.items) |ci| w.marked.set(ci);
-        };
-        if (w.story.fact(f).role == .clock) w.clockMoved(f);
+    if (changes.marksSince(before)) |logged| {
+        var marks = logged;
+        while (marks.next()) |m| try w.changedOne(m.fact, m.key, before);
+    } else {
+        const changed = w.watcher.take(changes, w.changed) catch unreachable; // unreachable: `changed` holds the whole interest
+        for (changed) |f| try w.changedOne(f, null, before);
     }
     for (w.bumped.items) |b| {
         if (w.by_stamp.get(b)) |l| for (l.items) |ci| w.marked.set(ci);
@@ -375,6 +373,22 @@ fn markChanged(w: *Watch) Error!void {
     w.bumped.clearRetainingCapacity();
     // what `since_changed` wrote is the evaluator's own: no condition reads it as a fact, so it is seen and passed
     w.watcher.seen = changes.now();
+}
+
+// One fact that changed, for one key where the store said which: what reads it is marked.
+fn changedOne(w: *Watch, f: FactId, key: ?facts.Key, before: u64) Error!void {
+    // a fact `since_changed` watches keeps the clock's value at its change, before anything reads it
+    for (w.changes_of[f.raw()].items) |ci| {
+        const c = w.story.change(ci);
+        try w.store.set(c.at, .{ .int = w.store.get(c.clock).int });
+    }
+    for (w.by_fact[f.raw()].items) |ci| w.marked.set(ci);
+    if (key) |k| {
+        if (w.by_key.get(.{ .fact = f.raw(), .key = k })) |l| for (l.items) |ci| w.marked.set(ci);
+    } else for (w.keys_of[f.raw()].items) |k| if (w.store.keyStamp(f, k) > before) {
+        if (w.by_key.get(.{ .fact = f.raw(), .key = k })) |l| for (l.items) |ci| w.marked.set(ci);
+    };
+    if (w.story.fact(f).role == .clock) w.clockMoved(f);
 }
 
 fn clockMoved(w: *Watch, clock: FactId) void {
