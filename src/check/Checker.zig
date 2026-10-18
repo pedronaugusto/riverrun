@@ -122,7 +122,8 @@ pub const Schema = struct {
         judge: Judge,
     };
 
-    /// What a package makes of a tag's values: it reports what is wrong with `Checker.err`, at the tag.
+    /// What a package makes of a tag's values: it reports what is wrong with `Checker.err`, at the value
+    /// (`tag.at(i)`).
     pub const Judge = *const fn (c: *Checker, t: Tagged) Error!void;
 
     /// A tag being judged, and where it stands.

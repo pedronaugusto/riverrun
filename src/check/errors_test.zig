@@ -233,8 +233,8 @@ test "a tag is one the host knows, where it may stand, with values of its type" 
         \\-> end
     , .{ .schema = &schema });
     defer o.deinit();
-    try o.has(.err, 7, 34, "`heard` takes one of stairs, piano: `door` is not one");
-    try o.has(.err, 8, 24, "`at` takes a number: `soon` is not one");
+    try o.has(.err, 7, 47, "`heard` takes one of stairs, piano: `door` is not one");
+    try o.has(.err, 8, 27, "`at` takes a number: `soon` is not one");
     try o.has(.err, 9, 26, "`pause` is not a tag the host knows");
     try o.has(.err, 10, 14, "`at` is not a tag of a section");
     try std.testing.expectEqual(@as(usize, 4), o.diags.list.items.len);
@@ -648,16 +648,16 @@ test "a name a section declares within it never hides the story's own there" {
     try o.only(.err, 4, 3, "`met` in `stranger` would hide `met`, declared at a.river:2:3, inside it: name one otherwise");
 }
 
-test "a package judges its own tags' values, and says what is wrong where the tag stands" {
+test "a package judges its own tags' values, and says what is wrong where the value is written" {
     const Stages = struct {
         // `after` names other stages of the quest it stands in
         fn after(c: *check.Checker, t: check.Schema.Tagged) error{OutOfMemory}!void {
             const s = c.section(t.section.?);
-            for (t.tag.values) |v| {
-                if (std.mem.eql(u8, s.parts[t.part.?].name, v)) try c.err(t.tag.key.span, "`{s}` comes after itself", .{v});
+            for (t.tag.values, 0..) |v, i| {
+                if (std.mem.eql(u8, s.parts[t.part.?].name, v)) try c.err(t.tag.at(i), "`{s}` comes after itself", .{v});
                 for (s.parts) |p| {
                     if (std.mem.eql(u8, p.name, v)) break;
-                } else try c.err(t.tag.key.span, "`{s}` is not a stage of `{s}`", .{ v, s.name });
+                } else try c.err(t.tag.at(i), "`{s}` is not a stage of `{s}`", .{ v, s.name });
             }
         }
     };
@@ -672,9 +672,9 @@ test "a package judges its own tags' values, and says what is wrong where the ta
         \\= done    # after done
     , .{ .kinds = &.{.{ .name = "quest", .schema = &quest_tags }} });
     defer o.deinit();
-    try o.has(.err, 3, 13, "`akked` is not a stage of `pelts`");
+    try o.has(.err, 3, 26, "`akked` is not a stage of `pelts`");
     try o.has(.err, 4, 13, "`after` takes at least one value");
-    try o.has(.err, 5, 13, "`done` comes after itself");
+    try o.has(.err, 5, 19, "`done` comes after itself");
     try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
 }
 

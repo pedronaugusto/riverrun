@@ -396,15 +396,19 @@ const Reader = struct {
             const item = std.mem.trim(u8, raw, " ");
             if (item.len == 0) continue;
             const sp = std.mem.findScalar(u8, item, ' ') orelse item.len;
+            const col = l.tags_col + @as(u32, @intCast(items.last + lead(raw))); // safe: a line is at most max_line
             var values: std.ArrayList([]const u8) = .empty;
+            var spans: std.ArrayList(source.Span) = .empty;
             var vs = Split.init(item[sp..], ",");
             while (vs.next()) |v| {
                 const value = std.mem.trim(u8, v, " ");
                 if (value.len == 0) continue;
-                try values.append(r.arena, if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') value[1 .. value.len - 1] else value);
+                const quoted = value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"';
+                try values.append(r.arena, if (quoted) value[1 .. value.len - 1] else value);
+                const offset = sp + vs.last + lead(v) + @intFromBool(quoted);
+                try spans.append(r.arena, .{ .file = r.file, .line = l.number, .col = col + @as(u32, @intCast(offset)) }); // safe: a line is at most max_line
             }
-            const col = l.tags_col + @as(u32, @intCast(items.last + lead(raw)));
-            try out.append(r.arena, .{ .key = .{ .text = item[0..sp], .span = .{ .file = r.file, .line = l.number, .col = col } }, .values = try values.toOwnedSlice(r.arena) });
+            try out.append(r.arena, .{ .key = .{ .text = item[0..sp], .span = .{ .file = r.file, .line = l.number, .col = col } }, .values = try values.toOwnedSlice(r.arena), .spans = try spans.toOwnedSlice(r.arena) });
         }
         return out.toOwnedSlice(r.arena);
     }
@@ -951,9 +955,26 @@ test "a module, clocks, refs and the host's vocabulary with outcomes and stamps"
     try std.testing.expectEqualStrings("kind", ext[1].reads.?.keys[0].text);
     try std.testing.expect(ext[2].action and ext[2].returns != null and ext[2].params.len == 2);
     try std.testing.expect(!ext[3].action and ext[3].returns == null and ext[3].params.len == 2);
-    // a tag's span is where its key is written
+    // a tag's span is where its key is written, and each value's where it is
     try std.testing.expectEqual(@as(u32, 17), f.sections[0].tags[0].key.span.col);
     try std.testing.expectEqual(@as(u32, 36), f.sections[0].tags[1].key.span.col);
+    try std.testing.expectEqual(@as(u32, 22), f.sections[0].tags[0].at(0).col);
+    try std.testing.expectEqual(@as(u32, 41), f.sections[0].tags[1].at(0).col);
+}
+
+test "a tag's values are placed where they are written, inside their quotes" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(gpa);
+    const f = try parseFile(arena.allocator(), gpa, &diags, 0, "a.river", "== a   # heard piano,  door · title \"Who · was he?\"\n-> end");
+    const tags = f.sections[0].tags;
+    try std.testing.expectEqualStrings("door", tags[0].values[1]);
+    try std.testing.expectEqual(@as(u32, 16), tags[0].at(0).col);
+    try std.testing.expectEqual(@as(u32, 24), tags[0].at(1).col);
+    try std.testing.expectEqualStrings("Who · was he?", tags[1].values[0]);
+    try std.testing.expectEqual(@as(u32, 39), tags[1].at(0).col);
 }
 
 test "an int changes by a number or a constant, never by an expression" {

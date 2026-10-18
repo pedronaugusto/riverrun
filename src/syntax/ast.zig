@@ -120,6 +120,13 @@ pub const Subsection = struct {
 pub const Tag = struct {
     key: Name,
     values: []const []const u8,
+    /// Where each value is written, one for each of `values`: what is wrong with a value is said there.
+    spans: []const Span = &.{},
+
+    /// Where value `i` is written; the key's place where the reader kept none.
+    pub fn at(t: Tag, i: usize) Span {
+        return if (i < t.spans.len) t.spans[i] else t.key.span;
+    }
 };
 
 pub const Stmt = struct {

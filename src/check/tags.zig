@@ -2,7 +2,8 @@
 //! and is an edge for reachability: a section only a mechanic leads to is
 //! still reached. A key that `leads` hands a section's end to the host,
 //! which goes on to the section the tag names. A value a package judges is
-//! handed to its judge, with where the tag stands.
+//! handed to its judge, with where the tag stands. What is wrong with a
+//! value is said where the value is written; a wrong count, at the key.
 
 const std = @import("std");
 const syntax = @import("../syntax.zig");
@@ -121,17 +122,17 @@ fn values(c: *Checker, where: Where, tag: *const ast.Tag, key: *const Schema.Key
     const at = where.place;
     var sections: std.ArrayList(sym.SectionId) = .empty;
     if (key.value == .text) try c.text_tags.put(c.arena, tag, {});
-    for (tag.values) |v| switch (key.value) {
+    for (tag.values, 0..) |v, i| switch (key.value) {
         .none, .text, .judge => {},
-        .number => if (!isNumber(v)) try c.err(tag.key.span, "`{s}` takes a number: `{s}` is not one", .{ key.name, v }),
-        .word => if (!isWord(v)) try c.err(tag.key.span, "`{s}` takes a word: `{s}` is not one", .{ key.name, v }),
+        .number => if (!isNumber(v)) try c.err(tag.at(i), "`{s}` takes a number: `{s}` is not one", .{ key.name, v }),
+        .word => if (!isWord(v)) try c.err(tag.at(i), "`{s}` takes a word: `{s}` is not one", .{ key.name, v }),
         .words => |ws| if (!within(ws, v)) {
-            try c.err(tag.key.span, "`{s}` takes one of {s}: `{s}` is not one", .{ key.name, try std.mem.join(c.arena, ", ", ws), v });
+            try c.err(tag.at(i), "`{s}` takes one of {s}: `{s}` is not one", .{ key.name, try std.mem.join(c.arena, ", ", ws), v });
         },
-        .values_of => |fact| try valueOf(c, module, tag, key, fact, v),
+        .values_of => |fact| try valueOf(c, module, tag, key, fact, i),
         .section => {
             const to = c.sectionNamed(module, v) orelse {
-                try c.err(tag.key.span, "`{s}` names a section: nothing is called `{s}`", .{ key.name, v });
+                try c.err(tag.at(i), "`{s}` names a section: nothing is called `{s}`", .{ key.name, v });
                 continue;
             };
             try sections.append(c.arena, to);
@@ -144,11 +145,13 @@ fn values(c: *Checker, where: Where, tag: *const ast.Tag, key: *const Schema.Key
     if (sections.items.len > 0) try c.tags.put(c.arena, tag, try sections.toOwnedSlice(c.arena));
 }
 
-fn valueOf(c: *Checker, module: sym.ModuleId, tag: *const ast.Tag, key: *const Schema.Key, fact: []const u8, v: []const u8) Error!void {
+// The tag's value `i`, one of the values of the story's fact `fact`.
+fn valueOf(c: *Checker, module: sym.ModuleId, tag: *const ast.Tag, key: *const Schema.Key, fact: []const u8, i: usize) Error!void {
     const e = enumNamed(c, module, fact) orelse {
         return c.err(tag.key.span, "the host's `{s}` takes the values of `{s}`, which the story does not declare as `one of` or `set of`", .{ key.name, fact });
     };
-    if (c.valueOf(e, v) == null) try c.err(tag.key.span, "`{s}` takes one of {s}: `{s}` is not one", .{ key.name, try c.valueList(e), v });
+    const v = tag.values[i];
+    if (c.valueOf(e, v) == null) try c.err(tag.at(i), "`{s}` takes one of {s}: `{s}` is not one", .{ key.name, try c.valueList(e), v });
 }
 
 fn enumNamed(c: *const Checker, module: sym.ModuleId, fact: []const u8) ?sym.EnumId {

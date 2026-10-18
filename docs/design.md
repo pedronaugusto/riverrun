@@ -231,8 +231,8 @@ a name the story declares is refused.
 
 A key's value may be judged rather than typed (`Schema.Value.judge`), the key a kind's or one a package adds
 anywhere: the package is handed each such tag where it stands (its section and part, its place and the tags beside
-it) with the checker, and reports what is wrong at the tag, as `.values_of` and `.section` are riverrun's own
-judgements. An instant of a calendar, a schedule's unit, a reference to a quest's stage: what a word or a fixed
+it) with the checker, and reports what is wrong where the value is written (`Tag.at`, each value's place), as
+`.values_of` and `.section` are riverrun's own judgements. An instant of a calendar, a schedule's unit, a reference to a quest's stage: what a word or a fixed
 list cannot say. A tag whose count is wrong is reported for that and never judged.
 
 A package reports through riverrun's diagnostics, never beside them. Its checks are a pass of the checker's
