@@ -53,6 +53,7 @@ pub const RestoreError = cursors.RestoreError;
 test {
     _ = Session_;
     _ = cursors;
+    _ = @import("run/Places.zig");
     _ = @import("run/eval.zig");
     _ = @import("run/text.zig");
     _ = @import("run/pool.zig");

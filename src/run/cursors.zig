@@ -21,6 +21,7 @@ const std = @import("std");
 const story = @import("../story.zig");
 const flow_ = @import("flow.zig");
 const pool = @import("pool.zig");
+const Places = @import("Places.zig");
 
 const NodeId = story.NodeId;
 const SectionId = story.SectionId;
@@ -53,69 +54,6 @@ pub const Report = struct {
     dropped: u8 = 0,
 };
 
-/// Every step's section and place in it, by walking each section from its entry.
-const Places = struct {
-    of: std.AutoHashMapUnmanaged(u32, Place) = .empty,
-    /// Each section's steps in walk order.
-    order: []std.ArrayList(u32),
-
-    const Place = struct { section: u32, place: u32 };
-
-    fn init(gpa: std.mem.Allocator, s: *const story.Story) error{OutOfMemory}!Places {
-        var p: Places = .{ .order = try gpa.alloc(std.ArrayList(u32), s.len(.sections)) };
-        for (p.order) |*o| o.* = .empty;
-        errdefer p.deinit(gpa);
-        var todo: std.ArrayList(u32) = .empty;
-        defer todo.deinit(gpa);
-        for (0..s.len(.sections)) |i| {
-            const sec = s.section(.fromRaw(@intCast(i))); // safe: below a u32 count
-            try p.walk(gpa, s, @intCast(i), sec.entry, &todo); // safe: below a u32 count
-            for (0..sec.candidates.len) |k| try p.walk(gpa, s, @intCast(i), s.candidate(sec.candidates.start + @as(u32, @intCast(k))).entry, &todo); // safe: below u32 counts
-        }
-        return p;
-    }
-
-    fn deinit(p: *Places, gpa: std.mem.Allocator) void {
-        p.of.deinit(gpa);
-        for (p.order) |*o| o.deinit(gpa);
-        gpa.free(p.order);
-    }
-
-    // Every step reached from `root` without leaving the section, claimed for `section` in walk order.
-    fn walk(p: *Places, gpa: std.mem.Allocator, s: *const story.Story, section: u32, root: ?NodeId, todo: *std.ArrayList(u32)) error{OutOfMemory}!void {
-        const r = root orelse return;
-        try todo.append(gpa, r.raw());
-        while (todo.pop()) |n| {
-            const gop = try p.of.getOrPut(gpa, n);
-            if (gop.found_existing) continue;
-            gop.value_ptr.* = .{ .section = section, .place = @intCast(p.order[section].items.len) }; // safe: below a u32 count
-            try p.order[section].append(gpa, n);
-            var after: [story.max_choices + 2]?NodeId = @splat(null);
-            const node = s.node(.fromRaw(n));
-            switch (node.step) {
-                .line => |x| after[0] = x.next,
-                .choices => |x| {
-                    after[0] = x.next;
-                    for (0..x.choices.len) |k| after[k + 1] = s.choice(x.choices.start + @as(u32, @intCast(k))).target; // safe: below max_choices
-                },
-                .branch => |x| {
-                    after[0] = x.otherwise;
-                    after[1] = x.then;
-                },
-                .gather => |x| after[0] = x.next,
-                .effects => |x| after[0] = x.next,
-                .call => |x| after[0] = x.next,
-                .jump, .ret, .end => {},
-            }
-            var k = after.len;
-            while (k > 0) {
-                k -= 1;
-                if (after[k]) |a| try todo.append(gpa, a.raw());
-            }
-        }
-    }
-};
-
 /// The line id a step is checked by: a line's, or the first choice's; 0 for other steps.
 fn lineOf(s: *const story.Story, id: NodeId) u64 {
     return switch (s.node(id).step) {
@@ -125,10 +63,8 @@ fn lineOf(s: *const story.Story, id: NodeId) u64 {
     };
 }
 
-/// Where each of `flows` is in `s`, as bytes.
-pub fn save(gpa: std.mem.Allocator, s: *const story.Story, flows: []const flow_.Flow) SaveError![]u8 {
-    var places: Places = try .init(gpa, s);
-    defer places.deinit(gpa);
+/// Where each of `flows` is in `s`, as bytes; `places` are the story's.
+pub fn save(gpa: std.mem.Allocator, s: *const story.Story, places: *const Places, flows: []const flow_.Flow) SaveError![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
     const w: Writer = .{ .gpa = gpa, .out = &out };
@@ -140,10 +76,10 @@ pub fn save(gpa: std.mem.Allocator, s: *const story.Story, flows: []const flow_.
         try w.int(u8, if (!f.started) 0 else if (f.ended) 2 else 1);
         if (!f.started or f.ended) continue;
         const at: ?NodeId = if (f.pending == .choices) f.pending.choices.node else f.at;
-        try w.anchor(s, &places, at);
+        try w.anchor(s, places, at);
         try w.int(u32, if (f.pending == .choices) 0 else f.effect_at);
         try w.int(u8, f.depth);
-        for (f.frames[0..f.depth]) |fr| try w.frame(s, &places, fr);
+        for (f.frames[0..f.depth]) |fr| try w.frame(s, places, fr);
     }
     return out.toOwnedSlice(gpa);
 }
@@ -189,10 +125,9 @@ const Writer = struct {
     }
 };
 
-/// Puts the session's flows where `bytes` says, in this story; what could not be kept is reported.
-pub fn restore(gpa: std.mem.Allocator, s: *const story.Story, flows: []flow_.Flow, bytes: []const u8) RestoreError!Report {
-    var places: Places = try .init(gpa, s);
-    defer places.deinit(gpa);
+/// Puts the session's flows where `bytes` says, in this story, whose `places` are given; what could not be kept
+/// is reported.
+pub fn restore(gpa: std.mem.Allocator, s: *const story.Story, places: *const Places, flows: []flow_.Flow, bytes: []const u8) RestoreError!Report {
     var r: Reader = .{ .b = bytes };
     if (!std.mem.eql(u8, try r.take(magic.len), &magic)) return error.BadCursors;
     if (try r.int(u16) != version) return error.UnsupportedVersion;
@@ -202,7 +137,7 @@ pub fn restore(gpa: std.mem.Allocator, s: *const story.Story, flows: []flow_.Flo
     defer gpa.free(read);
     for (read, flows) |*f, into| {
         f.* = .{ .id = into.id, .arena = undefined };
-        try readFlow(&r, s, &places, f, &report);
+        try readFlow(&r, s, places, f, &report);
     }
     if (r.at != bytes.len) return error.BadCursors;
     for (flows, read) |*into, from| {

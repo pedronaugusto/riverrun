@@ -55,6 +55,48 @@ test "a kitchen: lines, choices open and closed, a gather, a jump and the end" {
     try std.testing.expectEqualStrings("Dad", t.session.speaker(.fromRaw(0)).?);
 }
 
+test "a line says the section and the part it is in, however the flow came to it" {
+    const t = try Told.init(gpa, &.{
+        \\cast:
+        \\  dad  "Dad"
+        \\== kitchen
+        \\DAD: Go.
+        \\-> hall
+        \\== hall
+        \\In the hall.
+        \\->> barks
+        \\-> door
+        \\= door
+        \\  At the door.
+        \\  ->> aside
+        \\  -> end
+        \\== aside
+        \\An aside.
+        \\<-
+        \\== barks (pool)
+        \\= dog   when { true }
+        \\  A dog barks.
+    }, .{}, &.{}, testing.NoHost{});
+    defer t.deinit();
+    const flow: run.FlowId = .fromRaw(0);
+    try t.session.start(flow, t.section("kitchen"));
+    // a jump, a pool's candidate, a part gone to, a call: each line is its own section's, a part's within it
+    const said = [_]struct { []const u8, []const u8, ?[]const u8 }{
+        .{ "Go.", "kitchen", null },
+        .{ "In the hall.", "hall", null },
+        .{ "A dog barks.", "barks", null },
+        .{ "At the door.", "hall", "hall.door" },
+        .{ "An aside.", "aside", null },
+    };
+    for (said) |want| {
+        const l = (try t.session.next(flow)).line;
+        try std.testing.expectEqualStrings(want[0], l.text);
+        try std.testing.expect(l.section.eql(t.section(want[1])));
+        if (want[2]) |part| try std.testing.expect(l.part.?.eql(t.section(part))) else try std.testing.expect(l.part == null);
+    }
+    try t.end();
+}
+
 test "conditions with else, ints changed by an amount, alternatives and a pool" {
     const t = try Told.init(gpa, &.{
         \\facts (life):

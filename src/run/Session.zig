@@ -16,6 +16,7 @@ const text = @import("text.zig");
 const pool = @import("pool.zig");
 const flow_ = @import("flow.zig");
 const cursors = @import("cursors.zig");
+const Places = @import("Places.zig");
 const host_ = @import("host.zig");
 const Host = host_.Host;
 
@@ -81,6 +82,11 @@ pub const Action = struct {
 
 pub const Line = struct {
     id: story_.LineId,
+    /// The section it is written in, however the flow came to it: through a jump, a call, an interruption or a pool.
+    section: story_.SectionId,
+    /// The part of that section it is written in, `section.part`, which is a section of its own; null outside a
+    /// part, and for a pool's candidate, which is its pool's.
+    part: ?story_.SectionId,
     /// Null for narration.
     speaker: ?story_.CastId,
     text: []const u8,
@@ -104,20 +110,25 @@ store: facts.Store,
 host: *const Host,
 options: Options,
 flows: []Flow,
+/// Where each step is: the section a line says, and what the cursors save a step by.
+places: Places,
 /// The host's handle for whose facts each scope holds, by scope: what a call's context says.
 owners: [facts.max_scopes]u64 = @splat(0),
 
 /// A session over `s`, with its words, facts and bound host; all outlive it.
 pub fn init(gpa: std.mem.Allocator, s: *const story_.Story, words: *const story_.Strings, store: facts.Store, host: *const Host, options: Options) error{ OutOfMemory, HostNotBound }!Session {
     if (!host.serves(s)) return error.HostNotBound;
+    var places: Places = try .init(gpa, s);
+    errdefer places.deinit(gpa);
     const flows = try gpa.alloc(Flow, max_flows);
     for (flows, 0..) |*f, i| f.* = .{ .id = @intCast(i), .arena = .init(gpa) }; // safe: below max_flows
-    return .{ .gpa = gpa, .story = s, .words = words, .store = store, .host = host, .options = options, .flows = flows };
+    return .{ .gpa = gpa, .story = s, .words = words, .store = store, .host = host, .options = options, .flows = flows, .places = places };
 }
 
 pub fn deinit(s: *Session) void {
     for (s.flows) |*f| f.arena.deinit();
     s.gpa.free(s.flows);
+    s.places.deinit(s.gpa);
     s.* = undefined;
 }
 
@@ -198,12 +209,12 @@ pub fn outcome(s: *Session, id: FlowId, v: facts.Value) Error!void {
 
 /// Where every flow is, as bytes that survive a recompiled story: see `cursors`.
 pub fn saveCursors(s: *Session, gpa: std.mem.Allocator) cursors.SaveError![]u8 {
-    return cursors.save(gpa, s.story, s.flows);
+    return cursors.save(gpa, s.story, &s.places, s.flows);
 }
 
 /// Puts every flow where a save says; a step gone from the story ends its flow, and the report says so.
 pub fn restoreCursors(s: *Session, gpa: std.mem.Allocator, bytes: []const u8) cursors.RestoreError!cursors.Report {
-    return cursors.restore(gpa, s.story, s.flows, bytes);
+    return cursors.restore(gpa, s.story, &s.places, s.flows, bytes);
 }
 
 /// Says whose facts `scope` holds: the host's handle, handed to every query and action.
@@ -243,7 +254,7 @@ fn walk(s: *Session, f: *Flow, at: NodeId) Error!?Step {
     switch (n.step) {
         .line => |l| {
             f.at = l.next;
-            return try s.line(f, l, n.tags);
+            return try s.line(f, at, l, n.tags);
         },
         .choices => |c| {
             if (try s.offer(f, at, c.choices)) |list| return .{ .choices = list };
@@ -316,15 +327,16 @@ fn count(s: *Session, visits: facts.FactId) Error!void {
     try s.store.set(visits, .{ .int = s.store.get(visits).int +| 1 });
 }
 
-fn line(s: *Session, f: *Flow, l: @FieldType(story_.Node.Step, "line"), tags: story_.Range) Error!Step {
+fn line(s: *Session, f: *Flow, at: NodeId, l: @FieldType(story_.Node.Step, "line"), tags: story_.Range) Error!Step {
     const cx = s.evaluation(f);
+    const where = s.places.where(s.story, at) orelse unreachable; // unreachable: a flow reaches only the steps of sections' walks
     const t = s.story.text(l.text);
     var owed: Owed = .{};
     const list = try cx.arena.alloc(facts.Effect, l.effects.len);
     for (list, 0..) |*e, k| e.* = try emit(cx, s.story.effect(l.effects.start + @as(u32, @intCast(k))), &owed); // safe: below a u32 length
     const words = try text.render(cx, s.words, l.text);
     try owed.hold(f);
-    return .{ .line = .{ .id = t.line, .speaker = l.speaker, .text = words, .tags = tags, .effects = list } };
+    return .{ .line = .{ .id = t.line, .section = where.section, .part = where.part, .speaker = l.speaker, .text = words, .tags = tags, .effects = list } };
 }
 
 // The choices offered at `at`, or null when none is open and the flow goes past them.

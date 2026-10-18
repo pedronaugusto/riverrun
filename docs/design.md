@@ -287,8 +287,10 @@ saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapsho
 ```
 
 - **`next` walks until it has something for the host**: branches, gathers, jumps, calls and pools are walked
-  through. A line comes with its own effects; choices come open or closed, a once-only choice gone after it is taken,
-  and when none is open the flow goes past them; an effects step on its own comes as `effects`.
+  through. A line comes with its own effects, and says where it is written: its section, and its part where it is in
+  one, however the flow came to it, so a host that chooses a mechanic by a section's tags needs no index of its own;
+  choices come open or closed, a once-only choice gone after it is taken, and when none is open the flow goes past
+  them; an effects step on its own comes as `effects`.
 - **The host is bound by name at load.** The story's externs carry names and signatures; a Zig host binds a struct
   of functions, reflected by field name into a table indexed by extern id, and a host in another language binds a
   function pointer and its data per name through `Binder`. Every extern must be bound with its signature, or the
