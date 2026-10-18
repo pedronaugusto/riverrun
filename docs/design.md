@@ -58,7 +58,8 @@ DAD: Go.
   run time; it holds:
   - `{fact}`, a value;
   - `{ condition: these words | those words }`, words chosen by a condition;
-  - `{seq: a | b | c}`, `{cycle: …}`, `{once: …}` and `{shuffle: …}`, alternatives that read the line's visits.
+  - `{seq: a | b | c}`, `{cycle: …}`, `{once: …}` and `{shuffle: …}`, alternatives, each keeping its own state in
+    the `story` scope (a shuffle needs more than a count).
 - **A line's own effects** are indented under it and happen when the host delivers the line. A host that does not
   deliver it does not apply them: a memory overheard in hide and seek is carried only if the line is heard.
 - **Choices:** `*` is offered once, `+` stays; `{ condition }` before the text gates one. A gated choice is still
@@ -133,14 +134,16 @@ A file is checked against the index and compiled on its own, then linked, so a c
 (`~` and a hash of the section, the part, the position, the speaker and the words). *Protects:* translations,
 recorded voices and model characters keyed on a line and surviving a typo fix.
 
-Built: read, resolve and check.
+Built: read, resolve and check. The format, its builder and its reader are built; compiling into it is next.
 
 ## The compiled format
 
 **Graph data**, not bytecode: sections as nodes, lines, choices, gathers and pool candidates as their entries, jumps
 and calls as edges, and conditions and effects as small postfix arrays over fact, constant and extern ids. Arrays of
 structs of plain integers, little-endian, with a header carrying the version and the story's hash. The **string
-table** is a block of its own keyed by line id, so a translation replaces it whole without touching the graph. A
+table** is a file of its own keyed by line id, so a translation replaces it whole without touching the graph. It
+holds each line whole, as a template with numbered places for its values and chosen words (`{0}`, `{1:a|b}`), so a
+translator can reorder a sentence. Externs carry an action flag, since an action may return an outcome. A
 reader validates every index before use and never trusts the bytes. `docs/format.md` specifies it, so another
 engine's runtime can read it without this library.
 
@@ -187,9 +190,9 @@ Each layer is a folder beside its root file, and imports only those before it:
 
 ```
 syntax    files → syntax tree, with positions                                   built
-facts     types, scopes, the store interface, the default store, snapshots      needs nothing
+facts     types, scopes, the store interface, the default store, snapshots      needs nothing · built
 check     resolve and check the tree against a host's schema → a checked story  syntax · built
-story     the compiled format: builder, writer, validated reader               facts
+story     the compiled format: builder, writer, validated reader               facts · built
 compile   a checked story → the format, file by file, then linked              check, story
 run       the executor over the format and a store                             story, facts
 ffi       the C ABI over run                                                   run
@@ -201,8 +204,8 @@ compile-time work that stays at build time.
 
 ## Napkin math
 
-- **A two-hour story** is about 50,000 words: some 5,000 lines in 600 sections, about 500 KB compiled. A step reads
-  a few entries.
+- **A two-hour story** is about 50,000 words: some 5,000 lines in 600 sections, about 800 KB compiled, half of it
+  the string table (the proof's 30 KB of source is about 65 KB). A step reads a few entries.
 - **A snapshot** is facts plus visits, a few kilobytes.
 
 ## Decided from the proof
