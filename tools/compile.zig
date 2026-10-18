@@ -3,10 +3,11 @@
 //!     riverrun-compile <graph out> <words out> [--release] <file.river>…
 //!
 //! It reads the files, checks them against the host's vocabulary (the
-//! `vocabulary` module the build gives it: `pub const options`, and
-//! `pub const passes` where packages add theirs), and writes the graph and
-//! its string table. Every diagnostic is printed as `file:line:col:
-//! severity: message`; an error stops it before anything is written.
+//! `vocabulary` module the build gives it: `pub const options`, and its
+//! `packages` and `passes` where it has them, joined by `riverrun.join`),
+//! and writes the graph and its string table. Every diagnostic, riverrun's
+//! and its packages', is printed as `file:line:col: severity: message`; an
+//! error stops it before anything is written.
 
 const std = @import("std");
 const riverrun = @import("riverrun-compiler");
@@ -14,6 +15,7 @@ const vocabulary = @import("vocabulary");
 
 const syntax = riverrun.syntax;
 const max_file = syntax.max_file;
+const joined = riverrun.join(vocabulary);
 
 pub fn main(init: std.process.Init) !u8 {
     const gpa = init.gpa;
@@ -27,7 +29,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    var options: riverrun.check.Options = vocabulary.options;
+    var options: riverrun.check.Options = joined.options;
     var paths: std.ArrayList([]const u8) = .empty;
     while (args.next()) |a| {
         if (std.mem.eql(u8, a, "--release")) options.mode = .release else try paths.append(arena, try arena.dupe(u8, a));
@@ -46,8 +48,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer checked.deinit();
     if (diags.errors() > 0) return report(io, &diags, trees);
 
-    const passes: []const riverrun.compile.Pass = if (@hasDecl(vocabulary, "passes")) vocabulary.passes else &.{};
-    var out = riverrun.compile.run(gpa, &diags, &checked, .{ .passes = passes }) catch |e| switch (e) {
+    var out = riverrun.compile.run(gpa, &diags, &checked, .{ .passes = joined.passes }) catch |e| switch (e) {
         // a package's pass refused the story, and said where
         error.PassFailed => return report(io, &diags, trees),
         else => return e,

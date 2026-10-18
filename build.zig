@@ -28,9 +28,9 @@ pub fn build(b: *std.Build) void {
 pub const StoryOptions = struct {
     /// The story's `.river` files, in the order their diagnostics number them.
     files: []const std.Build.LazyPath,
-    /// The host's vocabulary: a Zig file with `pub const options: riverrun.check.Options` (its tag schema,
-    /// the kinds of section packages register, its widths and things) and, where packages add them,
-    /// `pub const passes: []const riverrun.compile.Pass`. It imports `riverrun`.
+    /// The host's vocabulary: a Zig file with `pub const options: riverrun.check.Options` (its tag schema, its
+    /// widths and things) and, where it has them, `pub const packages: []const riverrun.Package` and
+    /// `pub const passes: []const riverrun.compile.Pass`. It imports `riverrun-compiler`.
     vocabulary: std.Build.LazyPath,
     /// A release refuses a line without a written `# id`.
     release: bool = false,

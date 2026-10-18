@@ -161,10 +161,12 @@ A conversation with several speakers needs no construct of its own:
 
 It runs at build time. A game's build calls `riverrun.addStory(b, dep, .{ .files, .vocabulary, .release })` and
 imports the module it returns, which embeds the graph and the string table. The vocabulary is a Zig file of the
-host's: `pub const options` (its tag schema, the kinds of section its packages register, its widths and things) and
-`pub const passes` where packages add theirs. It is Zig, not data, because a registered kind carries functions; the
-compiler is built for the machine doing the building, with the vocabulary compiled in, and prints every diagnostic
-as `file:line:col: severity: message`.
+host's: `pub const options` (its tag schema, its widths and things), `pub const packages`, each package's
+`riverrun.Package` (its kinds, the tags it adds anywhere, its check and its compile pass), and `pub const passes`
+for the host's own. `riverrun.join` joins each package in after the host's, and two kinds of one name or one key
+twice where both may stand fail to compile, so nothing a package adds shadows another silently. It is Zig, not
+data, because a registered kind carries functions; the compiler is built for the machine doing the building, with
+the vocabulary compiled in, and prints every diagnostic as `file:line:col: severity: message`.
 
 1. **Read** each file: a hand-written recursive-descent parser with positions, and a fuzz target for each parser.
 2. **Resolve** against one index of every file's declarations: speakers, facts, constants, externs, sections, labels
