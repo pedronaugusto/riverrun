@@ -200,7 +200,7 @@ const Reader = struct {
                 try r.report(l, "a constant is `name = value`", .{});
                 continue;
             };
-            const value = expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, l.text[eq + 1 ..], " "), r.at(l, eq + 1)) catch |err| switch (err) {
+            const value = expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, l.text[eq + 1 ..], " "), r.at(l, eq + 1 + lead(l.text[eq + 1 ..]))) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Invalid => continue,
             };
@@ -341,7 +341,7 @@ const Reader = struct {
                 r.i += 1;
                 return null;
             };
-            when = if (expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[open + 1 .. close], " "), r.at(l, off + open + 1))) |e| e.* else |err| switch (err) {
+            when = if (expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[open + 1 .. close], " "), r.at(l, off + open + 1 + lead(t[open + 1 .. close])))) |e| e.* else |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Invalid => null,
             };
@@ -412,7 +412,7 @@ const Reader = struct {
                 return error.Invalid;
             };
             if (!text_mod.choosesWords(t, 0, close)) {
-                const cond = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[1..close], " "), r.at(l, 1));
+                const cond = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[1..close], " "), r.at(l, 1 + lead(t[1..close])));
                 const rest = std.mem.trim(u8, t[close + 1 ..], " ");
                 if (rest.len == 0) return .{ .cond = .{ .cond = cond.*, .body = body } };
                 const inner: Line = .{ .number = l.number, .indent = l.indent, .text = rest, .tags = "", .col = l.col + @as(u32, @intCast(t.len - rest.len)) };
@@ -453,10 +453,10 @@ const Reader = struct {
         if (std.mem.find(u8, t, "+=")) |k| return .{ .add = .{ .fact = try r.word(l, t[0..k], 2), .item = try r.word(l, t[k + 2 ..], k + 4) } };
         if (std.mem.find(u8, t, "-=")) |k| return .{ .remove = .{ .fact = try r.word(l, t[0..k], 2), .item = try r.word(l, t[k + 2 ..], k + 4) } };
         if (std.mem.findScalar(u8, t, '=')) |k| {
-            const value = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[k + 1 ..], " "), r.at(l, k + 3));
+            const value = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[k + 1 ..], " "), r.at(l, k + 3 + lead(t[k + 1 ..])));
             return .{ .set = .{ .fact = try r.word(l, t[0..k], 2), .value = value.* } };
         }
-        const call = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t, " "), r.at(l, 2));
+        const call = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t, " "), r.at(l, 2 + lead(t)));
         if (call.kind != .call) {
             try r.report(l, "an effect is `fact = value`, `set += item`, `set -= item` or `action(…)`", .{});
             return error.Invalid;
@@ -470,7 +470,7 @@ const Reader = struct {
             try r.report(l, "`{s}` is not a name", .{w});
             return error.Invalid;
         }
-        return .{ .text = w, .span = r.at(l, col) };
+        return .{ .text = w, .span = r.at(l, col + lead(t)) };
     }
 
     fn choice(r: *Reader, l: Line, body: []const ast.Stmt) Fail!ast.Choice {
@@ -482,7 +482,7 @@ const Reader = struct {
                 return error.Invalid;
             };
             if (!text_mod.choosesWords(t, 0, close)) {
-                cond = (try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[1..close], " "), r.at(l, 3))).*;
+                cond = (try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[1..close], " "), r.at(l, l.text.len - t.len + 1 + lead(t[1..close])))).*;
                 t = std.mem.trim(u8, t[close + 1 ..], " ");
             }
         }
@@ -520,7 +520,7 @@ const Reader = struct {
             try r.report(l, "a flow chosen by a condition is `{{ condition: -> a | -> b }}`", .{});
             return error.Invalid;
         };
-        const cond = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, inner[0..colon], " "), r.at(l, 1));
+        const cond = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, inner[0..colon], " "), r.at(l, 1 + lead(inner[0..colon])));
         return .{ .cond = cond.*, .then = try r.flowOf(l, inner[colon + 1 .. bar]), .otherwise = try r.flowOf(l, inner[bar + 1 ..]) };
     }
 
@@ -558,6 +558,13 @@ pub fn speakerEnd(t: []const u8) ?usize {
         if (!(std.ascii.isUpper(c) or std.ascii.isDigit(c) or c == '_' or c == ' ')) return null;
     }
     return null;
+}
+
+// The spaces before what trimming keeps: where trimmed text starts.
+fn lead(s: []const u8) usize {
+    var n: usize = 0;
+    while (n < s.len and s[n] == ' ') n += 1;
+    return n;
 }
 
 fn isName(s: []const u8) bool {
@@ -640,6 +647,28 @@ test "a small story reads into sections, statements and tags" {
     try std.testing.expect(c.cond != null);
     try std.testing.expectEqual(@as(usize, 2), c.body.len);
     try std.testing.expectEqualStrings("known", s.body[2].tags[0].key.text);
+}
+
+test "a span points where the words start, past the spaces trimmed" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(gpa);
+    const story =
+        \\== a
+        \\{ met }  Go.
+        \\~ carried += play
+        \\* {  met } Stay.
+        \\  -> end
+    ;
+    const f = try parseFile(arena.allocator(), gpa, &diags, 0, "a.river", story);
+    try std.testing.expectEqual(@as(usize, 0), diags.list.items.len);
+    const body = f.sections[0].body;
+    try std.testing.expectEqual(@as(u32, 3), body[0].kind.cond.cond.span.col);
+    try std.testing.expectEqual(@as(u32, 3), body[1].kind.effect.add.fact.span.col);
+    try std.testing.expectEqual(@as(u32, 14), body[1].kind.effect.add.item.span.col);
+    try std.testing.expectEqual(@as(u32, 6), body[2].kind.choice.cond.?.span.col);
 }
 
 test "any bytes are read or refused, never crash" {
