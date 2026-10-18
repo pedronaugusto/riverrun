@@ -1,0 +1,54 @@
+// Going back: her life as a tree, who goes on without you, the life you leave, and the second wake.
+
+// The tree mechanic draws her life and offers its forks; only 1985's is open in the demo.
+== her_life                                      # tree · forks 1969 locked, 1985 open, 1998 locked
+Go back to a fork and live it the other way. The life you leave goes on without you.   # hint
+* Go back to 1985
+  { life = stay: Danny, Tom, Ruth and Ellie go on without you. | Martin and Leo go on without you. }   # warn
+  * Go back
+      -> the_life_you_leave
+  * Stay a little longer
+      -> her_life
+  * Let her rest
+      -> rest
+
+== the_life_you_leave                            # card
+In the life you left, the morning after the funeral:
+{ life = stay }
+  Danny sets out two cups. He does it for a year.
+  Tom rings on Sunday, out of habit, and lets it ring.
+  The house goes on being a house, with nobody in it you could speak to.
+{ life = go }
+  Leo sits at her piano and plays the second movement at the speed she wanted. Slowly. Badly. Right.
+  Martin posts a recording of rain to an address that isn't there.
+-> fork_1985
+
+// Both lives in one house.
+== second_wake                                   # talk · picture wake_both
+The same coffin. The same night. Both lives came.
+Danny and Martin are at the same table. Neither knows why the other is crying, and neither asks.
+At the foot of the coffin, two men about the same age.
+TOM: Who are you?
+LEO: Her son.                                    # pause 0.4
+TOM: So am I.                                    # pause 0.6
+* Stand beside Tom
+  TOM: He's got her hands. Look at him. He's got her bloody hands.
+* Stand beside Leo
+  LEO: He's the one she stayed for. He doesn't know that's what he is.
+* Stand between them
+  They don't move apart.
+- GOT_ON: we were both good at this. that's the joke.
+STAYED: neither of us was the right one. there wasn't a right one.
+GOT_ON: there was just the bus, and the night, and him at the table saying go.
+-> rest_pick
+
+// Which life she rests in.
+== rest_pick                                     # sides · picture fork_go, fork_stay
+Dawn. One eulogy. Two lives.                     # pause 0.2
+Which life does she rest in?
+* The life where she got on                      # side go
+  ~ rest_in(go)
+  -> rest
+* The life where she stayed                      # side stay
+  ~ rest_in(stay)
+  -> rest

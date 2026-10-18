@@ -1,0 +1,35 @@
+// 1985. Iris is twenty-four: the kitchen, one word from her father, and the last bus north.
+
+== kitchen_1985                                  # talk · picture kitchen_1985
+The scholarship letter has been on the fridge for a month. The last bus north leaves at 22:40. Her case has been packed since Sunday.
+Dad has been ill since the spring. He doesn't look up.   # pause 0.3
+DAD: Go.
+- (ask)
+* Who'll run the shop?
+  DAD: I ran it before you could walk. I'll run it after you've gone.
+  -> ask
+* You're not well.
+  DAD: I'm not dead. Go.
+  -> ask
+* { carried has play } You could still play, Dad.        # known play
+  DAD: Who'd listen?
+  The same two words. You were eight, behind the piano. He doesn't know you heard them.
+  -> ask
+* { carried has gave } You gave yours up.                # known gave
+  He looks up for the first time.
+  DAD: And look what I got for it.
+  He means her. He means it.
+  -> ask
+* Pick up the case.
+  DAD: Go on. Go.
+  22:31. The bus stop is four minutes away.
+  -> fork_1985
+
+// The fork mechanic shows the two sides; a side already lived is a ghost.
+== fork_1985                                     # fork · seam
+* { not lived(go) } Get on                       # side go · picture fork_go · line "the scholarship · the city · whoever she'd be"
+  ~ life = go
+  -> day_1998
+* { not lived(stay) } Stay                       # side stay · picture fork_stay · line "her father · the shop · whoever she already is"
+  ~ life = stay
+  -> day_1998

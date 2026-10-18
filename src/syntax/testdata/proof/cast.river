@@ -1,0 +1,46 @@
+// Who is in the story, what it remembers, and what the game tells it.
+// Every file of a story sees these; they are declared once, here.
+
+cast:
+  iris      "Iris"
+  mum       "Mum"                    — June, her mother
+  dad       "Dad"                    — Frank, her father
+  margaret  "Margaret"               — her sister
+  danny     "Danny"                  — her husband, in the life where she stayed
+  tom       "Tom"                    — her eldest, in the life where she stayed
+  ruth      "Ruth"                   — her daughter, in the life where she stayed
+  ellie     "Ellie"                  — her youngest, in the life where she stayed
+  martin    "Martin"                 — she lived with him fourteen years, in the life where she got on
+  leo       "Leo"                    — her son, in the life where she got on
+  joan      "Aunt Joan"
+  stranger  "the stranger"
+  stayed    "Iris, who stayed"       # voice
+  got_on    "Iris, who got on the bus"   # voice
+
+// people who speak once and need no name
+extras: a student · the youngest · the eldest · a cellist · a violinist
+
+// one of these per life, saved with it
+facts (life):
+  life:    one of stay, go
+  kept:    set of ruth, stock, dad, tom, danny, piano,
+                  rehearsal, leo, radio, premiere, walk  // what the day of 1998 kept
+  said:    set of play, gave                            // what she said at the deathbed
+  met:     bool                                         // she spoke to the stranger
+  // written by the game's mechanics, never by the story: the checker expects no story to set them
+  spot:    one of stairs, piano, door, landing   (game)  // where she hid in 1969
+  slot:    one of morning, noon, afternoon, evening (game)
+  room:    one of front, kitchen, stairs         (game)  // where she is at the wake
+  hour:    int                                   (game)
+
+// outlives every life
+facts (player):
+  carried: set of play, gave, hands
+
+const:
+  dies_at = "ten past nine"                             // the same in every life
+
+extern:
+  lived(one of stay, go) -> bool                        // a query: the game knows which lives were lived
+  origin(one of play, gave, hands) -> one of 1969, this_life, another_life
+  rest_in(one of stay, go)                              // an action: the game makes that life the one she rests in

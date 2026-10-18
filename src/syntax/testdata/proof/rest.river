@@ -1,0 +1,45 @@
+// The eulogy speaks a life, shaped by its one day; resting there ends the game.
+
+// Two of what the day kept, one of what it let go, then the close.
+== eulogy                                        # card · picture title · dim 0.35
+{ life = stay }
+  TOM: Mum stayed. That's the first thing anyone says about her, and she hated it, so I'll say it first and get it over with.
+{ life = go }
+  LEO: Mum got on the bus. She told that story at every dinner for fifty years, so: she got on the bus.
+->> eulogy_kept
+->> eulogy_missed
+That's it. That's Mum. There isn't a better version of her somewhere. There's this one, and we had it.   # pause 0.4
+<-
+
+== eulogy_kept (pool 2)
+= ruth       when { kept has ruth }       She sat up with whoever was ill.
+= stock      when { kept has stock }      She kept Grandad's shop open twenty years after it should've shut, out of spite at the bank.
+= dad_stay   when { kept has dad and life = stay }   She was there when Grandad died. She never told us what he said.
+= tom        when { kept has tom }        She came to my final. She was the only one standing.
+= danny      when { kept has danny }      She made Dad a cake every year, and every year it sank.
+= piano      when { kept has piano }      Sometimes she played eight bars of something and stopped.
+= rehearsal  when { kept has rehearsal }  She could stop an orchestra with one hand.
+= leo        when { kept has leo }        She came to see me be a tree. She said I was the best tree.
+= radio      when { kept has radio }      She told the radio her music came from a kitchen. I think I know which kitchen now.
+= dad_go     when { kept has dad and life = go }     She got to Grandad in time. Three hundred miles. She never said what he told her.
+= premiere   when { kept has premiere }   She walked out of her own premiere and nobody knows where she went.
+= walk       when { kept has walk }       She walked by the river every morning, and if you walked with her you weren't allowed to talk.
+
+== eulogy_missed (pool 1)
+= ruth       when { life = stay and kept hasnt ruth }   She wasn't always there. Ruth had a fever once and watched the door all morning.
+= stock      when { life = stay and kept hasnt stock }  The shop went in the end.
+= dad_stay   when { life = stay and kept hasnt dad }    She didn't make it to Grandad. She never forgave herself. He would have.
+= tom        when { life = stay and kept hasnt tom }    She missed my final. I've decided that's fine. It took me forty years.
+= danny      when { life = stay and kept hasnt danny }  She missed Dad's birthday once. He kept the foil.
+= piano      when { life = stay and kept hasnt piano }  There was a piano in this house our whole lives. We never heard it.
+= rehearsal  when { life = go and kept hasnt rehearsal }  Her second movement is too fast. It always will be.
+= leo        when { life = go and kept hasnt leo }        She missed my plays. I stood very still in all of them.
+= radio      when { life = go and kept hasnt radio }      People stopped ringing, at the end.
+= dad_go     when { life = go and kept hasnt dad }        She didn't make it to Grandad. Three hundred miles. She said that a lot: three hundred miles.
+= premiere   when { life = go and kept hasnt premiere }   She missed her own premiere. Someone else took her bow.
+= walk       when { life = go and kept hasnt walk }       She never had an hour to herself.
+
+== rest                                          # card · picture title · dim 0.35 · rests
+->> eulogy
+The burial never changes. The same hill, the same rain, whoever is holding the umbrellas.   # pause 0.6
+-> end

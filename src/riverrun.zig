@@ -1,0 +1,11 @@
+//! riverrun: stories written in `.river` files, read, checked and run.
+//!
+//! Layers, each importing only those before it: `syntax` (text into a tree),
+//! then `facts`, `check`, `story` and `run` as they land. Nothing at run time
+//! imports `syntax` or `check`.
+
+pub const syntax = @import("syntax.zig");
+
+test {
+    _ = syntax;
+}
