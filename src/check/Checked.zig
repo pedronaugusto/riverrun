@@ -23,6 +23,8 @@ enums: []const sym.Enum,
 kinds: []const []const u8,
 /// Each module's name, by `ModuleId`; the root's is empty.
 modules: []const []const u8,
+/// The story's version, which migration rules count from; 0 when none is declared.
+version: u32 = 0,
 /// The kinds packages registered, as the options gave them: a builtin names one by its place here.
 registered: []const @import("Checker.zig").Kind,
 sections: []const sym.Section,

@@ -11,8 +11,14 @@ const sym = @import("symbols.zig");
 const Checker = @import("Checker.zig");
 
 const ast = syntax.ast;
+const schema_file = @import("schema.zig");
 const Span = syntax.Span;
 const Error = Checker.Error;
+
+fn hasTag(tags: []const ast.Tag, key: []const u8) bool {
+    for (tags) |t| if (std.mem.eql(u8, t.key.text, key)) return true;
+    return false;
+}
 
 /// The functions riverrun itself answers in a condition: no query may take their names.
 pub const riverrun_builtins = [_][]const u8{ "seen", "since_changed", "happened" };
@@ -21,6 +27,11 @@ pub fn run(c: *Checker) Error!void {
     for (c.files, 0..) |*file, i| {
         const module = c.moduleOf(@intCast(i)); // safe: a FileId numbers the files
         for (file.decls) |*decl| switch (decl.*) {
+            .version => |v| {
+                if (c.version != 0) try c.err(v.span, "the story's version is declared twice: first at {f}", .{c.place(c.version_span)});
+                c.version = v.number;
+                c.version_span = v.span;
+            },
             .cast => |entries| for (entries) |*e| try castEntry(c, module, e),
             .extras => |extras| for (extras) |*n| try extra(c, module, n),
             .facts => |*f| for (f.entries) |*e| try fact(c, module, f.scope, e),
@@ -260,7 +271,8 @@ fn shape(c: *Checker, s: *const ast.Section) Error!void {
         },
         .rules => {
             if (s.body.len > 0) try c.err(s.body[0].span, "a rules section holds only its rules, each `= name when {{ … }}`", .{});
-            for (s.subsections) |sub| if (sub.when == null) {
+            // a migration may run unconditionally, once, when an older save loads
+            for (s.subsections) |sub| if (sub.when == null and !hasTag(sub.tags, schema_file.migrate_key)) {
                 try c.err(sub.name.span, "the rule `{s}` needs its condition: `= {s} when {{ … }}`, its effects under it", .{ sub.name.text, sub.name.text });
             };
         },

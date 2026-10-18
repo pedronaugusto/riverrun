@@ -56,6 +56,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
         .enums = c.enums.items,
         .kinds = c.kinds.items,
         .modules = c.module_names.items,
+        .version = c.version,
         .registered = options.kinds,
         .sections = c.sections.items,
         .labels = c.labels.items,

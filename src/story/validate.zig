@@ -215,7 +215,8 @@ fn reserved(g: *const Graph) Error!void {
     try index(g, .scopes, m.reserved_scope);
     const scope = g.get(.scopes, m.reserved_scope);
     if (!std.mem.eql(u8, g.raw(.names)[scope.offset..][0..scope.len], facts.reserved_scope)) return error.BadReserved;
-    for ([_]u16{ m.seed, m.turn }) |f| {
+    if (m.pad != 0 or m.pad2 != 0) return error.BadReserved;
+    for ([_]u16{ m.seed, m.turn, m.version_fact }) |f| {
         try intFact(g, f);
         const d = g.get(.facts, f);
         if (d.scope != m.reserved_scope or d.role != @backingInt(facts.Role.state)) return error.BadReserved;
@@ -235,11 +236,16 @@ fn sections(g: *const Graph) Error!void {
             .pool => {
                 if (s.pick == 0) return error.BadNode;
                 try range(g, .candidates, s.candidates);
+                for (0..s.candidates.len) |k| if (g.get(.candidates, s.candidates.start + @as(u32, @intCast(k))).migrate != 0) return error.BadNode; // safe: below a u32 length
             },
             // a rules section's candidates are its rules, each fired on its own; it gives none at once
             .rules => {
                 if (s.pick != 1 or s.entry != none) return error.BadNode;
                 try range(g, .candidates, s.candidates);
+                for (0..s.candidates.len) |k| {
+                    const c = g.get(.candidates, s.candidates.start + @as(u32, @intCast(k))); // safe: below a u32 length
+                    if (c.weight != 0 or c.migrate > g.get(.meta, 0).version) return error.BadNode;
+                }
             },
             .scene, .other => if (s.candidates.len != 0 or s.entry == none) return error.BadNode,
         }
@@ -252,6 +258,7 @@ fn sections(g: *const Graph) Error!void {
         try index(g, .nodes, c.entry);
         try intFact(g, c.visits);
         try intFact(g, c.seen);
+        if (c.pad != 0) return error.BadNode;
     }
 }
 

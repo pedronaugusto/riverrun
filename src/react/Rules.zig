@@ -63,9 +63,13 @@ pub fn init(gpa: std.mem.Allocator, s: *const story.Story, store: facts.Store, h
         const id: story.SectionId = .fromRaw(@intCast(i)); // safe: below a u32 count
         const sec = s.section(id);
         if (sec.kind != .rules) continue;
-        try sections.append(gpa, .{ .id = id, .first = @intCast(rules.items.len), .len = sec.candidates.len }); // safe: below a u32 count
+        var watched: u32 = 0;
+        for (0..sec.candidates.len) |k| watched += @intFromBool(s.candidate(sec.candidates.start + @as(u32, @intCast(k))).migrate == 0); // safe: below a u32 length
+        try sections.append(gpa, .{ .id = id, .first = @intCast(rules.items.len), .len = watched }); // safe: below a u32 count
         for (0..sec.candidates.len) |k| {
             const index = sec.candidates.start + @as(u32, @intCast(k)); // safe: below a u32 length
+            // a migration runs once, when an older save loads, and is never watched
+            if (s.candidate(index).migrate != 0) continue;
             // a rule's watched condition is numbered by its place among the rules
             _ = try w.add(s.candidate(index).when, @intCast(rules.items.len), &.{}); // safe: below a u32 count
             try rules.append(gpa, .{ .section = id, .candidate = index });
@@ -114,6 +118,36 @@ pub fn step(r: *Rules) Error![]const Fired {
             try r.fire(rule, c);
         }
     }
+    return r.fired.items;
+}
+
+/// A new game: its saves are of this version, and no migration has anything to do.
+pub fn start(r: *Rules) Error!void {
+    const s = r.watch.story;
+    try r.watch.store.set(s.versionFact(), .{ .int = s.version() });
+}
+
+/// After a save is restored: each migration to a version past the save's and no later than the story's, in the
+/// order of their versions and then as written, whose condition holds (or which has none). The save's version is
+/// then the story's, so each runs once. Empty for a save of this version.
+pub fn migrate(r: *Rules) Error![]const Fired {
+    r.fired.clearRetainingCapacity();
+    const s = r.watch.story;
+    const saved = r.watch.store.get(s.versionFact()).int;
+    const now: i64 = s.version();
+    var to = saved + 1;
+    while (to <= now) : (to += 1) for (0..s.len(.sections)) |i| {
+        const sec = s.section(.fromRaw(@intCast(i))); // safe: below a u32 count
+        if (sec.kind != .rules) continue;
+        for (0..sec.candidates.len) |k| {
+            const index = sec.candidates.start + @as(u32, @intCast(k)); // safe: below a u32 length
+            const c = s.candidate(index);
+            if (c.migrate != to) continue;
+            if (!try run.eval.condition(r.watch.context(), c.when)) continue;
+            try r.fire(.{ .section = .fromRaw(@intCast(i)), .candidate = index }, c); // safe: below a u32 count
+        }
+    };
+    if (saved < now) try r.watch.store.set(s.versionFact(), .{ .int = now });
     return r.fired.items;
 }
 

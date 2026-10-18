@@ -17,6 +17,8 @@ pub const File = struct {
 // ---------------------------------------------------------------- declarations
 
 pub const Decl = union(enum) {
+    /// `version: 3`: which version of the story this is, which migration rules count from.
+    version: struct { number: u32, span: Span },
     cast: []const CastEntry,
     extras: []const Name,
     facts: Facts,

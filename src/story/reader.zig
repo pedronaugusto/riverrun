@@ -57,6 +57,16 @@ pub const Story = struct {
         return .fromRaw(s.g.get(.meta, 0).seed);
     }
 
+    /// The story's version, which migration rules count from; 0 when none is declared.
+    pub fn version(s: *const Story) u16 {
+        return s.g.get(.meta, 0).version;
+    }
+
+    /// The fact that keeps the version a save was taken under.
+    pub fn versionFact(s: *const Story) facts.FactId {
+        return .fromRaw(s.g.get(.meta, 0).version_fact);
+    }
+
     pub fn turn(s: *const Story) facts.FactId {
         return .fromRaw(s.g.get(.meta, 0).turn);
     }
@@ -230,6 +240,8 @@ pub const Story = struct {
             .entry = .fromRaw(c.entry),
             .visits = .fromRaw(c.visits),
             .seen = .fromRaw(c.seen),
+            .weight = c.weight,
+            .migrate = c.migrate,
         };
     }
 

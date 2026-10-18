@@ -656,3 +656,29 @@ test "words chosen by a plural or a gender: known labels, none twice, other amon
     try o.has(.err, 8, 27, "`feminine` is chosen twice here");
     try o.has(.err, 9, 2, "words are chosen by a number's plural or by a gender, a person's or a thing's: this is text");
 }
+
+test "weight belongs on a pool's candidates and migrate on rules, within the story's version" {
+    var o = try checkOne(
+        \\version: 2
+        \\facts:
+        \\  honor: int
+        \\== a
+        \\->> p
+        \\-> end
+        \\== p (pool)
+        \\= one    when { true }   # weight 0
+        \\  One.
+        \\= two    when { true }   # migrate 2
+        \\  Two.
+        \\== fixes (rules)
+        \\= ahead  # migrate 3
+        \\  ~ honor += 1
+        \\= heavy  when { true }   # weight 2
+        \\  ~ honor += 1
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 8, 28, "`weight` takes one whole number above 0, at most 65535");
+    try o.has(.err, 10, 28, "`migrate` is riverrun's, and belongs on a rule");
+    try o.has(.err, 13, 12, "a migration to version 3 needs a story of that version: declare `version: 3`");
+    try o.has(.err, 15, 28, "`weight` is riverrun's, and belongs on a pool's candidate");
+}

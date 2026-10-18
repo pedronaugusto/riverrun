@@ -21,6 +21,10 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tags: []co
             if (at != .line and at != .choice) try c.err(tag.key.span, "only a line or a choice has an `id`", .{});
             continue;
         }
+        if (std.mem.eql(u8, tag.key.text, schema_file.weight_key) or std.mem.eql(u8, tag.key.text, schema_file.migrate_key)) {
+            try own(c, from, tag, at);
+            continue;
+        }
         if (at == .cast and std.mem.eql(u8, tag.key.text, schema_file.gender_key)) {
             const g = if (tag.values.len == 1) tag.values[0] else "";
             if (!within(&@import("riverrun").story.template.gender_categories, g)) {
@@ -67,6 +71,21 @@ fn placeName(at: Schema.Place) []const u8 {
         .choice => "choice",
         .other => "statement",
     };
+}
+
+// riverrun's own keys of a part: a pool candidate's `weight`, a rule's `migrate`, each one whole number.
+fn own(c: *Checker, from: ?sym.SectionId, tag: *const ast.Tag, at: Schema.Place) Error!void {
+    const weight = std.mem.eql(u8, tag.key.text, schema_file.weight_key);
+    const kind: ?sym.Section.Kind = if (from) |s| c.section(s).kind else null;
+    const fits = at == .part and kind != null and (if (weight) kind.? == .pool else kind.? == .rules);
+    if (!fits) return c.err(tag.key.span, "`{s}` is riverrun's, and belongs on {s}", .{ tag.key.text, if (weight) "a pool's candidate" else "a rule" });
+    const n = if (tag.values.len == 1) std.fmt.parseInt(u32, tag.values[0], 10) catch null else null;
+    if (n == null or n.? == 0 or (weight and n.? > std.math.maxInt(u16))) {
+        return c.err(tag.key.span, "`{s}` takes one whole number above 0{s}", .{ tag.key.text, if (weight) ", at most 65535" else "" });
+    }
+    if (!weight and n.? > c.version) {
+        return c.err(tag.key.span, "a migration to version {d} needs a story of that version: declare `version: {d}`", .{ n.?, n.? });
+    }
 }
 
 fn count(c: *Checker, tag: *const ast.Tag, key: *const Schema.Key) Error!void {

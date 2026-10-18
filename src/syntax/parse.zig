@@ -108,6 +108,14 @@ const Reader = struct {
             try decls.append(r.arena, .{ .consts = try r.constEntries(r.block()) });
         } else if (std.mem.eql(u8, l.text, "extern:")) {
             try decls.append(r.arena, .{ .externs = try r.externEntries(r.block()) });
+        } else if (std.mem.startsWith(u8, l.text, "version:")) {
+            r.i += 1;
+            const n = std.fmt.parseInt(u32, std.mem.trim(u8, l.text["version:".len..], " "), 10) catch {
+                try r.report(l, "a story's version is a whole number: `version: 3`", .{});
+                return true;
+            };
+            if (n == 0) try r.report(l, "a story's version counts from 1", .{});
+            try decls.append(r.arena, .{ .version = .{ .number = n, .span = r.at(l, 0) } });
         } else return false;
         return true;
     }
@@ -810,7 +818,8 @@ fn isName(s: []const u8) bool {
 
 fn isDecl(t: []const u8) bool {
     return std.mem.eql(u8, t, "cast:") or std.mem.startsWith(u8, t, "extras:") or std.mem.eql(u8, t, "facts:") or
-        std.mem.startsWith(u8, t, "facts (") or std.mem.eql(u8, t, "const:") or std.mem.eql(u8, t, "extern:");
+        std.mem.startsWith(u8, t, "facts (") or std.mem.eql(u8, t, "const:") or std.mem.eql(u8, t, "extern:") or
+        std.mem.startsWith(u8, t, "version:");
 }
 
 // Splits on a separator outside quotes.

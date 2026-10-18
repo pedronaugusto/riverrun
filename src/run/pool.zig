@@ -1,7 +1,10 @@
 //! Which candidates a pool gives: of those whose condition holds, the most
 //! specific, then the least recently given, then an order the seed and the
-//! turn decide, so equals take turns and a replay picks the same. Giving a
-//! candidate stamps it with the turn and counts a visit.
+//! turn decide, so equals take turns and a replay picks the same. A pool
+//! where any candidate has a weight draws instead: of the most specific that
+//! hold, each in turn by weight (1 for one with none), from the seed and the
+//! turn, recency set aside, so chance is the writer's and a replay draws the
+//! same. Giving a candidate stamps it with the turn and counts a visit.
 
 const std = @import("std");
 const facts = @import("../facts.zig");
@@ -44,6 +47,7 @@ pub fn pick(cx: eval.Context, pool: story.Section) Error!Picks {
         try matched.append(cx.arena, .{ .index = index, .specificity = c.specificity, .seen = cx.store.get(c.seen).int, .key = rng.next() });
     }
     std.mem.sortUnstable(Ranked, matched.items, {}, before);
+    if (weighted(cx, pool)) draw(cx, matched.items, &rng);
     var out: Picks = .{};
     for (matched.items[0..@min(matched.items.len, pool.pick)]) |r| {
         const c = cx.story.candidate(r.index);
@@ -53,6 +57,40 @@ pub fn pick(cx: eval.Context, pool: story.Section) Error!Picks {
         out.len += 1;
     }
     return out;
+}
+
+fn weighted(cx: eval.Context, pool: story.Section) bool {
+    for (0..pool.candidates.len) |k| {
+        if (cx.story.candidate(pool.candidates.start + @as(u32, @intCast(k))).weight != 0) return true; // safe: below a u32 length
+    }
+    return false;
+}
+
+// Reorders the most specific of `ranked`, already first, by draws in weight; the rest keep their order.
+fn draw(cx: eval.Context, ranked: []Ranked, rng: *std.Random.SplitMix64) void {
+    if (ranked.len == 0) return;
+    var top: usize = 1;
+    while (top < ranked.len and ranked[top].specificity == ranked[0].specificity) top += 1;
+    var placed: usize = 0;
+    while (placed < top) : (placed += 1) {
+        var total: u64 = 0;
+        for (ranked[placed..top]) |r| total += weightOf(cx, r.index);
+        var at = rng.next() % total;
+        var chosen = placed;
+        for (ranked[placed..top], placed..) |r, i| {
+            const w = weightOf(cx, r.index);
+            if (at < w) {
+                chosen = i;
+                break;
+            }
+            at -= w;
+        }
+        std.mem.swap(Ranked, &ranked[placed], &ranked[chosen]);
+    }
+}
+
+fn weightOf(cx: eval.Context, index: u32) u64 {
+    return @max(cx.story.candidate(index).weight, 1);
 }
 
 fn before(_: void, a: Ranked, b: Ranked) bool {

@@ -116,6 +116,10 @@ pub const Candidate = struct {
     visits: FactId,
     /// The turn it was last given, for least recently seen first.
     seen: FactId,
+    /// Its weight in a draw, where its pool draws by weight; 0 for none given.
+    weight: u16 = 0,
+    /// For a rule that migrates a save, the version it migrates to; 0 for an ordinary rule.
+    migrate: u16 = 0,
 };
 
 pub const Node = struct {

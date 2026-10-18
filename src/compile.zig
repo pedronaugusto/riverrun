@@ -76,6 +76,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *const syntax.Diagnostics, checked: *c
         .parts = try a.alloc([]?story.SectionId, checked.sections.len),
         .labels = try a.alloc(story.NodeId, checked.labels.len),
     };
+    b.version = std.math.cast(u16, checked.version) orelse return error.TooLarge;
     try declare.run(&c);
     for (0..checked.files.len) |f| try file(&c, @intCast(f)); // safe: a FileId numbers the files
     for (options.passes) |p| try p.run(p.user, &c);
@@ -83,6 +84,14 @@ pub fn run(gpa: std.mem.Allocator, diags: *const syntax.Diagnostics, checked: *c
     errdefer gpa.free(graph);
     const written: story.Story = try .init(graph, .{ .verify_hash = false });
     return .{ .graph = graph, .words = try b.stringBytes(gpa, options.locale, written.hash()) };
+}
+
+// riverrun's own number on a part, `# weight 3`, `# migrate 2`, which the checker held to a u16 above 0; 0 for none.
+fn ownNumber(tags: []const syntax.ast.Tag, key: []const u8) u16 {
+    for (tags) |t| if (std.mem.eql(u8, t.key.text, key) and t.values.len == 1) {
+        return std.fmt.parseInt(u16, t.values[0], 10) catch 0;
+    };
+    return 0;
 }
 
 // One file's sections, against the index.
@@ -117,6 +126,7 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
                     .entry = entry,
                     .visits = c.visits[p.visit.raw()],
                     .seen = try c.b.state(try c.arena.print("rule.{s}.{s}", .{ base, p.name })),
+                    .migrate = ownNumber(p.node.tags, "migrate"),
                 });
             }
         },
@@ -131,6 +141,7 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
                     .entry = entry,
                     .visits = c.visits[p.visit.raw()],
                     .seen = try c.b.state(try c.arena.print("seen.{s}.{s}", .{ base, p.name })),
+                    .weight = ownNumber(p.node.tags, "weight"),
                 });
             }
         },

@@ -63,7 +63,9 @@ DAD: Go.
     query declares the stamp of what it reads, keyed by its parameters, `(reads stock(kind))`, so whatever
     evaluates it can be woken when that changes.
 - **Modules.** A file may begin `module name`; what it declares is `name.x` to other modules, and an unqualified
-  name resolves in its own module first, then the root. *Protects:* hundreds of files and many writers without clashes.
+  name resolves in its own module first, then the root. *Protects:* hundreds of files and many writers without
+  clashes.
+- **A story's version,** `version: 3`, which migration rules count from.
 - **Sections:** `== name`, with nested `= name`. A section may have a kind: `(pool)`, `(pool N)`, or a kind a
   package registers with the compiler, such as a quest package's `(quest)`.
 - **Lines:** `SPEAKER: text`, or narration with no speaker. The text is the whole line, never assembled from pieces at
@@ -94,7 +96,10 @@ DAD: Go.
   `{ condition } -> name` jumps on a condition.
 - **Pools:** a `(pool)` section's candidates are parts with `when { condition }`. riverrun picks the most specific
   candidate that holds (the most comparisons joined by `and`), the least recently seen among equals, with a seed
-  that lives in the facts. `(pool N)` gives up to N.
+  that lives in the facts. `(pool N)` gives up to N. A candidate may carry `# weight n`, riverrun's own: a pool
+  where any does draws among its most specific matching candidates by weight (1 for one with none), from the seed
+  and the turn, recency set aside, so "the merchant mentions the rumour three times in ten" is the writer's and a
+  replay draws the same.
 - **Rules:** a `(rules)` section's parts are rules, each `= name when { condition }` with effects under it and
   nothing else. A rule fires when its condition becomes true: false when last evaluated, true now; it does not fire
   again until its condition has been false and become true again. Each time a rules section is evaluated it fires
@@ -102,6 +107,9 @@ DAD: Go.
   with it wait to become true again. Nothing goes to a rules section and nothing reaches it by flow: what its rules
   read reaches it. A puzzle with an order, honor that drifts back, a reaction to a crime, a threshold a faction
   acts on: rules over facts, and a state machine is an enumeration fact and the rules that move it.
+  A rule tagged `# migrate n` is a migration: it runs once, when a save from a version before `n` is first restored
+  under a story of version `n` or later, for a change of meaning healing cannot derive (two facts merged, a scale
+  rescaled); it needs no condition, and is never watched.
   `since_changed(fact, clock)` reads how far a `(clock)` fact has moved since `fact` last changed, and
   `happened(moment)` whether a moment happened, in rules and in what a package watches; a condition reading a fact
   kept per thing by a key written as a constant is filed under that key alone; a query a rule asks must
@@ -301,7 +309,12 @@ What happens when facts change, rather than when a flow is told, is the `react` 
 Watch.init(gpa, story, store, host, owners, options) · add(terms, user, also) → cond · bump(family, keyed)
 step() → evaluated · holds(cond) · markAll()
 Rules.init(gpa, story, store, host, owners, options) · step() → fired · settle(user, apply) → rounds
+start() · migrate() → fired
 ```
+
+- **Migrations:** the version a save was taken under is a fact of the reserved scope. `start` marks a new game of
+  the story's version; `migrate`, after a restore, fires each migration to a version past the save's and no later
+  than the story's, in order, whose condition holds, then marks the save of the story's version, so each runs once.
 
 Built.
 

@@ -123,7 +123,12 @@ pub const Meta = extern struct {
     turn: u16,
     /// The reserved scope, `story`.
     reserved_scope: u8,
-    pad: [3]u8 = @splat(0),
+    pad: u8 = 0,
+    /// The story's version, `version: 3`, which migration rules count from; 0 when none is declared.
+    version: u16 = 0,
+    /// The int of the reserved scope that keeps the version a save was taken under.
+    version_fact: u16 = 0,
+    pad2: u16 = 0,
 };
 
 pub const Fact = extern struct {
@@ -205,6 +210,10 @@ pub const Candidate = extern struct {
     visits: u16,
     /// The turn the candidate was last given: an int fact of the reserved scope.
     seen: u16,
+    /// A pool's candidate's weight in a draw, `# weight 3`; 0 for none given.
+    weight: u16 = 0,
+    /// A rule that migrates a save: the version it migrates to, `# migrate 2`; 0 for an ordinary rule.
+    migrate: u16 = 0,
     pad: u16 = 0,
 };
 
@@ -452,7 +461,7 @@ pub const Term = packed struct(u32) {
 
 comptime {
     // The sizes docs/format.md gives.
-    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 24 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 }, .{ Change, 8 }, .{ Bounds, 16 } };
+    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 12 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 40 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 24 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 }, .{ Change, 8 }, .{ Bounds, 16 } };
     for (sizes) |s| if (@sizeOf(s[0]) != s[1]) @compileError("a record's size is not the specification's");
     for (@typeInfo(Table).@"enum".field_names) |field| {
         const R = Record(@field(Table, field));

@@ -377,3 +377,54 @@ test "translation: a title in the string table, a plural that falls back to othe
     try t.line("She takes them.");
     try t.end();
 }
+
+test "a weighted pool draws by weight, the same draws in a replay" {
+    const t = try Told.init(gpa, &.{
+        \\== talk
+        \\->> merchant
+        \\-> talk
+        \\== merchant (pool)
+        \\= rumour    when { true }   # weight 3
+        \\  They say the mill burned.
+        \\= weather   when { true }   # weight 7
+        \\  Rain again.
+    }, .{}, &.{}, testing.NoHost{});
+    defer t.deinit();
+    try t.session.start(.fromRaw(0), t.section("talk"));
+    var rumours: usize = 0;
+    for (0..1000) |_| {
+        const step = try t.session.next(.fromRaw(0));
+        if (std.mem.eql(u8, step.line.text, "They say the mill burned.")) rumours += 1;
+    }
+    // three in ten, give or take what a thousand draws give
+    try std.testing.expect(rumours > 240 and rumours < 360);
+}
+
+test "a migration runs once, when an older save loads, and never in a new game" {
+    const t = try Told.init(gpa, &.{
+        \\version: 2
+        \\facts (world):
+        \\  honor:  int from -100 to 100
+        \\  karma:  int
+        \\== fixes (rules)
+        \\= karma_is_honor    # migrate 2
+        \\  ~ honor += 10
+        \\= noticed   when { honor > 50 }
+        \\  ~ karma += 1
+    }, .{}, &.{}, testing.NoHost{});
+    defer t.deinit();
+    var owners: [facts.max_scopes]u64 = @splat(0);
+    var rules: react.Rules = try .init(gpa, &t.story, t.memory.store(), &t.host, &owners, .{});
+    defer rules.deinit();
+    // a save from version 1: its version fact says so
+    try t.memory.set(t.story.versionFact(), .{ .int = 1 });
+    const fired = try rules.migrate();
+    try std.testing.expectEqual(@as(usize, 1), fired.len);
+    for (fired[0].effects) |e| _ = try facts.apply(t.memory.store(), e);
+    try std.testing.expectEqual(@as(i64, 10), t.memory.get(t.fact("honor")).int);
+    try std.testing.expectEqual(@as(usize, 0), (try rules.migrate()).len);
+    // a new game is of this version from the start
+    try t.memory.set(t.story.versionFact(), .{ .int = 0 });
+    try rules.start();
+    try std.testing.expectEqual(@as(usize, 0), (try rules.migrate()).len);
+}

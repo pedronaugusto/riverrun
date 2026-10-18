@@ -107,6 +107,9 @@ kinds: std.ArrayList([]const u8) = .empty,
 module_names: std.ArrayList([]const u8) = .empty,
 /// Each file's module, by `FileId`.
 file_modules: []const sym.ModuleId = &.{},
+/// The story's version, `version: 3`, and where it is declared; 0 when none is.
+version: u32 = 0,
+version_span: Span = .none,
 
 speaker_names: sym.Names(sym.SpeakerId) = .{},
 value_names: sym.Names(sym.Named) = .{},

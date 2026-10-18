@@ -65,7 +65,7 @@ Directory entries are in the fixed order of the tables below.
 
 | # | table | record | size |
 |---|---|---|---|
-| 0 | meta | Meta | 8 |
+| 0 | meta | Meta | 12 |
 | 1 | names | u8 | 1 |
 | 2 | scopes | Str | 8 |
 | 3 | enums | Range into items | 8 |
@@ -78,7 +78,7 @@ Directory entries are in the fixed order of the tables below.
 | 10 | ints | i64 | 8 |
 | 11 | terms | u32 (Term) | 4 |
 | 12 | sections | Section | 44 |
-| 13 | candidates | Candidate | 36 |
+| 13 | candidates | Candidate | 40 |
 | 14 | nodes | Node | 32 |
 | 15 | choices | Choice | 28 |
 | 16 | texts | Text | 16 |
@@ -97,10 +97,11 @@ Directory entries are in the fixed order of the tables below.
 
 ### Declarations
 
-**Meta** (exactly one record): `seed: u16`, `turn: u16` (fact ids), `reserved_scope:
-u8`, 3 bytes padding. The reserved scope is named `story`; it holds the executor's
-own state. `seed` is the seed for shuffles; `turn` counts the turns that pools'
-memory is stamped with. Both are int facts of role `state` in the reserved scope.
+**Meta** (exactly one record, 12 bytes): `seed: u16`, `turn: u16` (fact ids), `reserved_scope: u8`, 1 byte padding,
+`version: u16` (the story's version, 0 when none is declared), `version_fact: u16` (the int of role `state` in the
+reserved scope that keeps the version a save was taken under), 2 bytes padding. The reserved scope is named `story`;
+it holds the executor's own state. `seed` is the seed for shuffles; `turn` counts the turns that pools' memory is
+stamped with. Both are int facts of role `state` in the reserved scope.
 
 **Scopes**: names a host stores facts under (`life`, `player`, `world`), at most 32.
 
@@ -230,7 +231,10 @@ package owns their layout, validates them before use, and versions them itself.
 | padding | 3 bytes | |
 
 **Candidate**: `name: Str`, `when: Range` (a condition; empty matches always), `tags:
-Range`, `entry: u32`, `specificity: u16`, `visits: u16`, `seen: u16`, 2 bytes padding.
+Range`, `entry: u32`, `specificity: u16`, `visits: u16`, `seen: u16`, `weight: u16` (a pool candidate's weight in
+a draw, 0 for none given), `migrate: u16` (a rule's version it migrates to, 0 for an ordinary rule; at most the
+story's version), 2 bytes padding. A pool's candidates have no `migrate`, a rule no `weight`. A pool where any
+candidate has a weight draws among its most specific matches by weight (a 0 counting 1) from the seed and the turn.
 `specificity` counts the condition's criteria: each comparison, fact or query
 counts one, `and` adds, `or` takes the lesser. Of the candidates that match, the most
 specific win, then the least recently seen (`seen` holds the turn each was last given).

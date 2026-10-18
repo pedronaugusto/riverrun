@@ -67,6 +67,8 @@ pub const CandidateIn = struct {
     entry: model.NodeId,
     visits: FactId,
     seen: FactId,
+    weight: u16 = 0,
+    migrate: u16 = 0,
 };
 
 pub const Builder = struct {
@@ -108,6 +110,9 @@ pub const Builder = struct {
     reserved: ScopeId = .fromRaw(0),
     seed: FactId = .fromRaw(0),
     turn: FactId = .fromRaw(0),
+    /// The story's version, which migration rules count from: the compiler sets it from `version:`.
+    version: u16 = 0,
+    version_fact: FactId = .fromRaw(0),
 
     /// A builder with the reserved scope and the executor's seed and turn declared.
     pub fn init(gpa: std.mem.Allocator) Error!Builder {
@@ -116,6 +121,7 @@ pub const Builder = struct {
         try b.scopes.append(gpa, try b.intern(facts.reserved_scope));
         b.seed = try b.state("seed");
         b.turn = try b.state("turn");
+        b.version_fact = try b.state("version");
         return b;
     }
 
@@ -418,6 +424,8 @@ pub const Builder = struct {
             .specificity = b.specificity(when),
             .visits = c.visits.raw(),
             .seen = c.seen.raw(),
+            .weight = c.weight,
+            .migrate = c.migrate,
         });
         s.candidates.len += 1;
     }
@@ -504,7 +512,7 @@ pub const Builder = struct {
             const listed = s.kind == @backingInt(model.Section.Kind.pool) or s.kind == @backingInt(model.Section.Kind.rules);
             if (!listed and s.entry == format.none) return error.UndefinedNode;
         }
-        const meta = [_]format.Meta{.{ .seed = b.seed.raw(), .turn = b.turn.raw(), .reserved_scope = b.reserved.raw() }};
+        const meta = [_]format.Meta{.{ .seed = b.seed.raw(), .turn = b.turn.raw(), .reserved_scope = b.reserved.raw(), .version = b.version, .version_fact = b.version_fact.raw() }};
         var parts: [format.table_count]tables.Part = undefined;
         inline for (@typeInfo(format.Table).@"enum".field_names, 0..) |field, i| {
             const R = format.Record(@field(format.Table, field));
