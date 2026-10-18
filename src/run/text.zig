@@ -59,6 +59,8 @@ fn written(cx: eval.Context, r: story.Range) Error![]const u8 {
         .one_of => |i| if (i == Value.none or e == null) "" else itemName(cx.story, e.?, i),
         .text => |x| try cx.arena.dupe(u8, x),
         .set_of => |set| try joined(cx, set, e),
+        // a thing is said through a query the host answers, `{name(target)}`: its handle says nothing
+        .ref => "",
     };
 }
 

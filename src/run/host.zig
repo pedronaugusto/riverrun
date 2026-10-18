@@ -95,10 +95,11 @@ pub const Host = struct {
         h.* = undefined;
     }
 
-    /// Whether the host serves `s`: bound to it, or `none` for a story with no externs.
+    /// Whether the host serves `s`: bound to it with every thing it names resolved, or `none` for a
+    /// story that declares no externs and names no things.
     pub fn serves(h: *const Host, s: *const story.Story) bool {
-        if (s.len(.externs) == 0) return true;
-        return h.story == s.hash() and h.entries.len == s.len(.externs);
+        if (s.len(.externs) == 0 and s.len(.things) == 0) return true;
+        return h.story == s.hash() and h.entries.len == s.len(.externs) and h.refs.len == s.len(.things);
     }
 
     pub fn query(h: *const Host, id: facts.ExternId, cx: Context, args: []const Value) QueryError!Value {
@@ -129,6 +130,19 @@ pub const Host = struct {
         return b.finish(problems);
     }
 
+    /// Resolves every thing `s` names to the host's handle, once, at load: the step after `bind`.
+    pub fn resolveStory(h: *Host, gpa: std.mem.Allocator, s: *const story.Story, resolver: Resolver, problems: ?*std.ArrayList(Problem)) BindError!void {
+        const names = try gpa.alloc(RefName, s.len(.things));
+        defer gpa.free(names);
+        for (names, 0..) |*n, i| {
+            const t = s.thing(@intCast(i)); // safe: below a u32 count
+            n.* = .{ .kind = t.kind, .id = t.id };
+        }
+        try h.resolve(gpa, names, resolver, problems);
+        // a story with things and no externs is served by a host bound to nothing else
+        if (h.entries.len == 0) h.story = s.hash();
+    }
+
     /// Resolves each thing the story names to the host's handle, once, at load.
     pub fn resolve(h: *Host, gpa: std.mem.Allocator, names: []const RefName, resolver: Resolver, problems: ?*std.ArrayList(Problem)) BindError!void {
         const refs = try gpa.alloc(u64, names.len);
@@ -145,6 +159,36 @@ pub const Host = struct {
         if (h.gpa) |owner| owner.free(h.refs);
         h.refs = refs;
         h.gpa = h.gpa orelse gpa;
+    }
+};
+
+/// The host's handles and the ids a story names its things by, for saving refs by name: what
+/// `facts.snapshot.writeNamed` and `readNamed` take. It and what it borrows outlive the names it gives.
+pub const RefLookup = struct {
+    story: *const story.Story,
+    host: *const Host,
+
+    pub fn names(l: *const RefLookup) facts.RefNames {
+        return .{ .user = @ptrCast(@constCast(l)), .idOf = idOf, .handleOf = handleOf }; // safe: read back as a *const RefLookup
+    }
+
+    fn idOf(user: ?*anyopaque, kind: []const u8, handle: u64) ?[]const u8 {
+        const l: *const RefLookup = @ptrCast(@alignCast(user)); // safe: made by `names`
+        for (l.host.refs, 0..) |h, i| {
+            if (h != handle) continue;
+            const t = l.story.thing(@intCast(i)); // safe: refs are one per thing
+            if (std.mem.eql(u8, t.kind, kind)) return t.id;
+        }
+        return null;
+    }
+
+    fn handleOf(user: ?*anyopaque, kind: []const u8, id: []const u8) ?u64 {
+        const l: *const RefLookup = @ptrCast(@alignCast(user)); // safe: made by `names`
+        for (0..l.host.refs.len) |i| {
+            const t = l.story.thing(@intCast(i)); // safe: refs are one per thing
+            if (std.mem.eql(u8, t.kind, kind) and std.mem.eql(u8, t.id, id)) return l.host.refs[i];
+        }
+        return null;
     }
 };
 
@@ -238,7 +282,9 @@ fn kindOf(comptime T: type) Kind {
         u16 => .one_of,
         facts.Set => .set_of,
         []const u8 => .text,
-        else => @compileError("an extern's value is bool, i64, u16 (a one of), facts.Set or []const u8, not " ++ @typeName(T)),
+        // A `ref`: the host's handle.
+        u64 => .ref,
+        else => @compileError("an extern's value is bool, i64, u16 (a one of), facts.Set, []const u8 or u64 (a ref), not " ++ @typeName(T)),
     };
 }
 
@@ -285,6 +331,7 @@ fn unwrap(comptime T: type, v: Value) T {
         .one_of => v.one_of,
         .set_of => v.set_of,
         .text => v.text,
+        .ref => v.ref,
     };
 }
 
@@ -295,5 +342,6 @@ fn wrap(v: anytype) Value {
         .one_of => .{ .one_of = v },
         .set_of => .{ .set_of = v },
         .text => .{ .text = v },
+        .ref => .{ .ref = v },
     };
 }

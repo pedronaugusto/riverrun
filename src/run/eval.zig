@@ -79,6 +79,7 @@ fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
             .int => push(stack, &n, .{ .int = cx.story.int(t.arg) }),
             .item => push(stack, &n, .{ .one_of = t.itemIndex() }),
             .text => push(stack, &n, .{ .text = cx.story.literal(t.arg) }),
+            .thing => push(stack, &n, .{ .ref = cx.host.refs[t.arg] }),
             .true => push(stack, &n, .{ .boolean = true }),
             .false => push(stack, &n, .{ .boolean = false }),
             .not => stack[n - 1] = .{ .boolean = !stack[n - 1].boolean },
@@ -120,9 +121,10 @@ fn holds(set: Value, item: Value) bool {
     return item.one_of < facts.max_items and set.set_of.isSet(item.one_of);
 }
 
-// Equality, where a `one of` that holds nothing equals nothing.
+// Equality, where a `one of` or a `ref` that holds nothing equals nothing.
 fn same(a: Value, b: Value) bool {
     if (a == .one_of and (a.one_of == Value.none or b.one_of == Value.none)) return false;
+    if (a == .ref and (a.ref == Value.no_ref or b.ref == Value.no_ref)) return false;
     return a.eql(b);
 }
 

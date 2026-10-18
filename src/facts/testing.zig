@@ -12,6 +12,8 @@ pub const met: value.FactId = .fromRaw(2);
 pub const hour: value.FactId = .fromRaw(3);
 pub const name: value.FactId = .fromRaw(4);
 pub const carried: value.FactId = .fromRaw(5);
+pub const target: value.FactId = .fromRaw(6);
+pub const ally: value.FactId = .fromRaw(7);
 
 pub const schema: Schema = .{
     .scopes = &.{ "life", "player" },
@@ -22,5 +24,7 @@ pub const schema: Schema = .{
         .{ .name = "hour", .scope = life_scope, .kind = .int, .role = .game },
         .{ .name = "name", .scope = player_scope, .kind = .text },
         .{ .name = "carried", .scope = player_scope, .kind = .set_of, .items = &.{ "play", "gave", "hands" } },
+        .{ .name = "target", .scope = life_scope, .kind = .ref, .ref_kind = "person" },
+        .{ .name = "ally", .scope = life_scope, .kind = .ref, .ref_kind = "person" },
     },
 };

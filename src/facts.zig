@@ -40,6 +40,7 @@ pub const Watcher = changes.Watcher;
 
 pub const Memory = @import("facts/memory.zig").Memory;
 pub const snapshot = @import("facts/snapshot.zig");
+pub const RefNames = snapshot.RefNames;
 pub const json = @import("facts/json.zig");
 
 test {

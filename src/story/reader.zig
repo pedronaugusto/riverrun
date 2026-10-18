@@ -75,11 +75,13 @@ pub const Story = struct {
 
     pub fn fact(s: *const Story, id: facts.FactId) model.FactDecl {
         const f = s.g.get(.facts, id.raw());
+        const kind: facts.Kind = @fromBackingInt(f.kind);
         return .{
             .name = s.str(f.name),
             .scope = .fromRaw(f.scope),
-            .kind = @fromBackingInt(f.kind),
-            .enumeration = codec.optional(model.EnumId, f.enumeration),
+            .kind = kind,
+            .enumeration = if (kind == .ref) null else codec.optional(model.EnumId, f.enumeration),
+            .ref_kind = if (kind == .ref) .fromRaw(f.enumeration) else null,
             .role = @fromBackingInt(f.role),
         };
     }
@@ -107,14 +109,30 @@ pub const Story = struct {
         return .{
             .name = s.str(x.name),
             .params = x.params,
-            .returns = if (x.returns == format.no_kind) null else .{ .kind = @fromBackingInt(x.returns), .enumeration = codec.optional(model.EnumId, x.enumeration) },
+            .returns = if (x.returns == format.no_kind) null else typed(@fromBackingInt(x.returns), x.enumeration),
             .action = x.action == 1,
         };
     }
 
     pub fn param(s: *const Story, i: u32) model.Param {
         const p = s.g.get(.params, i);
-        return .{ .kind = @fromBackingInt(p.kind), .enumeration = codec.optional(model.EnumId, p.enumeration) };
+        return typed(@fromBackingInt(p.kind), p.enumeration);
+    }
+
+    fn typed(kind: facts.Kind, field: u16) model.Param {
+        if (kind == .ref) return .{ .kind = kind, .ref_kind = .fromRaw(field) };
+        return .{ .kind = kind, .enumeration = codec.optional(model.EnumId, field) };
+    }
+
+    /// The name of a kind of the host's things.
+    pub fn refKind(s: *const Story, id: model.RefKindId) []const u8 {
+        return s.str(s.g.get(.kinds, id.raw()));
+    }
+
+    /// The `i`th thing the story names: what a host resolves to its handle at load.
+    pub fn thing(s: *const Story, i: u32) model.Thing {
+        const t = s.g.get(.things, i);
+        return .{ .kind = s.str(s.g.get(.kinds, t.kind)), .id = s.str(t.id) };
     }
 
     /// The facts as a schema for a store: names and items borrowed from the story, lists on `arena`.
@@ -131,7 +149,7 @@ pub const Story = struct {
                 for (list, 0..) |*n, k| n.* = s.item(r.start + @as(u32, @intCast(k))); // safe: validated to max_items
                 names = list;
             }
-            d.* = .{ .name = f.name, .scope = f.scope, .kind = f.kind, .items = names, .role = f.role };
+            d.* = .{ .name = f.name, .scope = f.scope, .kind = f.kind, .items = names, .ref_kind = if (f.ref_kind) |k| s.refKind(k) else "", .role = f.role };
         }
         return .{ .scopes = scopes, .facts = decls };
     }

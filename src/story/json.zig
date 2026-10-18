@@ -299,6 +299,10 @@ pub fn exprText(story: *const Story, arena: Allocator, r: Range) !?[]const u8 {
                 try out.writer.print("'{s}", .{story.item(items.start + t.itemIndex())});
             },
             .text => try strand.json.write(&out.writer, story.literal(t.arg), .{}),
+            .thing => {
+                const th = story.thing(t.arg);
+                try out.writer.print("@{s}:{s}", .{ th.kind, th.id });
+            },
             .query => {
                 const x = story.externFn(.fromRaw(@intCast(t.arg))); // safe: validated below none16
                 try out.writer.print("{s}/{d}", .{ x.name, x.params.len });

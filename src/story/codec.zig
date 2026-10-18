@@ -21,6 +21,12 @@ pub fn raw16(id: anytype) u16 {
     return if (id) |x| x.raw() else none16;
 }
 
+/// What a fact's, a parameter's or a return's `enumeration` field holds: its enumeration, or a ref's kind.
+pub fn typeField(enumeration: ?model.EnumId, ref_kind: ?model.RefKindId) u16 {
+    if (enumeration) |e| return e.raw();
+    return raw16(ref_kind);
+}
+
 pub fn encodeNode(n: model.Node) format.Node {
     var r: format.Node = .{ .tags = n.tags, .a = 0, .b = 0, .c = 0, .d = 0, .next = none, .speaker = none16, .kind = @backingInt(@as(format.NodeKind, n.step)) };
     switch (n.step) {

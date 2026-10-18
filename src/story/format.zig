@@ -76,6 +76,10 @@ pub const Table = enum(u32) {
     effects,
     tags,
     tag_values,
+    /// The kinds of the host's things a story's refs hold: `person`, `item_kind`.
+    kinds,
+    /// The host's things a story names by their text ids, each of a kind.
+    things,
 };
 
 pub const table_count = @typeInfo(Table).@"enum".field_names.len;
@@ -112,7 +116,7 @@ pub const Meta = extern struct {
 
 pub const Fact = extern struct {
     name: Str,
-    /// For a `one of` or a `set of`; `none16` otherwise.
+    /// For a `one of` or a `set of`, its enumeration; for a `ref`, its kind; `none16` otherwise.
     enumeration: u16,
     scope: u8,
     kind: u8,
@@ -273,6 +277,13 @@ pub const TagValue = extern struct {
     section: u32,
 };
 
+/// One of the host's things a story names: its kind and its text id, resolved to a handle at load.
+pub const Thing = extern struct {
+    id: Str,
+    kind: u16,
+    pad: u16 = 0,
+};
+
 /// The record type of each table.
 pub fn Record(comptime t: Table) type {
     return switch (t) {
@@ -295,6 +306,8 @@ pub fn Record(comptime t: Table) type {
         .effects => Effect,
         .tags => Tag,
         .tag_values => TagValue,
+        .kinds => Str,
+        .things => Thing,
     };
 }
 
@@ -338,6 +351,8 @@ pub const Term = packed struct(u32) {
         le = 15,
         gt = 16,
         ge = 17,
+        /// Push one of the host's things, by its handle: `arg` indexes `things`.
+        thing = 18,
     };
 
     pub fn of(op: Op, arg: u24) Term {
@@ -359,7 +374,7 @@ pub const Term = packed struct(u32) {
 
 comptime {
     // The sizes docs/format.md gives.
-    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 24 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 12 } };
+    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 24 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 12 }, .{ Thing, 12 } };
     for (sizes) |s| if (@sizeOf(s[0]) != s[1]) @compileError("a record's size is not the specification's");
     for (@typeInfo(Table).@"enum".field_names) |field| {
         const R = Record(@field(Table, field));

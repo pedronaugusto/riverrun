@@ -86,6 +86,8 @@ Directory entries are in the fixed order of the tables below.
 | 18 | effects | Effect | 20 |
 | 19 | tags | Tag | 16 |
 | 20 | tag_values | TagValue | 12 |
+| 21 | kinds | Str | 8 |
+| 22 | things | Thing | 12 |
 
 ### Declarations
 
@@ -104,10 +106,10 @@ A `one of` fact holds one item or none; a `set of` fact holds any of them.
 | field | type | |
 |---|---|---|
 | name | Str | qualified; facts of the reserved scope are `visits:<what>` or `state:<what>` |
-| enumeration | u16 | for `one_of` and `set_of`, else `none` |
+| enumeration | u16 | for `one_of` and `set_of`, the enumeration; for `ref`, its kind; else `none` |
 | scope | u8 | |
-| kind | u8 | 0 boolean, 1 int, 2 one_of, 3 set_of, 4 text |
-| role | u8 | 0 story, 1 game (written by the game, never the story), 2 visits, 3 state |
+| kind | u8 | 0 boolean, 1 int, 2 one_of, 3 set_of, 4 text, 5 ref |
+| role | u8 | 0 story, 1 game (written by the game, never the story), 2 visits, 3 state, 4 clock (the game's, an int only ever advanced) |
 | padding | 3 bytes | |
 
 At most 4,096 facts. Visit counts are int facts of role `visits`, one per section,
@@ -115,7 +117,12 @@ per choice (named by its line id text) and per labelled gather. Alternatives' st
 and a candidate's last-seen turn are int facts of role `state`. They are facts like
 any other, so they are saved and restored with their scope.
 
-Initial values: false, 0, none, the empty set, the empty text.
+Initial values: false, 0, none, the empty set, the empty text, no thing (0).
+
+**Kinds** name the kinds of the host's things a `ref` holds (`person`, `item_kind`), at
+most 65,534. **Thing**: `id: Str` (its stable text id, `wolf_pelt`), `kind: u16`, 2 bytes
+padding: one of the host's things a story names. A host resolves every thing to its own
+64-bit handle once, at load; a `ref` value is that handle, and 0 holds no thing.
 
 **Cast**: `display: u64` (line id of the name shown), `relation: u64` (line id of who
 they are, or 0), `name: Str` (empty for an extra), `tags: Range`, `extra: u8` (1 for
@@ -127,7 +134,7 @@ A **query** (`action` 0) is pure, returns a value, and may be asked at any time.
 **action** (`action` 1) is performed by the host when the story reaches it; it may
 return an outcome, which the host writes into the effect's result fact.
 
-**Param**: `enumeration: u16`, `kind: u8`, 1 byte padding.
+**Param**: `enumeration: u16` (or a `ref`'s kind), `kind: u8`, 1 byte padding.
 
 ### Terms: conditions and values
 
@@ -148,6 +155,10 @@ its argument in the high 24 bits.
 | 12 not | | 0 | bool → bool |
 | 13 query | call a query on its arguments | extern id | args → its kind |
 | 14 lt, 15 le, 16 gt, 17 ge | ints compared | 0 | int int → bool |
+| 18 thing | push a thing's handle | index into things | → ref of its kind |
+
+`eq` and `ne` compare refs of one kind by handle; a ref that holds no thing equals
+nothing, as a `one of` that holds no value does.
 
 `seen(name)` is the visits fact of what it names; as a condition, `visits 0 gt`.
 There are no jumps: `and` and `or` evaluate both sides, which is sound because
@@ -291,9 +302,16 @@ facts    count × { name str, kind u8, value }
 str      u16 length, then that many bytes of UTF-8
 value    boolean u8 (0 or 1) · int i64 · one_of str (empty: none)
          · set_of u16 count (at most 256), then count × str · text str (at most 1,024 bytes)
+         · ref u8 form, then form 0: u64 handle · form 1: str id
 ```
 
 Names are at most 256 bytes. A restore applies nothing unless every byte is accepted.
+
+A `ref` holding a thing the story names is saved by its text id (form 1) and restored
+to whatever handle the host gives that id then, so a host may number its handles anew
+each run. Any other ref (a thing the host bound at run time, with no text id in the
+story) is saved as the host's handle (form 0), which must then be that thing's lasting
+id. Ids are the stable names; handles are only as lasting as the host makes them.
 
 ## What a reader validates
 
@@ -305,7 +323,7 @@ Before it trusts a graph, a reader checks:
    with a stride at least its record's size.
 3. Names: the names table is UTF-8, and every Str lies in it on character boundaries.
 4. Bounds: at most 32 scopes, 4,096 facts, 256 items an enumeration, 32 choices at a
-   point, 32 slots a text; the cast, externs and enums below 65,535 records.
+   point, 32 slots a text; the cast, externs, enums and kinds below 65,535 records.
 5. Every index in range, and every enumeration tag (kind, role, node, slot, effect,
    section kind) a known value.
 6. Kinds: an enumeration exactly where the kind needs one; visit counts, states,

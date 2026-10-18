@@ -499,3 +499,18 @@ test "an int changes by a number or an int constant; a set by one of its items" 
     try o.has(.err, 13, 3, "`+=` changes a set or an int; `met` is true or false");
     try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
 }
+
+test "a thing is said through a query, never as itself" {
+    var o = try checkOne(
+        \\facts:
+        \\  target: ref of person   (game)
+        \\extern:
+        \\  name(who: ref of person) -> text
+        \\== a
+        \\It is {name(target)}.
+        \\It is {target}.
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 7, 8, "a thing is said through a query the host answers, such as `{name(…)}`");
+}

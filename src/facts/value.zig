@@ -1,6 +1,6 @@
 //! What a fact holds, and the ids facts are known by.
 //!
-//! Every fact has one of five kinds. An enumeration and a set name their
+//! Every fact has one of six kinds. An enumeration and a set name their
 //! items by index into the items the fact was declared with; the names stay
 //! in the declaration, so a value is a few bytes and a snapshot can still
 //! match items by name when the declaration changes.
@@ -35,6 +35,8 @@ pub const Kind = enum(u8) {
     set_of = 3,
     /// Text typed in by the player.
     text = 4,
+    /// One of the host's things (a person, an item kind, a place): its handle, opaque to riverrun.
+    ref = 5,
 };
 
 /// The items of a set, by index.
@@ -48,9 +50,13 @@ pub const Value = union(Kind) {
     set_of: Set,
     /// Borrowed: from a store, valid until the fact is set again.
     text: []const u8,
+    /// The host's handle, or `no_ref`.
+    ref: u64,
 
     /// A `one of` that holds no value yet: every `=` is false of it.
     pub const none: u16 = std.math.maxInt(u16);
+    /// A `ref` that holds no thing yet: every `=` is false of it too.
+    pub const no_ref: u64 = 0;
 
     /// What a fact of `kind` holds before anything sets it.
     pub fn initial(kind: Kind) Value {
@@ -60,6 +66,7 @@ pub const Value = union(Kind) {
             .one_of => .{ .one_of = none },
             .set_of => .{ .set_of = .empty },
             .text => .{ .text = "" },
+            .ref => .{ .ref = no_ref },
         };
     }
 
@@ -71,6 +78,7 @@ pub const Value = union(Kind) {
             .one_of => |x| x == b.one_of,
             .set_of => |x| x.eql(b.set_of),
             .text => |x| std.mem.eql(u8, x, b.text),
+            .ref => |x| x == b.ref,
         };
     }
 };

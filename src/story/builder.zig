@@ -94,6 +94,8 @@ pub const Builder = struct {
     effects: std.ArrayList(format.Effect) = .empty,
     tags: std.ArrayList(format.Tag) = .empty,
     tag_values: std.ArrayList(format.TagValue) = .empty,
+    kinds: std.ArrayList(format.Str) = .empty,
+    things: std.ArrayList(format.Thing) = .empty,
     lines: std.ArrayList(strings.Line) = .empty,
     reserved: ScopeId = .fromRaw(0),
     seed: FactId = .fromRaw(0),
@@ -113,7 +115,7 @@ pub const Builder = struct {
         const gpa = b.gpa;
         b.interned.deinit(gpa);
         b.fact_names.deinit(gpa);
-        inline for (.{ "names", "scopes", "enums", "items", "facts", "cast", "externs", "params", "literals", "ints", "terms", "sections", "candidates", "nodes", "defined", "choices", "texts", "slots", "effects", "tags", "tag_values", "lines" }) |field| {
+        inline for (.{ "names", "scopes", "enums", "items", "facts", "cast", "externs", "params", "literals", "ints", "terms", "sections", "candidates", "nodes", "defined", "choices", "texts", "slots", "effects", "tags", "tag_values", "kinds", "things", "lines" }) |field| {
             @field(b, field).deinit(gpa);
         }
         b.arena.deinit();
@@ -163,10 +165,33 @@ pub const Builder = struct {
         return .fromRaw(@intCast(b.enums.items.len - 1)); // safe: checked above
     }
 
+    /// The kind of the host's things named `name`, declared if it is new.
+    pub fn refKind(b: *Builder, name: []const u8) Error!model.RefKindId {
+        const s = try b.declName(name);
+        for (b.kinds.items, 0..) |have, i| {
+            if (have.offset == s.offset and have.len == s.len) return .fromRaw(@intCast(i)); // safe: below none16
+        }
+        if (b.kinds.items.len == format.none16 - 1) return error.TooLarge;
+        try b.kinds.append(b.gpa, s);
+        return .fromRaw(@intCast(b.kinds.items.len - 1)); // safe: checked above
+    }
+
+    /// One of the host's things, named by its text id, for `Term.of(.thing, i)`. The same thing twice is one.
+    pub fn thing(b: *Builder, kind: model.RefKindId, id: []const u8) Error!u24 {
+        const s = try b.declName(id);
+        for (b.things.items, 0..) |t, i| {
+            if (t.kind == kind.raw() and t.id.offset == s.offset and t.id.len == s.len) return arg(i);
+        }
+        try b.things.append(b.gpa, .{ .id = s, .kind = kind.raw() });
+        return arg(b.things.items.len - 1);
+    }
+
     pub fn fact(b: *Builder, d: model.FactDecl) Error!FactId {
         const in_reserved = d.scope.eql(b.reserved);
         if (in_reserved != (d.role == .visits or d.role == .state)) return error.ReservedScope;
         if ((d.kind == .one_of or d.kind == .set_of) != (d.enumeration != null)) return error.BadKind;
+        if ((d.kind == .ref) != (d.ref_kind != null)) return error.BadKind;
+        if (d.role == .clock and d.kind != .int) return error.BadKind;
         if (b.facts.items.len == facts.max_facts) return error.TooManyFacts;
         const name = try b.declName(d.name);
         const gop = try b.fact_names.getOrPut(b.gpa, d.name);
@@ -174,7 +199,7 @@ pub const Builder = struct {
         gop.key_ptr.* = try b.arena.allocator().dupe(u8, d.name);
         try b.facts.append(b.gpa, .{
             .name = name,
-            .enumeration = codec.raw16(d.enumeration),
+            .enumeration = codec.typeField(d.enumeration, d.ref_kind),
             .scope = d.scope.raw(),
             .kind = @backingInt(d.kind),
             .role = @backingInt(d.role),
@@ -218,11 +243,11 @@ pub const Builder = struct {
     pub fn externFn(b: *Builder, name: []const u8, params: []const model.Param, returns: ?model.Param, action: bool) Error!facts.ExternId {
         if (b.externs.items.len == format.none16 - 1) return error.TooLarge;
         const start: u32 = @intCast(b.params.items.len); // safe: below max_bytes
-        for (params) |p| try b.params.append(b.gpa, .{ .kind = @backingInt(p.kind), .enumeration = codec.raw16(p.enumeration) });
+        for (params) |p| try b.params.append(b.gpa, .{ .kind = @backingInt(p.kind), .enumeration = codec.typeField(p.enumeration, p.ref_kind) });
         try b.externs.append(b.gpa, .{
             .name = try b.declName(name),
             .params = .{ .start = start, .len = @intCast(params.len) }, // safe: below max_bytes
-            .enumeration = if (returns) |r| codec.raw16(r.enumeration) else format.none16,
+            .enumeration = if (returns) |r| codec.typeField(r.enumeration, r.ref_kind) else format.none16,
             .returns = if (returns) |r| @backingInt(r.kind) else format.no_kind,
             .action = @intFromBool(action),
         });
@@ -328,7 +353,7 @@ pub const Builder = struct {
         for (when) |word| {
             const t: Term = @bitCast(word);
             const pops: usize = switch (t.op) {
-                .fact, .int, .item, .text, .true, .false => 0,
+                .fact, .int, .item, .text, .true, .false, .thing => 0,
                 .not => 1,
                 .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => 2,
                 .query => if (t.arg < b.externs.items.len) b.externs.items[t.arg].params.len else return 0,
@@ -337,7 +362,7 @@ pub const Builder = struct {
             const top = n - pops;
             stack[top] = switch (t.op) {
                 .fact => 1,
-                .int, .item, .text, .true, .false => 0,
+                .int, .item, .text, .true, .false, .thing => 0,
                 .not => stack[top],
                 .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .query => 1,
                 .@"and" => stack[top] +| stack[top + 1],

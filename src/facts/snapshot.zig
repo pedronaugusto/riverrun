@@ -16,6 +16,11 @@
 //!     str      u16 length, then that many bytes of UTF-8
 //!     value    boolean u8 (0 or 1) · int i64 · one_of str (empty: none)
 //!              · set_of u16 count, then count × str · text str
+//!              · ref u8 form, then form 0: u64 handle · form 1: str id
+//!
+//! A `ref` to a thing a story names by its text id is saved by that id, so a
+//! host may number its handles anew each run; any other is saved as the
+//! host's handle, which must then be the thing's lasting id.
 
 const std = @import("std");
 const value = @import("value.zig");
@@ -57,7 +62,30 @@ pub const Saved = struct {
         one_of: ?[]const u8,
         set_of: []const []const u8,
         text: []const u8,
+        ref: SavedRef,
     },
+};
+
+pub const SavedRef = union(enum) { handle: u64, id: []const u8 };
+
+/// Between the host's handles and the text ids a story names its things by, so a snapshot keeps the id.
+pub const RefNames = struct {
+    user: ?*anyopaque = null,
+    /// The text id of the thing of `kind` whose handle is `handle`, if a story names it.
+    idOf: *const fn (user: ?*anyopaque, kind: []const u8, handle: u64) ?[]const u8 = noId,
+    /// The handle of the thing of `kind` named `id`, if the host knows it.
+    handleOf: *const fn (user: ?*anyopaque, kind: []const u8, id: []const u8) ?u64 = noHandle,
+
+    /// Every ref saved as the host's handle.
+    pub const none: RefNames = .{};
+
+    fn noId(_: ?*anyopaque, _: []const u8, _: u64) ?[]const u8 {
+        return null;
+    }
+
+    fn noHandle(_: ?*anyopaque, _: []const u8, _: []const u8) ?u64 {
+        return null;
+    }
 };
 
 pub const Report = struct {
@@ -74,6 +102,11 @@ pub const Report = struct {
 };
 
 pub fn write(m: *const Memory, w: *std.Io.Writer, scope: ScopeId, story_hash: u64) std.Io.Writer.Error!void {
+    return writeNamed(m, w, scope, story_hash, .none);
+}
+
+/// `write`, with refs to things a story names saved by their ids.
+pub fn writeNamed(m: *const Memory, w: *std.Io.Writer, scope: ScopeId, story_hash: u64, names: RefNames) std.Io.Writer.Error!void {
     try w.writeAll(magic);
     try w.writeInt(u16, version, .little);
     try w.writeInt(u16, 0, .little);
@@ -96,6 +129,13 @@ pub fn write(m: *const Memory, w: *std.Io.Writer, scope: ScopeId, story_hash: u6
                 while (it.next()) |i| try str(w, d.items[i]);
             },
             .text => |x| try str(w, x),
+            .ref => |x| if (names.idOf(names.user, d.ref_kind, x)) |id| {
+                try w.writeByte(1);
+                try str(w, id);
+            } else {
+                try w.writeByte(0);
+                try w.writeInt(u64, x, .little);
+            },
         }
     }
 }
@@ -107,6 +147,11 @@ fn str(w: *std.Io.Writer, s: []const u8) std.Io.Writer.Error!void {
 
 /// Reads a snapshot of `scope` and restores it into `m`. The report's names are borrowed from `bytes`.
 pub fn read(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, story_hash: u64, bytes: []const u8) Error!Report {
+    return readNamed(m, arena, scope, story_hash, bytes, .none);
+}
+
+/// `read`, with refs saved by their ids given the host's handles for them.
+pub fn readNamed(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, story_hash: u64, bytes: []const u8, names: RefNames) Error!Report {
     var c: Cursor = .{ .bytes = bytes };
     if (!std.mem.eql(u8, try c.take(magic.len), magic)) return error.BadMagic;
     if (try c.int(u16) != version) return error.UnsupportedVersion;
@@ -118,11 +163,11 @@ pub fn read(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, story_hash: u6
     const saved = try arena.alloc(Saved, count);
     for (saved) |*s| s.* = try c.fact(arena);
     if (c.at != bytes.len) return error.TrailingBytes;
-    return restoreSaved(m, arena, scope, hash == story_hash, saved);
+    return restoreSaved(m, arena, scope, hash == story_hash, saved, names);
 }
 
 /// Restores facts read from any form of snapshot, matching by name. Nothing changes unless all of it is accepted.
-pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_story: bool, saved: []const Saved) Error!Report {
+pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_story: bool, saved: []const Saved, names: RefNames) Error!Report {
     var by_name: std.StringHashMapUnmanaged(FactId) = .empty;
     for (m.schema.facts, 0..) |d, i| {
         if (d.scope.eql(scope)) try by_name.put(arena, d.name, .fromRaw(@intCast(i))); // safe: validated to max_facts
@@ -142,7 +187,7 @@ pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_s
             try dropped.append(arena, s.name);
             continue;
         }
-        try staged.append(arena, .{ .id = id, .value = try matched(arena, d, s, &lost) });
+        try staged.append(arena, .{ .id = id, .value = try matched(arena, d, s, &lost, names) });
     }
     var restored: std.bit_set.Static(value.max_facts) = .empty;
     for (staged.items) |st| restored.set(st.id.raw());
@@ -167,8 +212,16 @@ pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_s
 }
 
 // A saved value in the terms of the fact's declaration now.
-fn matched(arena: std.mem.Allocator, d: schema_.Decl, s: Saved, lost: *std.ArrayList(Report.Lost)) Error!Value {
+fn matched(arena: std.mem.Allocator, d: schema_.Decl, s: Saved, lost: *std.ArrayList(Report.Lost), names: RefNames) Error!Value {
     switch (s.value) {
+        .ref => |r| switch (r) {
+            .handle => |h| return .{ .ref = h },
+            .id => |id| {
+                if (names.handleOf(names.user, d.ref_kind, id)) |h| return .{ .ref = h };
+                try lost.append(arena, .{ .fact = s.name, .item = id });
+                return .{ .ref = Value.no_ref };
+            },
+        },
         .boolean => |x| return .{ .boolean = x },
         .int => |x| return .{ .int = x },
         .text => |x| {
@@ -235,6 +288,11 @@ const Cursor = struct {
                 break :set .{ .set_of = items };
             },
             .text => .{ .text = try c.str(value.max_text, error.TextTooLong) },
+            .ref => .{ .ref = switch (try c.int(u8)) {
+                0 => .{ .handle = try c.int(u64) },
+                1 => .{ .id = try c.str(value.max_name, error.NameTooLong) },
+                else => return error.BadKind,
+            } },
         } };
     }
 };
@@ -283,7 +341,8 @@ test "a snapshot restored under a changed story matches facts and items by name"
     var out: std.Io.Writer.Allocating = .init(gpa);
     defer out.deinit();
     try write(&m, &out.writer, testing.life_scope, 1);
-    // The next version: `met` renamed, `dad` gone from what was kept, `life` gains a value before the old ones, `hour` is now text.
+    // The next version: `met` renamed, `dad` gone from what was kept, `life` gains a value before the old ones, `hour` is now text,
+    // and the refs `target` and `ally` gone.
     const next: schema_.Schema = .{ .scopes = &.{ "life", "player" }, .facts = &.{
         .{ .name = "hour", .scope = testing.life_scope, .kind = .text },
         .{ .name = "life", .scope = testing.life_scope, .kind = .one_of, .items = &.{ "unborn", "stay", "go" } },
@@ -299,9 +358,10 @@ test "a snapshot restored under a changed story matches facts and items by name"
     try std.testing.expectEqual(@as(u16, 2), n.get(.fromRaw(1)).one_of);
     try std.testing.expect(n.get(.fromRaw(3)).set_of.isSet(1));
     try std.testing.expectEqual(@as(usize, 1), n.get(.fromRaw(3)).set_of.count());
-    try std.testing.expectEqual(@as(usize, 2), report.dropped.len);
+    try std.testing.expectEqual(@as(usize, 4), report.dropped.len);
     try std.testing.expectEqualStrings("met", report.dropped[0]);
     try std.testing.expectEqualStrings("hour", report.dropped[1]);
+    try std.testing.expectEqualStrings("target", report.dropped[2]);
     try std.testing.expectEqual(@as(usize, 2), report.added.len);
     try std.testing.expectEqualStrings("hour", report.added[0]);
     try std.testing.expectEqualStrings("spoke", report.added[1]);
@@ -339,4 +399,41 @@ test "any bytes are restored or refused, never crash" {
             };
         }
     }.one, .{});
+}
+
+test "a ref a story names is saved by its id, any other by the host's handle" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const Names = struct {
+        // The host's handles this run, and the next run's: margaret is 7 now, 70 after a restart.
+        fn idOf(user: ?*anyopaque, kind: []const u8, handle: u64) ?[]const u8 {
+            _ = user;
+            return if (std.mem.eql(u8, kind, "person") and handle == 7) "margaret" else null;
+        }
+        fn handleOf(user: ?*anyopaque, kind: []const u8, id: []const u8) ?u64 {
+            _ = user;
+            return if (std.mem.eql(u8, kind, "person") and std.mem.eql(u8, id, "margaret")) 70 else null;
+        }
+    };
+    const names: RefNames = .{ .idOf = Names.idOf, .handleOf = Names.handleOf };
+    var m: Memory = try .init(gpa, testing.schema);
+    defer m.deinit();
+    try m.set(testing.target, .{ .ref = 7 });
+    try m.set(testing.ally, .{ .ref = 900 });
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    try writeNamed(&m, &out.writer, testing.life_scope, 1, names);
+    var again: Memory = try .init(gpa, testing.schema);
+    defer again.deinit();
+    const report = try readNamed(&again, arena.allocator(), testing.life_scope, 1, out.written(), names);
+    try std.testing.expectEqual(@as(usize, 0), report.lost.len);
+    try std.testing.expectEqual(@as(u64, 70), again.get(testing.target).ref);
+    try std.testing.expectEqual(@as(u64, 900), again.get(testing.ally).ref);
+    // a host that no longer knows the thing loses it, and says so
+    var lost: Memory = try .init(gpa, testing.schema);
+    defer lost.deinit();
+    const r = try readNamed(&lost, arena.allocator(), testing.life_scope, 1, out.written(), .none);
+    try std.testing.expectEqualStrings("margaret", r.lost[0].item);
+    try std.testing.expectEqual(Value.no_ref, lost.get(testing.target).ref);
 }

@@ -19,6 +19,8 @@ pub const NodeId = aegis.id.Id(enum { node }, u32);
 pub const TextId = aegis.id.Id(enum { text }, u32);
 pub const CastId = aegis.id.Id(enum { cast }, u16);
 pub const EnumId = aegis.id.Id(enum { enumeration }, u16);
+/// A kind of the host's things, by its place in the story's kinds.
+pub const RefKindId = aegis.id.Id(enum { ref_kind }, u16);
 /// A line, by the 64-bit XxHash (seed 0) of its `# id` text: what a translation and a voice key on.
 pub const LineId = aegis.id.NonZero(enum { line }, u64);
 
@@ -27,6 +29,8 @@ pub const FactDecl = struct {
     scope: ScopeId,
     kind: facts.Kind,
     enumeration: ?EnumId = null,
+    /// For a `ref`: the kind of the host's things it holds.
+    ref_kind: ?RefKindId = null,
     role: facts.Role = .story,
 };
 
@@ -42,7 +46,11 @@ pub const Cast = struct {
 pub const Param = struct {
     kind: facts.Kind,
     enumeration: ?EnumId = null,
+    ref_kind: ?RefKindId = null,
 };
+
+/// One of the host's things a story names.
+pub const Thing = struct { kind: []const u8, id: []const u8 };
 
 pub const Extern = struct {
     name: []const u8,

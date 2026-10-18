@@ -26,6 +26,8 @@ const Entry = struct {
     one_of: ?[]const u8 = null,
     set_of: ?[]const []const u8 = null,
     text: ?[]const u8 = null,
+    /// The host's handle, as a number: a readable form for tools, not a name a patch survives.
+    ref: ?u64 = null,
 };
 
 const Document = struct {
@@ -55,6 +57,7 @@ pub fn write(m: *const Memory, arena: std.mem.Allocator, w: *std.Io.Writer, scop
                 e.set_of = items;
             },
             .text => |x| e.text = x,
+            .ref => |x| e.ref = if (x == Value.no_ref) null else x,
         }
         try entries.append(arena, e);
     }
@@ -81,9 +84,10 @@ pub fn read(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, story_hash: u6
             .one_of => .{ .one_of = e.one_of },
             .set_of => .{ .set_of = e.set_of orelse &.{} },
             .text => .{ .text = e.text orelse "" },
+            .ref => .{ .ref = .{ .handle = e.ref orelse Value.no_ref } },
         } };
     }
-    return snapshot.restoreSaved(m, arena, scope, hash == story_hash, saved);
+    return snapshot.restoreSaved(m, arena, scope, hash == story_hash, saved, .none);
 }
 
 const testing = @import("testing.zig");

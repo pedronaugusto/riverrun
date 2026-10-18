@@ -25,6 +25,8 @@ pub const Role = enum(u8) {
     visits = 2,
     /// The executor: alternatives, pools' memory, the seed.
     state = 3,
+    /// The game's, and only ever advanced: a clock, `(clock)`, whose comparisons can be woken by its value.
+    clock = 4,
 };
 
 pub const Decl = struct {
@@ -33,6 +35,8 @@ pub const Decl = struct {
     kind: Kind,
     /// The values of a `one of` or the items of a `set of`; empty otherwise.
     items: []const []const u8 = &.{},
+    /// For a `ref`: the kind of the host's things it holds, which names it in a snapshot.
+    ref_kind: []const u8 = "",
     role: Role = .story,
 
     pub fn itemNamed(d: Decl, name: []const u8) ?u16 {
@@ -81,6 +85,7 @@ pub const Schema = struct {
             if (d.scope.raw() >= s.scopes.len) return error.ScopeOutOfRange;
             const listed = d.kind == .one_of or d.kind == .set_of;
             if (listed != (d.items.len > 0)) return error.ItemsDoNotFitKind;
+            if ((d.kind == .ref) != (d.ref_kind.len > 0)) return error.ItemsDoNotFitKind;
             if (d.items.len > value.max_items) return error.TooManyItems;
             items.clearRetainingCapacity();
             for (d.items) |item| {

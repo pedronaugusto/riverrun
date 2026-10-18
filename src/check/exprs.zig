@@ -321,6 +321,7 @@ pub fn text(c: *Checker, scope: Scope, t: ast.Text) Error!void {
             if (e.kind != .name and e.kind != .call) return c.err(e.span, "`{{…}}` says a fact, a constant or a query's answer", .{});
             const typ = try infer(c, scope, e, null) orelse continue;
             if (typ == .set_of) try c.err(e.span, "a set cannot be said", .{});
+            if (typ == .ref) try c.err(e.span, "a thing is said through a query the host answers, such as `{{name(…)}}`", .{});
         },
         .choose => |*ch| {
             try condition(c, scope, &ch.cond);

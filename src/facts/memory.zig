@@ -96,7 +96,7 @@ pub fn check(d: schema_.Decl, v: Value) SetError!void {
             if (last >= d.items.len) return error.ItemOutOfRange;
         },
         .text => |x| if (x.len > value.max_text) return error.TextTooLong,
-        .boolean, .int => {},
+        .boolean, .int, .ref => {},
     }
 }
 

@@ -61,8 +61,9 @@ fn enumLen(g: *const Graph, e: u16) u32 {
     return g.get(.enums, e).len;
 }
 
-// An enumeration where the kind needs one, and none where it does not.
+// An enumeration where the kind needs one, a kind of things for a ref, and none where neither is.
 fn enumeration(g: *const Graph, k: facts.Kind, e: u16) Error!void {
+    if (k == .ref) return index(g, .kinds, e);
     if (!listed(k)) {
         if (e != none16) return error.BadKind;
         return;
@@ -91,13 +92,23 @@ fn declarations(g: *const Graph) Error!void {
         if (r.len == 0) return error.BadKind;
         if (r.len > facts.max_items) return error.TooManyItems;
     }
+    if (g.len(.kinds) >= none16) return error.OutOfRange;
+    for (0..g.len(.kinds)) |i| try nonEmptyName(g, g.get(.kinds, @intCast(i))); // safe: below a u32 count
+    for (0..g.len(.things)) |i| {
+        const t = g.get(.things, @intCast(i)); // safe: below a u32 count
+        try nonEmptyName(g, t.id);
+        try index(g, .kinds, t.kind);
+        if (t.pad != 0) return error.BadNode;
+    }
     if (g.len(.facts) > facts.max_facts) return error.TooManyFacts;
     for (0..g.len(.facts)) |i| {
         const f = g.get(.facts, @intCast(i)); // safe: below a u32 count
         try nonEmptyName(g, f.name);
         try index(g, .scopes, f.scope);
-        _ = std.enums.fromInt(facts.Role, f.role) orelse return error.BadKind;
-        try enumeration(g, try kind(f.kind), f.enumeration);
+        const role = std.enums.fromInt(facts.Role, f.role) orelse return error.BadKind;
+        const k = try kind(f.kind);
+        if (role == .clock and k != .int) return error.BadKind;
+        try enumeration(g, k, f.enumeration);
     }
     if (g.len(.cast) >= none16) return error.OutOfRange;
     for (0..g.len(.cast)) |i| {
@@ -374,6 +385,11 @@ fn expr(g: *const Graph, r: Range, want: Want) Error!void {
             },
             .true, .false => {
                 stack[n] = .boolean;
+                n += 1;
+            },
+            .thing => {
+                try index(g, .things, arg);
+                stack[n] = .{ .kind = @backingInt(facts.Kind.ref), .enumeration = g.get(.things, arg).kind };
                 n += 1;
             },
             .not => {

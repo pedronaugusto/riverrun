@@ -590,3 +590,49 @@ test "the things a story names are resolved to the host's handles once, at load"
     try host.resolve(gpa, &.{.{ .kind = "item_kind", .id = "wolf_pelt" }}, resolver, null);
     try std.testing.expectEqual(@as(u64, 0xBEEF), host.refs[0]);
 }
+
+test "a story's things are resolved once, compared as handles, and saved by their ids" {
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const life = try b.scope("life");
+    const person = try b.refKind("person");
+    const target = try b.fact(.{ .name = "target", .scope = life, .kind = .ref, .ref_kind = person, .role = .game });
+    const hunt = try testing.scene(&b, "hunt");
+    const found = try testing.say(&b, "found", "It is Margaret.", null);
+    const nobody = try testing.say(&b, "nobody", "Nobody.", null);
+    const is_margaret = try b.expr(&.{ .of(.fact, target.raw()), .of(.thing, try b.thing(person, "margaret")), .of(.eq, 0) });
+    b.enter(hunt, try b.node(.{ .step = .{ .branch = .{ .cond = is_margaret, .then = found, .otherwise = nobody } } }));
+    var built = try testing.finish(&b, gpa);
+    defer built.deinit(gpa);
+    const s: story.Story = try .init(built.graph, .{});
+    const words: story.Strings = try .init(built.words, .{});
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var memory: facts.Memory = try .init(gpa, try s.schema(arena.allocator()));
+    defer memory.deinit();
+
+    var host: run_host.Host = .none;
+    defer host.deinit();
+    try std.testing.expect(!host.serves(&s));
+    const People = struct {
+        fn resolve(_: ?*anyopaque, kind: []const u8, id: []const u8) ?u64 {
+            return if (std.mem.eql(u8, kind, "person") and std.mem.eql(u8, id, "margaret")) 41 else null;
+        }
+    };
+    try host.resolveStory(gpa, &s, .{ .user = null, .resolve = People.resolve }, null);
+    try std.testing.expect(host.serves(&s));
+    var session: Session = try .init(gpa, &s, &words, memory.store(), &host, .{});
+    defer session.deinit();
+
+    try session.start(.fromRaw(0), s.sectionNamed("hunt").?);
+    try std.testing.expectEqualStrings("Nobody.", (try session.next(.fromRaw(0))).line.text);
+    try memory.set(target, .{ .ref = 41 });
+    try session.start(.fromRaw(0), s.sectionNamed("hunt").?);
+    try std.testing.expectEqualStrings("It is Margaret.", (try session.next(.fromRaw(0))).line.text);
+
+    const lookup: run_host.RefLookup = .{ .story = &s, .host = &host };
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    try facts.snapshot.writeNamed(&memory, &out.writer, life, s.hash(), lookup.names());
+    try std.testing.expect(std.mem.find(u8, out.written(), "margaret") != null);
+}

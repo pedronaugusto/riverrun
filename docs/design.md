@@ -103,7 +103,10 @@ A conversation with several speakers needs no construct of its own:
 
 ## Facts
 
-- **Types:** `bool`, `int`, `one of …`, `set of …`, and text, only for names the player types.
+- **Types:** `bool`, `int`, `one of …`, `set of …`, text (only for names the player types), and `ref of kind`,
+  the host's handle for one of its things. A story names things by stable text ids, resolved to handles once at
+  load; a snapshot saves a named thing by its id, so a host may renumber its handles, and any other ref by its
+  handle, which must then be lasting.
 - **Scopes** are named by the story and stored by the host; riverrun keeps them apart. A game that replays lives
   might save `life` per life and keep `player` across them; riverrun knows neither name.
 - **The reserved scope `story`** holds what riverrun itself counts: visits, alternatives, pools' memory and the seed.
