@@ -1,7 +1,8 @@
 //! Tags held to the host's schema. A value typed as a section is resolved,
 //! and is an edge for reachability: a section only a mechanic leads to is
 //! still reached. A key that `leads` hands a section's end to the host,
-//! which goes on to the section the tag names.
+//! which goes on to the section the tag names. A value a package judges is
+//! handed to its judge, with where the tag stands.
 
 const std = @import("std");
 const syntax = @import("../syntax.zig");
@@ -11,7 +12,7 @@ const schema_file = @import("schema.zig");
 
 const ast = syntax.ast;
 const Error = Checker.Error;
-const Schema = schema_file.Schema;
+const Schema = Checker.Schema;
 const id_key = schema_file.id_key;
 
 /// Checks the tags at one place. `from` is the section they are in, for edges; null for the cast.
@@ -35,8 +36,7 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tags: []co
         if (from) |s| if (c.kindOfSection(s)) |kind| if (kind.schema) |ks| switch (ks.find(tag.key.text, at)) {
             // a registered kind's own keys are checked by its schema; the rest fall to the host's
             .found => |k| {
-                try count(c, tag, k);
-                try values(c, module, from, tag, k, at);
+                try values(c, module, from, tags, tag, k, at);
                 continue;
             },
             .elsewhere => {
@@ -57,8 +57,7 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tags: []co
                 continue;
             },
         };
-        try count(c, tag, key);
-        try values(c, module, from, tag, key, at);
+        try values(c, module, from, tags, tag, key, at);
     }
 }
 
@@ -88,24 +87,29 @@ fn own(c: *Checker, from: ?sym.SectionId, tag: *const ast.Tag, at: Schema.Place)
     }
 }
 
-fn count(c: *Checker, tag: *const ast.Tag, key: *const Schema.Key) Error!void {
+// Whether the tag has as many values as its key takes, else says how many it takes.
+fn count(c: *Checker, tag: *const ast.Tag, key: *const Schema.Key) Error!bool {
     const n = tag.values.len;
     if (key.value == .none) {
         if (n > 0) try c.err(tag.key.span, "`{s}` is a mark and takes no value", .{key.name});
-        return;
+        return n == 0;
     }
     switch (key.count) {
-        .one => if (n != 1) try c.err(tag.key.span, "`{s}` takes one value, not {d}", .{ key.name, n }),
-        .many => if (n == 0) try c.err(tag.key.span, "`{s}` takes at least one value", .{key.name}),
-        .any => {},
+        .one => if (n != 1) try c.err(tag.key.span, "`{s}` takes one value, not {d}", .{ key.name, n }) else return true,
+        .many => if (n == 0) try c.err(tag.key.span, "`{s}` takes at least one value", .{key.name}) else return true,
+        .any => return true,
     }
+    return false;
 }
 
-fn values(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tag: *const ast.Tag, key: *const Schema.Key, at: Schema.Place) Error!void {
+// `beside` is the tags written where `tag` stands, which a judge may read.
+fn values(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, beside: []const ast.Tag, tag: *const ast.Tag, key: *const Schema.Key, at: Schema.Place) Error!void {
+    if (!try count(c, tag, key)) return;
+    if (key.value == .judge) return key.value.judge(c, .{ .tag = tag, .beside = beside, .section = from, .place = at, .module = module });
     var sections: std.ArrayList(sym.SectionId) = .empty;
     if (key.value == .text) try c.text_tags.put(c.arena, tag, {});
     for (tag.values) |v| switch (key.value) {
-        .none, .text => {},
+        .none, .text, .judge => {},
         .number => if (!isNumber(v)) try c.err(tag.key.span, "`{s}` takes a number: `{s}` is not one", .{ key.name, v }),
         .word => if (!isWord(v)) try c.err(tag.key.span, "`{s}` takes a word: `{s}` is not one", .{ key.name, v }),
         .words => |ws| if (!within(ws, v)) {

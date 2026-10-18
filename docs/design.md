@@ -115,10 +115,11 @@ DAD: Go.
   kept per thing by a key written as a constant is filed under that key alone; a query a rule asks must
   declare its stamp, so the rule wakes when its answer may change.
 - **Tags:** `# key value · key value` at the end of a line, a choice or a heading. `id` is riverrun's: a line's
-  stable id; so is `gender` on a cast entry. Every other key is the host's, typed by its schema; a key the schema
-  marks `leads` carries the flow on into the host's mechanic, and a value it types as text (a quest's `# title`) is
-  words a player reads, which go into the string table under an id made of where the tag stands, so a translation
-  carries them and a typo fixed keeps them.
+  stable id; so is `gender` on a cast entry. Every other key is the host's or a package's, typed by its schema; a
+  key the schema marks `leads` carries the flow on into the host's mechanic, a value it types as text (a quest's
+  `# title`) is words a player reads, which go into the string table under an id made of where the tag stands, so a
+  translation carries them and a typo fixed keeps them, and a value it leaves to a judge is held to the story by the
+  package that defines the key (`every week` names one of a calendar's units).
 - **Comments:** `//`.
 
 Built: the reader and the checker, all of the above.
@@ -221,6 +222,12 @@ the index after the story's own declarations, so it is typed, scoped, read by co
 snapshots like any other, and a name declared twice is reported with both places. A calendar keeps `weekday` and
 `slot`, which the story then reads and never declares; a quest's stages are declared within it, `the_stranger.named`
 to the rest of the story and `named` inside the quest, so two quests' stages never meet.
+
+A key's value may be judged rather than typed (`Schema.Value.judge`): the package that defines the key is handed
+each such tag where it stands (its section, its place and the tags beside it) with the checker, and reports what is
+wrong at the tag, as `.values_of` and `.section` are riverrun's own judgements. An instant of a calendar, a
+schedule's unit, a reference to a quest's stage: what a word or a fixed list cannot say. A tag whose count is wrong
+is reported for that and never judged.
 
 A package reports through riverrun's diagnostics, never beside them. Its checks are a pass of the checker's
 (`check.Options.passes`), run inside `check.run` once riverrun's are done, over the checked story: what no schema can

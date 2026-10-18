@@ -1,11 +1,12 @@
-//! The checker while it works through a story: the tables it fills, the
-//! side tables of what each node means, and where it reports. The passes
-//! are functions over it, in the order `check` runs them.
+//! The checker while it works through a story: what the host and its
+//! packages give it (the options, their schemas, kinds and passes), the
+//! tables it fills, the side tables of what each node means, and where it
+//! reports. The passes are functions over it, in the order `check` runs
+//! them, and a package's judges and passes are given it too.
 
 const std = @import("std");
 const syntax = @import("../syntax.zig");
 const sym = @import("symbols.zig");
-const Schema = @import("schema.zig").Schema;
 
 const Checker = @This();
 const Checked = @import("Checked.zig");
@@ -76,6 +77,95 @@ pub const Pass = struct {
 };
 
 pub const Builtin = sym.Builtin;
+
+/// The host's tags, or a kind's, as it gives them to the checker: which keys it knows, where each may stand, and
+/// what its values are.
+pub const Schema = struct {
+    keys: []const Key,
+
+    /// Where a tag stands.
+    pub const Place = enum { cast, section, part, line, choice, other };
+
+    pub const Places = struct {
+        cast: bool = false,
+        section: bool = false,
+        part: bool = false,
+        line: bool = false,
+        choice: bool = false,
+        /// Any other statement: a condition, a gather, an effect, a flow.
+        other: bool = false,
+
+        pub fn has(p: Places, at: Schema.Place) bool {
+            return switch (at) {
+                inline else => |t| @field(p, @tagName(t)),
+            };
+        }
+    };
+
+    pub const Value = union(enum) {
+        /// A mark: the key alone.
+        none,
+        /// Digits, with an optional fraction: `2.5`.
+        number,
+        /// Letters, digits and `_`.
+        word,
+        /// Anything; quote it to hold `·` or `,`.
+        text,
+        /// One of these words.
+        words: []const []const u8,
+        /// One of the values of the story's fact with this name, a `one of` or a `set of`.
+        values_of: []const u8,
+        /// A section of the story.
+        section,
+        /// Judged by the package that defines the key, against the story: `every week` names one of a
+        /// calendar's units, `after asked` one of a quest's stages. Called once for each tag whose count holds.
+        judge: Judge,
+    };
+
+    /// What a package makes of a tag's values: it reports what is wrong with `Checker.err`, at the tag.
+    pub const Judge = *const fn (c: *Checker, t: Tagged) Error!void;
+
+    /// A tag being judged, and where it stands.
+    pub const Tagged = struct {
+        tag: *const ast.Tag,
+        /// The tags written beside it, itself among them: a schedule's `every` reads its `calendar`.
+        beside: []const ast.Tag,
+        /// The section it is in; null on a cast entry.
+        section: ?sym.SectionId,
+        place: Schema.Place,
+        /// The module its names are looked up in.
+        module: sym.ModuleId,
+    };
+
+    pub const Count = enum {
+        one,
+        /// One or more.
+        many,
+        /// None or more: a key that is also a mark.
+        any,
+    };
+
+    pub const Key = struct {
+        name: []const u8,
+        on: Places,
+        value: Value = .none,
+        count: Count = .one,
+        /// On a section, with a section value: when the section ends the host goes on to that one.
+        leads: bool = false,
+    };
+
+    pub const Found = union(enum) { found: *const Key, elsewhere, unknown };
+
+    /// The key called `name` that may stand at `at`, else whether any key has the name.
+    pub fn find(s: *const Schema, name: []const u8, at: Schema.Place) Found {
+        var elsewhere = false;
+        for (s.keys) |*k| if (std.mem.eql(u8, k.name, name)) {
+            if (k.on.has(at)) return .{ .found = k };
+            elsewhere = true;
+        };
+        return if (elsewhere) .elsewhere else .unknown;
+    }
+};
 
 /// The kind a package registered for `section`, if it is one.
 pub fn kindOfSection(c: *const Checker, id: sym.SectionId) ?*const Kind {
@@ -268,4 +358,14 @@ pub fn edge(c: *Checker, from: sym.SectionId, to: sym.SectionId, how: @FieldType
 /// Lower case, for speakers: `A CELLIST` matches `a cellist`.
 pub fn lower(c: *const Checker, s: []const u8) Error![]const u8 {
     return std.ascii.allocLowerString(c.arena, s);
+}
+
+test "a key is found where it may stand" {
+    const s: Schema = .{ .keys = &.{
+        .{ .name = "at", .on = .{ .line = true }, .value = .number },
+        .{ .name = "at", .on = .{ .choice = true }, .value = .word, .count = .many },
+    } };
+    try std.testing.expectEqual(Schema.Value.word, std.meta.activeTag(s.find("at", .choice).found.value));
+    try std.testing.expect(s.find("at", .section) == .elsewhere);
+    try std.testing.expect(s.find("heard", .line) == .unknown);
 }

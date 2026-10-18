@@ -14,11 +14,11 @@ const syntax = @import("syntax.zig");
 
 pub const symbols = @import("check/symbols.zig");
 pub const Checked = @import("check/Checked.zig");
-pub const Schema = @import("check/schema.zig").Schema;
 /// The checker while it works: what a package's pass and its kind's hooks are given, to read the story and to
 /// report where it is written.
 pub const Checker = @import("check/Checker.zig");
 pub const Options = Checker.Options;
+pub const Schema = Checker.Schema;
 pub const Mode = Checker.Mode;
 pub const Width = Checker.Width;
 pub const Kind = Checker.Kind;

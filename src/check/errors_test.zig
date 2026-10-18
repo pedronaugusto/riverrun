@@ -636,6 +636,33 @@ test "what a section declares within it is `section.name` outside it, and `name`
     try std.testing.expect(o.checked.?.fact("pelts.asked") != null);
 }
 
+test "a package judges its own tags' values, and says what is wrong where the tag stands" {
+    const Stages = struct {
+        // `after` names stages of the quest it stands in
+        fn after(c: *check.Checker, t: check.Schema.Tagged) error{OutOfMemory}!void {
+            const s = c.section(t.section.?);
+            for (t.tag.values) |v| {
+                for (s.parts) |p| {
+                    if (std.mem.eql(u8, p.name, v)) break;
+                } else try c.err(t.tag.key.span, "`{s}` is not a stage of `{s}`", .{ v, s.name });
+            }
+        }
+    };
+    const quest_tags: check.Schema = .{ .keys = &.{
+        .{ .name = "after", .on = .{ .part = true }, .value = .{ .judge = Stages.after }, .count = .many },
+    } };
+    var o = try checkOne(
+        \\== pelts (quest)
+        \\= asked
+        \\= late    # after asked, akked
+        \\= early   # after
+    , .{ .kinds = &.{.{ .name = "quest", .schema = &quest_tags }} });
+    defer o.deinit();
+    try o.has(.err, 3, 13, "`akked` is not a stage of `pelts`");
+    try o.has(.err, 4, 13, "`after` takes at least one value");
+    try std.testing.expectEqual(@as(usize, 2), o.diags.errors());
+}
+
 test "rules: each a condition and its effects, reached by nothing, their queries stamped" {
     var o = try checkOne(
         \\facts:
