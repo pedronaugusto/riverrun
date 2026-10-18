@@ -407,6 +407,8 @@ pub const Term = packed struct(u32) {
         builtin = 19,
         /// Push how far a clock has moved since a fact last changed: `arg` indexes `changes`.
         since_changed = 20,
+        /// Push whether a moment happened: holds something other than its initial value. `arg` is its fact id.
+        happened = 21,
     };
 
     pub fn of(op: Op, arg: u24) Term {

@@ -43,7 +43,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
     try declare.run(&c);
     try walk.run(&c);
     try flow.run(&c);
-    for (c.facts.items) |f| if (!f.game and !f.set) {
+    for (c.facts.items) |f| if (!f.game and !f.moment and !f.set) {
         try c.warn(f.span, "nothing sets `{s}`: declare it `(game)` if the game writes it", .{f.name});
     };
     return .{

@@ -27,6 +27,9 @@ pub const Role = enum(u8) {
     state = 3,
     /// The game's, and only ever advanced: a clock, `(clock)`, whose comparisons can be woken by its value.
     clock = 4,
+    /// What happened, `(moment)`: held until what watches conditions has seen it, then back to its initial value;
+    /// never saved.
+    moment = 5,
 };
 
 pub const Decl = struct {

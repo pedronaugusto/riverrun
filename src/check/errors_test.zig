@@ -572,3 +572,24 @@ test "rules: each a condition and its effects, reached by nothing, their queries
     try o.has(.err, 15, 3, "the rule `loose` needs its condition: `= loose when { … }`, its effects under it");
     try o.has(.err, 18, 3, "a rule's body is its effects, `~ …`: a rule says nothing and goes nowhere");
 }
+
+test "a moment is seen only by rules and quests, and happened asks of moments alone" {
+    var o = try checkOne(
+        \\facts:
+        \\  pulled:  one of a, b   (moment)
+        \\  rang:    bool          (moment)
+        \\  hour:    int           (game)
+        \\  tick:    int           (clock) (moment)
+        \\== a
+        \\{ pulled = a } The lever moves.
+        \\-> end
+        \\== lever (rules)
+        \\= any    when { happened(pulled) and happened(hour) }
+        \\  ~ rang = true
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 7, 3, "`pulled` is a moment, over once rules and quests have seen it: `a` would never see it");
+    try o.has(.err, 10, 47, "`hour` is not a moment: `happened` asks of a fact declared `(moment)`");
+    try o.has(.err, 5, 3, "`tick` is a clock or a moment: a clock lasts, and a moment is over at once");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
+}

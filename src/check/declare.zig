@@ -15,7 +15,7 @@ const Span = syntax.Span;
 const Error = Checker.Error;
 
 /// The functions riverrun itself answers in a condition: no query may take their names.
-pub const riverrun_builtins = [_][]const u8{ "seen", "since_changed" };
+pub const riverrun_builtins = [_][]const u8{ "seen", "since_changed", "happened" };
 
 pub fn run(c: *Checker) Error!void {
     for (c.files, 0..) |*file, i| {
@@ -72,6 +72,7 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
     }
     const t = try typeOf(c, f.type, f.name.span);
     if (f.clock and t != .int) try c.err(f.name.span, "a clock counts, so `(clock)` is an int's: `{s}` is {s}", .{ f.name.text, try c.describe(t) });
+    if (f.clock and f.moment) try c.err(f.name.span, "`{s}` is a clock or a moment: a clock lasts, and a moment is over at once", .{f.name.text});
     const id = sym.idOf(sym.FactId, c.facts.items.len);
     if (!try named(c, module, f.name, .{ .fact = id })) return;
     try c.facts.append(c.arena, .{
@@ -80,6 +81,7 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
         .type = t,
         .game = f.game,
         .clock = f.clock,
+        .moment = f.moment,
         .module = module,
         .span = f.name.span,
     });

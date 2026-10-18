@@ -417,7 +417,7 @@ pub const Builder = struct {
                 .not => 1,
                 .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => 2,
                 .query => if (t.arg < b.externs.items.len) b.externs.items[t.arg].params.len else return 0,
-                .builtin, .since_changed => 0,
+                .builtin, .since_changed, .happened => 0,
             };
             if (n < pops or n - pops == stack.len) return 0;
             const top = n - pops;
@@ -425,7 +425,7 @@ pub const Builder = struct {
                 .fact => 1,
                 .int, .item, .text, .true, .false, .thing => 0,
                 .not => stack[top],
-                .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .query, .builtin, .since_changed => 1,
+                .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .query, .builtin, .since_changed, .happened => 1,
                 .@"and" => stack[top] +| stack[top + 1],
                 .@"or" => @min(stack[top], stack[top + 1]),
             };

@@ -48,6 +48,8 @@ pub const Fact = struct {
     game: bool,
     /// `(clock)`: an int the game only advances, so a comparison with it can be woken by its value.
     clock: bool = false,
+    /// `(moment)`: what happened, held only until what watches conditions has seen it, and never saved.
+    moment: bool = false,
 };
 
 pub const Type = union(enum) {

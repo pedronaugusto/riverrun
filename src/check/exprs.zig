@@ -100,7 +100,13 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
         return record(c, e, hint.?, .{ .thing = .{ .kind = kind, .id = n } });
     }
     if (c.valueNamed(scope.module, n)) |named| switch (named) {
-        .fact => |id| return record(c, e, c.facts.items[id.raw()].type, .{ .fact = id }),
+        .fact => |id| {
+            if (c.facts.items[id.raw()].moment and !reacts(c, scope)) {
+                try c.err(e.span, "`{s}` is a moment, over once rules and quests have seen it: `{s}` would never see it", .{ n, c.sections.items[scope.section.raw()].name });
+                return null;
+            }
+            return record(c, e, c.facts.items[id.raw()].type, .{ .fact = id });
+        },
         .constant => |id| return record(c, e, c.consts.items[id.raw()].type, .{ .constant = id }),
         .external => |id| {
             const what = if (!c.externs.items[id.raw()].asks()) "an action: it runs as an effect, `~ " else "a query: ask it as `";
@@ -117,6 +123,7 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
 fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) Error!?sym.Type {
     if (std.mem.eql(u8, call.name.text, "seen")) return seen(c, scope, e, call);
     if (std.mem.eql(u8, call.name.text, "since_changed")) return sinceChanged(c, scope, e, call);
+    if (std.mem.eql(u8, call.name.text, "happened")) return happened(c, scope, e, call);
     if (c.kindOfSection(scope.section)) |kind| if (kind.builtin(call.name.text)) |b| return builtin(c, scope, e, call, kind, b);
     const id = try externOf(c, scope, call) orelse return null;
     const ext = c.externs.items[id.raw()];
@@ -181,6 +188,24 @@ fn sinceChanged(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.
         return null;
     }
     return record(c, e, .int, .{ .since_changed = .{ .fact = fact, .clock = clock } });
+}
+
+// `happened(moment)`: whether a moment holds something this step, its value aside.
+fn happened(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) Error!?sym.Type {
+    if (!reacts(c, scope)) {
+        try c.err(e.span, "`happened` is seen by what watches conditions: a rule or a quest, not `{s}`", .{c.sections.items[scope.section.raw()].name});
+        return null;
+    }
+    if (call.args.len != 1 or call.args[0].kind != .name) {
+        try c.err(e.span, "`happened` takes a moment: `happened(pulled)`", .{});
+        return null;
+    }
+    const m = try factArg(c, scope, &call.args[0]) orelse return null;
+    if (!c.facts.items[m.raw()].moment) {
+        try c.err(call.args[0].span, "`{s}` is not a moment: `happened` asks of a fact declared `(moment)`", .{call.args[0].kind.name});
+        return null;
+    }
+    return record(c, e, .boolean, .{ .happened = m });
 }
 
 fn factArg(c: *Checker, scope: Scope, arg: *const ast.Expr) Error!?sym.FactId {

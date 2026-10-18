@@ -45,8 +45,10 @@ DAD: Go.
 - **Declarations**, seen by every file of the story:
   - `cast:` ids with a display name, a note after `—` and tags; `extras:` people who speak once and need no name. A
     speaker that is neither is an error.
-  - `facts (scope):` typed facts in a scope the host names; `(game)` marks a fact only the host writes, and
-    `(clock)` an int it only advances.
+  - `facts (scope):` typed facts in a scope the host names; `(game)` marks a fact only the host writes,
+    `(clock)` an int it only advances, and `(moment)` what happened (a lever pulled, a shot heard), held until rules
+    and quests have seen it and never saved. Only they read a moment; `happened(m)` asks whether one happened at
+    all, its value aside.
   - `ref of kind` is a type for one of the host's things (a person, an item kind, a place), named in the story by
     its stable id (`wolf_pelt`) and checked against the host's manifest.
   - `const:` fixed points every run shares (`dies_at = "ten past nine"`).
@@ -90,8 +92,9 @@ DAD: Go.
   with it wait to become true again. Nothing goes to a rules section and nothing reaches it by flow: what its rules
   read reaches it. A puzzle with an order, honor that drifts back, a reaction to a crime, a threshold a faction
   acts on: rules over facts, and a state machine is an enumeration fact and the rules that move it.
-  `since_changed(fact, clock)` reads how far a `(clock)` fact has moved since `fact` last changed, in rules and in
-  what a package watches; a query a rule asks must declare its stamp, so the rule wakes when its answer may change.
+  `since_changed(fact, clock)` reads how far a `(clock)` fact has moved since `fact` last changed, and
+  `happened(moment)` whether a moment happened, in rules and in what a package watches; a query a rule asks must
+  declare its stamp, so the rule wakes when its answer may change.
 - **Tags:** `# key value · key value` at the end of a line, a choice or a heading. `id` is riverrun's: a line's
   stable id. Every other key is the host's, typed by its schema; a key the schema marks `leads` carries the flow on
   into the host's mechanic.
@@ -261,6 +264,9 @@ What happens when facts change, rather than when a flow is told, is the `react` 
   changed (the store's stamps, the stamps the host bumped, the clocks' moves) and evaluates what was filed there,
   in the order the conditions were added, each once: a clock ticking wakes only the comparisons whose moment came,
   and one moving back, a restored moment, wakes every comparison with it.
+- **A moment is over once every condition marked has seen it:** at the end of a step that leaves nothing marked, each
+  moment goes back to its initial value, so what read it falls at the next step and can rise again at the next
+  moment. With a budget, moments wait for the rest.
 - **A step reports what it evaluated and what each holds now;** a client keeps what each held before, as rules keep
   it in the facts, so the report survives a save. Nothing allocates in a step once the conditions are added; a
   budget evaluates that many and leaves the rest first in line, so it changes when, never what.

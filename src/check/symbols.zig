@@ -98,6 +98,8 @@ pub const Fact = struct {
     game: bool,
     /// An int the game only advances.
     clock: bool = false,
+    /// What happened: seen only by what watches conditions.
+    moment: bool = false,
     module: ModuleId,
     span: Span,
     /// Whether any effect of the story sets it.
@@ -221,6 +223,8 @@ pub const Ref = union(enum) {
     thing: Thing,
     /// `since_changed(fact, clock)`: how far the clock has moved since the fact last changed.
     since_changed: SinceChanged,
+    /// `happened(moment)`: whether a moment happened this step.
+    happened: FactId,
     /// A builtin of the section's registered kind: which kind of `check.Options.kinds`, which builtin.
     builtin: BuiltinRef,
 };

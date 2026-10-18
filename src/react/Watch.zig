@@ -13,6 +13,10 @@
 //! clock moving wakes only the conditions whose moment came; one moving back
 //! (a restored moment) wakes all that read it.
 //!
+//! A `(moment)` is what happened: it holds the value the host wrote until a
+//! step has evaluated every condition marked, then goes back to its initial
+//! value, so a condition that read it falls at the next step.
+//!
 //! What a step reports is every condition it evaluated and what it holds
 //! now: a client keeps what it held before, as a rule keeps it in the facts,
 //! so a report survives a save. Nothing allocates in a step once the
@@ -87,6 +91,8 @@ heaps: []heap_.Heap,
 clock_was: []i64,
 /// The `since_changed` watches, by the fact each keeps a clock value for.
 changes_of: []std.ArrayList(u32),
+/// The story's moments, cleared once every condition has seen them.
+moments: []const FactId,
 marked: std.DynamicBitSetUnmanaged = .{},
 /// Bumped stamps since the last step.
 bumped: std.ArrayList(StampKey) = .empty,
@@ -117,6 +123,9 @@ pub fn init(gpa: std.mem.Allocator, s: *const story_.Story, store: facts.Store, 
         const c = s.change(@intCast(i)); // safe: below a u32 count
         try changes_of[c.fact.raw()].append(gpa, @intCast(i)); // safe: below a u32 count
     }
+    var moments: std.ArrayList(FactId) = .empty;
+    errdefer moments.deinit(gpa);
+    for (0..n) |i| if (s.fact(.fromRaw(@intCast(i))).role == .moment) try moments.append(gpa, .fromRaw(@intCast(i))); // safe: below max_facts
     return .{
         .gpa = gpa,
         .story = s,
@@ -128,6 +137,7 @@ pub fn init(gpa: std.mem.Allocator, s: *const story_.Story, store: facts.Store, 
         .heaps = heaps,
         .clock_was = clock_was,
         .changes_of = changes_of,
+        .moments = try moments.toOwnedSlice(gpa),
         .watcher = .init(&.{}, store.changes()),
         .arena = .init(gpa),
     };
@@ -147,6 +157,7 @@ pub fn deinit(w: *Watch) void {
     gpa.free(w.clock_was);
     for (w.changes_of) |*l| l.deinit(gpa);
     gpa.free(w.changes_of);
+    gpa.free(w.moments);
     w.marked.deinit(gpa);
     w.bumped.deinit(gpa);
     w.interest.deinit(gpa);
@@ -209,6 +220,11 @@ pub fn step(w: *Watch) Error![]const Evaluated {
         try w.evaluated.append(w.gpa, .{ .cond = .fromRaw(@intCast(i)), .holds = now, .user = c.user }); // safe: below a u32 count
         for (c.thresholds) |t| w.arm(t);
     }
+    // a moment is over once every condition has seen it; with a budget it waits for the rest
+    if (w.marked.count() == 0) for (w.moments) |m| {
+        const kind = w.story.fact(m).kind;
+        if (!w.store.get(m).eql(.initial(kind))) try w.store.set(m, .initial(kind));
+    };
     return w.evaluated.items;
 }
 
@@ -303,7 +319,7 @@ fn file(w: *Watch, terms: Range, id: u32, also: []const FactId) Error![]const Th
         const at = terms.start + @as(u32, @intCast(k)); // safe: below a u32 length
         const t = w.story.term(at);
         if (!compared.isSet(k)) switch (t.op) {
-            .fact => try fileFact(w, .fromRaw(@intCast(t.arg)), id), // safe: validated to a fact id
+            .fact, .happened => try fileFact(w, .fromRaw(@intCast(t.arg)), id), // safe: validated to a fact id
             .since_changed => {
                 const c = w.story.change(t.arg);
                 try fileFact(w, c.fact, id);

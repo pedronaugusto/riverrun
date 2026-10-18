@@ -40,7 +40,7 @@ fn fact(c: *Compiler, f: *const sym.Fact) Error!story.FactId {
         .kind = t.kind,
         .enumeration = t.enumeration,
         .ref_kind = t.ref_kind,
-        .role = if (f.clock) .clock else if (f.game) .game else .story,
+        .role = if (f.clock) .clock else if (f.moment) .moment else if (f.game) .game else .story,
     });
 }
 

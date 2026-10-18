@@ -110,6 +110,10 @@ fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
                 if (@as(facts.Kind, v) != cx.story.builtin(t.arg).returns) return error.BuiltinFailed;
                 push(stack, &n, v);
             },
+            .happened => {
+                const f = cx.story.fact(.fromRaw(@intCast(t.arg))); // safe: validated to a fact id
+                push(stack, &n, .{ .boolean = !cx.store.get(.fromRaw(@intCast(t.arg))).eql(.initial(f.kind)) }); // safe: validated to a fact id
+            },
             .since_changed => {
                 const w = cx.story.change(t.arg);
                 push(stack, &n, .{ .int = cx.store.get(w.clock).int -| cx.store.get(w.at).int });

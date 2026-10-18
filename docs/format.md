@@ -114,7 +114,7 @@ A `one of` fact holds one item or none; a `set of` fact holds any of them.
 | enumeration | u16 | for `one_of` and `set_of`, the enumeration; for `ref`, its kind; else `none` |
 | scope | u8 | |
 | kind | u8 | 0 boolean, 1 int, 2 one_of, 3 set_of, 4 text, 5 ref |
-| role | u8 | 0 story, 1 game (written by the game, never the story), 2 visits, 3 state, 4 clock (the game's, an int only ever advanced) |
+| role | u8 | 0 story, 1 game (written by the game, never the story), 2 visits, 3 state, 4 clock (the game's, an int only ever advanced), 5 moment (what happened: back to its initial value once what watches conditions has seen it, never in a snapshot) |
 | padding | 3 bytes | |
 
 At most 4,096 facts. Visit counts are int facts of role `visits`, one per section
@@ -170,6 +170,7 @@ its argument in the high 24 bits.
 | 18 thing | push a thing's handle | index into things | → ref of its kind |
 | 19 builtin | push a builtin's answer | index into builtins | → its kind |
 | 20 since_changed | how far a clock moved since a fact last changed | index into changes | → int |
+| 21 happened | a moment holds something other than its initial value | fact id, of role moment | → bool |
 
 `eq` and `ne` compare refs of one kind by handle; a ref that holds no thing equals
 nothing, as a `one of` that holds no value does.
@@ -346,7 +347,8 @@ value    boolean u8 (0 or 1) · int i64 · one_of str (empty: none)
          · ref u8 form, then form 0: u64 handle · form 1: str id
 ```
 
-Names are at most 256 bytes. A restore applies nothing unless every byte is accepted.
+Names are at most 256 bytes. A restore applies nothing unless every byte is accepted. A moment is never in a
+snapshot, nor reported as added when a snapshot is restored: it is over before anything is saved.
 
 A `ref` holding a thing the story names is saved by its text id (form 1) and restored
 to whatever handle the host gives that id then, so a host may number its handles anew

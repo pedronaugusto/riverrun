@@ -113,10 +113,10 @@ pub fn writeNamed(m: *const Memory, w: *std.Io.Writer, scope: ScopeId, story_has
     try w.writeInt(u64, story_hash, .little);
     try str(w, m.schema.scopes[scope.raw()]);
     var count: u32 = 0;
-    for (m.schema.facts) |d| count += @intFromBool(d.scope.eql(scope));
+    for (m.schema.facts) |d| count += @intFromBool(isSaved(d, scope));
     try w.writeInt(u32, count, .little);
     for (m.schema.facts, m.values) |d, v| {
-        if (!d.scope.eql(scope)) continue;
+        if (!isSaved(d, scope)) continue;
         try str(w, d.name);
         try w.writeByte(@backingInt(d.kind));
         switch (v) {
@@ -138,6 +138,11 @@ pub fn writeNamed(m: *const Memory, w: *std.Io.Writer, scope: ScopeId, story_has
             },
         }
     }
+}
+
+// Whether a snapshot of `scope` holds the fact: a moment is never saved, since it is over by the next step.
+fn isSaved(d: schema_.Decl, scope: ScopeId) bool {
+    return d.scope.eql(scope) and d.role != .moment;
 }
 
 fn str(w: *std.Io.Writer, s: []const u8) std.Io.Writer.Error!void {
@@ -170,7 +175,7 @@ pub fn readNamed(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, story_has
 pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_story: bool, saved: []const Saved, names: RefNames) Error!Report {
     var by_name: std.StringHashMapUnmanaged(FactId) = .empty;
     for (m.schema.facts, 0..) |d, i| {
-        if (d.scope.eql(scope)) try by_name.put(arena, d.name, .fromRaw(@intCast(i))); // safe: validated to max_facts
+        if (isSaved(d, scope)) try by_name.put(arena, d.name, .fromRaw(@intCast(i))); // safe: validated to max_facts
     }
     var dropped: std.ArrayList([]const u8) = .empty;
     var lost: std.ArrayList(Report.Lost) = .empty;
@@ -193,7 +198,7 @@ pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_s
     for (staged.items) |st| restored.set(st.id.raw());
     var added: std.ArrayList([]const u8) = .empty;
     for (m.schema.facts, 0..) |d, i| {
-        if (d.scope.eql(scope) and !restored.isSet(i)) try added.append(arena, d.name);
+        if (isSaved(d, scope) and !restored.isSet(i)) try added.append(arena, d.name);
     }
     // Owned texts first, so applying cannot fail halfway.
     for (staged.items, 0..) |*st, i| {
@@ -436,4 +441,28 @@ test "a ref a story names is saved by its id, any other by the host's handle" {
     const r = try readNamed(&lost, arena.allocator(), testing.life_scope, 1, out.written(), .none);
     try std.testing.expectEqualStrings("margaret", r.lost[0].item);
     try std.testing.expectEqual(Value.no_ref, lost.get(testing.target).ref);
+}
+
+test "a moment is never saved: it is over before any save" {
+    const gpa = std.testing.allocator;
+    const world: ScopeId = .fromRaw(0);
+    const with_moment: schema_.Schema = .{ .scopes = &.{"world"}, .facts = &.{
+        .{ .name = "door", .scope = world, .kind = .boolean },
+        .{ .name = "pulled", .scope = world, .kind = .one_of, .items = &.{ "a", "b" }, .role = .moment },
+    } };
+    var m: Memory = try .init(gpa, with_moment);
+    defer m.deinit();
+    try m.set(.fromRaw(0), .{ .boolean = true });
+    try m.set(.fromRaw(1), .{ .one_of = 1 });
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    try write(&m, &out.writer, world, 1);
+    var again: Memory = try .init(gpa, with_moment);
+    defer again.deinit();
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const report = try read(&again, arena.allocator(), world, 1, out.written());
+    try std.testing.expectEqual(@as(usize, 0), report.added.len + report.dropped.len);
+    try std.testing.expect(again.get(.fromRaw(0)).boolean);
+    try std.testing.expectEqual(Value.none, again.get(.fromRaw(1)).one_of);
 }

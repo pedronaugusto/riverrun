@@ -112,8 +112,9 @@ fn calls(c: *Compiler, out: *Terms, e: *const ast.Expr, call: *const ast.Call) E
             try out.append(c.arena, .of(.query, c.externs[id.raw()].raw()));
         },
         .builtin => |b| try out.append(c.arena, .of(.builtin, try builtin(c, b))),
+        .happened => |m| try out.append(c.arena, .of(.happened, c.fact(m).raw())),
         .since_changed => |w| try out.append(c.arena, .of(.since_changed, try c.b.sinceChanged(c.fact(w.fact), c.fact(w.clock)))),
-        else => unreachable, // unreachable: a call in an expression is `seen`, `since_changed`, a query or a builtin
+        else => unreachable, // unreachable: a call in an expression is `seen`, `since_changed`, `happened`, a query or a builtin
     }
 }
 

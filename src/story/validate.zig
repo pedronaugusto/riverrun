@@ -444,6 +444,12 @@ fn expr(g: *const Graph, r: Range, want: Want) Error!void {
                 stack[n] = .{ .kind = g.get(.builtins, arg).returns, .enumeration = none16 };
                 n += 1;
             },
+            .happened => {
+                try index(g, .facts, arg);
+                if (g.get(.facts, arg).role != @backingInt(facts.Role.moment)) return error.BadExpression;
+                stack[n] = .boolean;
+                n += 1;
+            },
             .since_changed => {
                 try index(g, .changes, arg);
                 stack[n] = .int;

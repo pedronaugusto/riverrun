@@ -186,11 +186,13 @@ const Reader = struct {
                 try ty.appendSlice(r.arena, ls[k].text);
             }
             var t = std.mem.trim(u8, ty.items, " ");
-            const game = std.mem.endsWith(u8, t, "(game)");
-            if (game) t = std.mem.trim(u8, t[0 .. t.len - "(game)".len], " ");
-            // a clock is the game's too: it only advances it
-            const clock = std.mem.endsWith(u8, t, "(clock)");
-            if (clock) t = std.mem.trim(u8, t[0 .. t.len - "(clock)".len], " ");
+            // the marks after a type, in any order; a clock is the game's too, since only the game advances it
+            var game = false;
+            var clock = false;
+            var moment = false;
+            while (true) {
+                if (takeMark(&t, "(game)")) game = true else if (takeMark(&t, "(clock)")) clock = true else if (takeMark(&t, "(moment)")) moment = true else break;
+            }
             const name = std.mem.trim(u8, l.text[0..colon], " ");
             if (text_mod.alternativesOf(name) != null) {
                 try r.report(l, "`{s}` names alternatives in text, so it cannot name a fact", .{name});
@@ -200,7 +202,7 @@ const Reader = struct {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Invalid => continue,
             };
-            try out.append(r.arena, .{ .name = .{ .text = name, .span = r.at(l, 0) }, .type = parsed, .game = game or clock, .clock = clock });
+            try out.append(r.arena, .{ .name = .{ .text = name, .span = r.at(l, 0) }, .type = parsed, .game = game or clock, .clock = clock, .moment = moment });
         }
         return out.toOwnedSlice(r.arena);
     }
@@ -666,6 +668,13 @@ const Reader = struct {
         return .{ .speaker = speaker, .text = try text_mod.parse(r.arena, r.gpa, r.diags, rest, r.at(l, t.len - rest.len)), .effects = &.{} };
     }
 };
+
+// Takes `m` off the end of `t`, if it is there.
+fn takeMark(t: *[]const u8, m: []const u8) bool {
+    if (!std.mem.endsWith(u8, t.*, m)) return false;
+    t.* = std.mem.trim(u8, t.*[0 .. t.len - m.len], " ");
+    return true;
+}
 
 // The `)` that closes the `(` at `open`.
 fn parenClose(t: []const u8, open: usize) ?usize {

@@ -203,3 +203,71 @@ test "rules from the text: a slight lowers honor, and time alone brings it back"
     try std.testing.expectEqual(@as(i64, -5), lowest);
     try std.testing.expectEqual(@as(i64, 0), t.memory.get(t.fact("honor")).int);
 }
+
+// Rounds of rules until none fires, their effects applied at once, as a host that applies effects does.
+fn settle(t: *Told, rules: *react.Rules) !void {
+    for (0..react.max_rounds) |_| {
+        const fired = try rules.step();
+        if (fired.len == 0) return;
+        for (fired) |f| for (f.effects) |e| {
+            _ = try facts.apply(t.memory.store(), e);
+        };
+    }
+    return error.TestNoFixedPoint;
+}
+
+test "a lever puzzle: in order it opens, a wrong lever or a slow hand starts it over" {
+    const t = try Told.init(gpa, &.{
+        \\facts (world):
+        \\  seconds: int                          (clock)
+        \\  pulled:  one of a, b, c               (moment)
+        \\  levers:  one of idle, one, two, open
+        \\  door:    bool
+        \\== chapel (rules)
+        \\= first    when { levers = idle and pulled = a }
+        \\  ~ levers = one
+        \\= second   when { levers = one and pulled = c }
+        \\  ~ levers = two
+        \\= third    when { levers = two and pulled = b }
+        \\  ~ levers = open
+        \\  ~ door = true
+        \\= wrong    when { levers != open and happened(pulled) }
+        \\  ~ levers = idle
+        \\= slow     when { (levers = one or levers = two) and since_changed(levers, seconds) > 10 }
+        \\  ~ levers = idle
+    }, .{}, &.{}, testing.NoHost{});
+    defer t.deinit();
+    var owners: [facts.max_scopes]u64 = @splat(0);
+    var rules: react.Rules = try .init(gpa, &t.story, t.memory.store(), &t.host, &owners, .{});
+    defer rules.deinit();
+    const levers = t.fact("levers");
+    const pulled = t.fact("pulled");
+    const lever = struct {
+        fn pull(told: *Told, r: *react.Rules, which: u16) !void {
+            try told.memory.set(told.fact("pulled"), .{ .one_of = which });
+            try settle(told, r);
+        }
+    }.pull;
+    try t.memory.set(levers, .{ .one_of = 0 });
+    try settle(t, &rules);
+    try lever(t, &rules, 0);
+    try std.testing.expectEqual(@as(u16, 1), t.memory.get(levers).one_of);
+    // the moment is over: it holds nothing once every rule has seen it
+    try std.testing.expectEqual(facts.Value.none, t.memory.get(pulled).one_of);
+    try lever(t, &rules, 1);
+    try std.testing.expectEqual(@as(u16, 0), t.memory.get(levers).one_of);
+    try lever(t, &rules, 0);
+    try lever(t, &rules, 2);
+    try std.testing.expectEqual(@as(u16, 2), t.memory.get(levers).one_of);
+    // too slow: eleven seconds after the second lever, it starts over
+    for (1..12) |s| {
+        try t.memory.set(t.fact("seconds"), .{ .int = @intCast(s) });
+        try settle(t, &rules);
+    }
+    try std.testing.expectEqual(@as(u16, 0), t.memory.get(levers).one_of);
+    try lever(t, &rules, 0);
+    try lever(t, &rules, 2);
+    try lever(t, &rules, 1);
+    try std.testing.expectEqual(@as(u16, 3), t.memory.get(levers).one_of);
+    try std.testing.expect(t.memory.get(t.fact("door")).boolean);
+}
