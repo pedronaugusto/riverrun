@@ -21,6 +21,13 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tags: []co
             if (at != .line and at != .choice) try c.err(tag.key.span, "only a line or a choice has an `id`", .{});
             continue;
         }
+        if (at == .cast and std.mem.eql(u8, tag.key.text, schema_file.gender_key)) {
+            const g = if (tag.values.len == 1) tag.values[0] else "";
+            if (!within(&@import("riverrun").story.template.gender_categories, g)) {
+                try c.err(tag.key.span, "a gender is one of masculine, feminine, neuter or other", .{});
+            }
+            continue;
+        }
         if (from) |s| if (c.kindOfSection(s)) |kind| if (kind.schema) |ks| switch (ks.find(tag.key.text, at)) {
             // a registered kind's own keys are checked by its schema; the rest fall to the host's
             .found => |k| {
@@ -77,6 +84,7 @@ fn count(c: *Checker, tag: *const ast.Tag, key: *const Schema.Key) Error!void {
 
 fn values(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tag: *const ast.Tag, key: *const Schema.Key, at: Schema.Place) Error!void {
     var sections: std.ArrayList(sym.SectionId) = .empty;
+    if (key.value == .text) try c.text_tags.put(c.arena, tag, {});
     for (tag.values) |v| switch (key.value) {
         .none, .text => {},
         .number => if (!isNumber(v)) try c.err(tag.key.span, "`{s}` takes a number: `{s}` is not one", .{ key.name, v }),

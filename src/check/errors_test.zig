@@ -636,3 +636,23 @@ test "a bounded int is set within its bounds, and a clock has none" {
     try o.has(.err, 8, 11, "300 is past `honor`'s bounds, -100 to 100");
     try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
 }
+
+test "words chosen by a plural or a gender: known labels, none twice, other among them" {
+    var o = try checkOne(
+        \\cast:
+        \\  marta  "Marta"   # gender female
+        \\facts:
+        \\  pelts: int
+        \\  name:  text
+        \\== a
+        \\{pelts -> one: a pelt | few: pelts}.
+        \\{marta -> feminine: she | feminine: her | other: they}.
+        \\{name -> one: x | other: y}.
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 2, 22, "a gender is one of masculine, feminine, neuter or other");
+    try o.has(.err, 7, 11, "words chosen by a plural or a gender need `other`, which every language falls back to");
+    try o.has(.err, 8, 27, "`feminine` is chosen twice here");
+    try o.has(.err, 9, 2, "words are chosen by a number's plural or by a gender, a person's or a thing's: this is text");
+}

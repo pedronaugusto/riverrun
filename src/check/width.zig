@@ -22,6 +22,11 @@ pub fn measure(text: ast.Text, value: ?u32) usize {
             for (alt.options) |o| most = @max(most, measure(o, value));
             break :blk most;
         },
+        .select => |sel| blk: {
+            var most: usize = 0;
+            for (sel.branches) |b| most = @max(most, measure(b.text, value));
+            break :blk most;
+        },
     };
     return n;
 }

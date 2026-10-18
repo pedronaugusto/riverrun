@@ -69,6 +69,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
         .exprs = c.exprs,
         .lines = c.lines,
         .tags = c.tags,
+        .text_tags = c.text_tags,
     };
 }
 

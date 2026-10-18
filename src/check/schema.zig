@@ -1,11 +1,14 @@
 //! The host's tags, as it gives them to the checker: which keys it knows,
 //! where each may stand, and what its values are. riverrun carries tags and
-//! never reads them, except `id`, which is its own.
+//! never reads them, except `id`, a line's id, and `gender` on a cast entry,
+//! which a gender's words are chosen by: those are riverrun's own.
 
 const std = @import("std");
 
 /// The key riverrun reserves for a line's id: `# id k7f3a2`.
 pub const id_key = "id";
+/// The key riverrun reserves on a cast entry for the gender its words are chosen by: `# gender feminine`.
+pub const gender_key = "gender";
 
 pub const Schema = struct {
     keys: []const Key,

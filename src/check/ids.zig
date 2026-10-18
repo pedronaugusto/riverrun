@@ -91,6 +91,11 @@ fn words(h: *std.hash.Wyhash, text: ast.Text) void {
             words(h, o);
             h.update("|");
         },
+        .select => |sel| for (sel.branches) |b| {
+            h.update(b.label.text);
+            words(h, b.text);
+            h.update("|");
+        },
     };
 }
 

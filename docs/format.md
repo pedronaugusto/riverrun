@@ -85,7 +85,7 @@ Directory entries are in the fixed order of the tables below.
 | 17 | slots | Slot | 12 |
 | 18 | effects | Effect | 20 |
 | 19 | tags | Tag | 16 |
-| 20 | tag_values | TagValue | 12 |
+| 20 | tag_values | TagValue | 24 |
 | 21 | kinds | Str | 8 |
 | 22 | things | Thing | 12 |
 | 23 | builtins | BuiltinCall | 28 |
@@ -277,6 +277,12 @@ marked closed.
 | 0 value | a value | 0 | `none` |
 | 1 choose | a condition | 2 | `none` |
 | 2 sequence, 3 cycle, 4 once, 5 shuffle | empty | 1 to 32 | int fact |
+| 6 plural | an int | 0 | `none` |
+| 7 gender | an int (a cast index) or a ref | 0 | `none` |
+
+A plural's or a gender's branches are the string table's, labelled by category, so each language has its own: a
+plural slot by CLDR's categories, a gender slot by `masculine`, `feminine`, `neuter` and `other`. The host gives a
+number's category in the table's locale and a thing's gender; a cast member's is its `gender` tag.
 
 The words are the string table's: a slot is only what fills a place in them.
 
@@ -303,9 +309,11 @@ the story's next step, and the story branches on it.
 
 ### Tags
 
-**Tag**: `key: Str`, `values: Range` into tag_values. **TagValue**: `text: Str`,
+**Tag**: `key: Str`, `values: Range` into tag_values. **TagValue** (24 bytes): `text: Str`,
 `section: u32`, the section the value names when the host's tag schema types it so,
-else `none`. riverrun carries tags and never reads them.
+else `none`, 4 bytes padding, and `line: u64`, the line id of the value's words in the string table when the schema
+types it as text a player reads, else 0. Such a line's id text is where the tag stands and its key (`a#title`,
+`kitchen.ask#title`, a line's own id, `cast:marta#…`), never its words. riverrun carries tags and never reads them.
 
 ## The string table: `RIVERTXT`
 
@@ -328,16 +336,20 @@ what decides whether it serves a graph is the check below, not the hash.
 ```
 template = { literal | escape | slot }
 escape   = "\" ( "{" | "}" | "|" | "\" )
-slot     = "{" index [ ":" template { "|" template } ] "}"
+slot     = "{" index [ ":" template { "|" template }
+                     | "?" label ":" template { "|" label ":" template } ] "}"
+label    = lowercase letters
 ```
 
 `index` is one or two decimal digits below 32: the slot of the text. `{0}` writes a
-value slot's value. `{1:a|b}` writes the branch its slot chooses: a `choose` has two
+value slot's value. `{2?one:pelt|other:pelts}` writes the branch labelled the plural's or gender's category, or
+`other` where none is; every labelled slot has `other`, no label twice, and only its kind's labels. `{1:a|b}`
+writes the branch its slot chooses: a `choose` has two
 branches (the condition holds, it does not); alternatives have their arity. A bare
 `|` outside a slot's branches is literal. Branches nest at most 8 deep.
 
-A string table **serves** a graph when every text's line id and every cast member's
-display and relation are in it, and every template uses its text's slots as the
+A string table **serves** a graph when every text's line id, every cast member's
+display and relation, and every tag value's line are in it, and every template uses its text's slots as the
 graph declares them: a value slot without branches, any other with exactly its
 arity. A translation may move slots, leave one out, or use one twice.
 

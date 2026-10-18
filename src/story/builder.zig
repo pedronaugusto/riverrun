@@ -340,7 +340,7 @@ pub const Builder = struct {
         const start = try count(b.tags.items.len);
         for (list) |t| {
             const vstart = try count(b.tag_values.items.len);
-            for (t.values) |v| try b.tag_values.append(b.gpa, .{ .text = try b.intern(v.text), .section = codec.raw32(v.section) });
+            for (t.values) |v| try b.tag_values.append(b.gpa, .{ .text = try b.intern(v.text), .section = codec.raw32(v.section), .line = if (v.line) |l| l.raw() else 0 });
             try b.tags.append(b.gpa, .{ .key = try b.declName(t.key), .values = .{ .start = vstart, .len = try count(t.values.len) } });
         }
         return .{ .start = start, .len = try count(list.len) };

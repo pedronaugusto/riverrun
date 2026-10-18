@@ -158,7 +158,12 @@ pub const Piece = union(enum) {
     choose: struct { cond: Expr, then: Text, otherwise: Text },
     /// `{seq: a | b | c}`, `{cycle: …}`, `{once: …}`, `{shuffle: …}`
     alternatives: struct { kind: Alternatives, options: []const Text },
+    /// `{count -> one: pelt | other: pelts}`, `{marta -> feminine: she | other: they}`: words chosen by a
+    /// plural category or a gender, each branch labelled by one.
+    select: struct { operand: Expr, branches: []const Branch },
 };
+
+pub const Branch = struct { label: Name, text: Text };
 
 pub const Alternatives = enum {
     /// Each in turn, then the last for ever.

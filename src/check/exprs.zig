@@ -10,6 +10,7 @@ const std = @import("std");
 const syntax = @import("../syntax.zig");
 const sym = @import("symbols.zig");
 const Checker = @import("Checker.zig");
+const template = @import("riverrun").story.template;
 
 const ast = syntax.ast;
 const Error = Checker.Error;
@@ -534,5 +535,51 @@ pub fn text(c: *Checker, scope: Scope, t: ast.Text) Error!void {
             try text(c, scope, ch.otherwise);
         },
         .alternatives => |alt| for (alt.options) |o| try text(c, scope, o),
+        .select => |*sel| {
+            if (try selection(c, scope, &sel.operand)) |categories| try labels(c, sel.branches, categories);
+            for (sel.branches) |b| try text(c, scope, b.text);
+        },
     };
+}
+
+/// Plural categories, by which a number's words are chosen.
+pub const plural_categories = template.plural_categories;
+/// Genders, by which a person's or a thing's words are chosen.
+pub const gender_categories = template.gender_categories;
+
+// What a selection chooses by: a number's plural, or the gender of a cast member (named by its id) or of a thing.
+fn selection(c: *Checker, scope: Scope, operand: *const ast.Expr) Error!?[]const []const u8 {
+    if (operand.kind == .name and c.valueNamed(scope.module, operand.kind.name) == null) {
+        if (c.speaker_names.find(scope.module, try c.lower(operand.kind.name))) |id| {
+            _ = try record(c, operand, .int, .{ .speaker = id });
+            return &gender_categories;
+        }
+    }
+    const t = try infer(c, scope, operand, null) orelse return null;
+    return switch (t) {
+        .int => &plural_categories,
+        .ref => &gender_categories,
+        else => blk: {
+            try c.err(operand.span, "words are chosen by a number's plural or by a gender, a person's or a thing's: this is {s}", .{try c.describe(t)});
+            break :blk null;
+        },
+    };
+}
+
+fn labels(c: *Checker, branches: []const ast.Branch, allowed: []const []const u8) Error!void {
+    var other = false;
+    for (branches, 0..) |b, i| {
+        const l = b.label.text;
+        other = other or std.mem.eql(u8, l, "other");
+        if (!within(allowed, l)) try c.err(b.label.span, "`{s}` is not one of {s}", .{ l, try std.mem.join(c.arena, ", ", allowed) });
+        for (branches[0..i]) |before| if (std.mem.eql(u8, before.label.text, l)) {
+            try c.err(b.label.span, "`{s}` is chosen twice here", .{l});
+        };
+    }
+    if (!other and branches.len > 0) try c.err(branches[0].label.span, "words chosen by a plural or a gender need `other`, which every language falls back to", .{});
+}
+
+fn within(list: []const []const u8, word: []const u8) bool {
+    for (list) |w| if (std.mem.eql(u8, w, word)) return true;
+    return false;
 }

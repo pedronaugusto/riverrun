@@ -336,6 +336,10 @@ fn texts(g: *const Graph) Error!void {
                 if (s.arity != 2 or s.state != none16) return error.BadNode;
                 try expr(g, s.expr, .condition);
             },
+            .plural, .gender => {
+                if (s.arity != 0 or s.state != none16) return error.BadNode;
+                try expr(g, s.expr, if (s.kind == @backingInt(format.SlotKind.plural)) .{ .of = .int } else .gender);
+            },
             .sequence, .cycle, .once, .shuffle => {
                 if (s.arity == 0 or s.expr.len != 0) return error.BadNode;
                 if (s.arity > format.max_slots) return error.TooManySlots;
@@ -400,6 +404,7 @@ fn tagTables(g: *const Graph) Error!void {
         const v = g.get(.tag_values, @intCast(i)); // safe: below a u32 count
         try name(g, v.text);
         if (v.section != none) try index(g, .sections, v.section);
+        if (v.pad != 0) return error.BadNode;
     }
 }
 
@@ -430,6 +435,8 @@ const Want = union(enum) {
     of: Ty,
     /// A key, then a value of this type unless null: what writing a fact kept per thing takes.
     keyed: struct { key: Ty, value: ?Ty },
+    /// What a gender is asked of: a cast member, by its index (an int), or a thing (a ref).
+    gender,
     /// The values of these parameters, in order.
     args: Range,
 };
@@ -524,6 +531,7 @@ fn expr(g: *const Graph, r: Range, want: Want) Error!void {
         .value => n == 1,
         .of => |ty| n == 1 and stack[0].eql(ty),
         .args => |params| n == params.len and paramsFit(g, params, stack[0..n]),
+        .gender => n == 1 and (stack[0].eql(.int) or stack[0].kind == @backingInt(facts.Kind.ref)),
         .keyed => |kv| if (kv.value) |v| (n == 2 and stack[0].eql(kv.key) and stack[1].eql(v)) else (n == 1 and stack[0].eql(kv.key)),
     };
     if (!fits) return error.BadExpression;

@@ -345,3 +345,35 @@ test "honor is bounded: it stops at its ends however much it changes" {
     try t.end();
     try std.testing.expectError(error.OutOfBounds, t.memory.set(t.fact("honor"), .{ .int = 101 }));
 }
+
+const quest_schema: check.Schema = .{ .keys = &.{.{ .name = "title", .on = .{ .section = true }, .value = .text, .count = .one }} };
+
+test "translation: a title in the string table, a plural that falls back to other, a cast member's gender" {
+    const t = try Told.init(gpa, &.{
+        \\cast:
+        \\  marta  "Marta"   # gender feminine
+        \\facts (world):
+        \\  pelts: int
+        \\== a          # title "The pelts"
+        \\MARTA: You have {pelts -> one: a pelt | other: {pelts} pelts}.
+        \\{marta -> feminine: She | masculine: He | other: They} takes them.
+        \\-> end
+    }, .{ .schema = &quest_schema }, &.{}, testing.NoHost{});
+    defer t.deinit();
+    const title = t.story.tagNamed(t.story.section(t.section("a")).tags, "title").?;
+    const line = t.story.tagValue(title.values.start).line.?;
+    try std.testing.expectEqualStrings("The pelts", t.words.template(line).?);
+    // a language whose 3 is `few`: English's words have no `few`, so they fall back to `other`
+    const Few = struct {
+        fn plural(_: ?*anyopaque, _: []const u8, n: i64) []const u8 {
+            return if (n == 1) "one" else if (n < 5) "few" else "many";
+        }
+    };
+    t.session.deinit();
+    t.session = try .init(gpa, &t.story, &t.words, t.memory.store(), &t.host, .{ .language = .{ .plural = Few.plural } });
+    try t.memory.set(t.fact("pelts"), .{ .int = 3 });
+    try t.session.start(.fromRaw(0), t.section("a"));
+    try t.line("You have 3 pelts.");
+    try t.line("She takes them.");
+    try t.end();
+}

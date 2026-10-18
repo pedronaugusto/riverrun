@@ -45,6 +45,8 @@ exprs: std.AutoHashMapUnmanaged(*const ast.Expr, sym.Typed),
 lines: std.AutoHashMapUnmanaged(*const ast.Stmt, sym.LineId),
 /// The sections a tag's values name, where the schema types them so.
 tags: std.AutoHashMapUnmanaged(*const ast.Tag, []const sym.SectionId),
+/// The tags whose values are words a player reads (a quest's title), which go into the string table.
+text_tags: std.AutoHashMapUnmanaged(*const ast.Tag, void),
 
 pub fn deinit(c: *Checked) void {
     const gpa = c.arena.child_allocator;

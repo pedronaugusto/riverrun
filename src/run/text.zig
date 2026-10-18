@@ -26,6 +26,8 @@ pub fn render(cx: eval.Context, words: *const story.Strings, id: story.TextId) E
         switch (s.kind) {
             .value => filled.values[k] = try written(cx, s.expr),
             .choose => filled.branches[k] = if (try eval.condition(cx, s.expr)) 0 else 1,
+            .plural => filled.categories[k] = cx.language.pluralOf(words.locale(), (try eval.value(cx, s.expr)).int),
+            .gender => filled.categories[k] = try genderOf(cx, s.expr),
             else => filled.branches[k] = try alternative(cx, s),
         }
     }
@@ -39,6 +41,7 @@ pub const Filled = struct {
     count: u8,
     values: [story.max_slots][]const u8 = @splat(""),
     branches: [story.max_slots]?u8 = @splat(null),
+    categories: [story.max_slots][]const u8 = @splat("other"),
 
     pub fn value(f: *const Filled, slot: u8, w: *std.Io.Writer) std.Io.Writer.Error!void {
         if (slot < f.count) try w.writeAll(f.values[slot]);
@@ -47,7 +50,21 @@ pub const Filled = struct {
     pub fn branch(f: *const Filled, slot: u8) ?u8 {
         return if (slot < f.count) f.branches[slot] else null;
     }
+
+    pub fn category(f: *const Filled, slot: u8) []const u8 {
+        return if (slot < f.count) f.categories[slot] else "other";
+    }
 };
+
+// A gender is a cast member's, from its `gender` tag, or a thing's, as the host says.
+fn genderOf(cx: eval.Context, r: story.Range) Error![]const u8 {
+    const v = try eval.value(cx, r);
+    if (v == .ref) return cx.language.genderOf(v.ref);
+    const member = cx.story.castMember(.fromRaw(@intCast(v.int))); // safe: the compiler wrote a cast index
+    const tag = cx.story.tagNamed(member.tags, "gender") orelse return "other";
+    if (tag.values.len == 0) return "other";
+    return cx.story.tagValue(tag.values.start).text;
+}
 
 /// A value as the player reads it: a number, an item's name, a set's names joined, a text.
 fn written(cx: eval.Context, r: story.Range) Error![]const u8 {
@@ -93,7 +110,7 @@ fn alternative(cx: eval.Context, s: story.Slot) Error!?u8 {
         .cycle => .{ @intCast(@mod(state, n)), @mod(state + 1, n) }, // safe: below arity
         .once => .{ if (state < n) @intCast(state) else null, @min(state + 1, n) }, // safe: below arity
         .shuffle => .{ shuffled(cx, fact, s.arity, state), state +| 1 },
-        .value, .choose => unreachable, // unreachable: `render` handles them
+        .value, .choose, .plural, .gender => unreachable, // unreachable: `render` handles them
     };
     try cx.store.set(fact, .{ .int = next });
     return chosen;

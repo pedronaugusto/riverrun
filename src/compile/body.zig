@@ -47,7 +47,7 @@ fn stmt(c: *Compiler, s: *const ast.Stmt, tagged: []const ast.Tag, after: Next) 
             const inline_one = k.body.len == 1 and k.body[0].span.line == s.span.line;
             const then = if (inline_one) try stmt(c, &k.body[0], tagged, after) else try chain(c, k.body, after);
             const otherwise = if (k.otherwise.len > 0) try chain(c, k.otherwise, after) else after;
-            return try c.b.node(.{ .tags = if (inline_one) .empty else try c.tags(tagged), .step = .{ .branch = .{ .cond = try exprs.condition(c, &k.cond), .then = then, .otherwise = otherwise } } });
+            return try c.b.node(.{ .tags = if (inline_one) .empty else try c.tags(tagged, null), .step = .{ .branch = .{ .cond = try exprs.condition(c, &k.cond), .then = then, .otherwise = otherwise } } });
         },
         .gather => |*g| {
             const then = if (g.then) |t| try stmt(c, t, tagged, after) else after;
@@ -58,8 +58,8 @@ fn stmt(c: *Compiler, s: *const ast.Stmt, tagged: []const ast.Tag, after: Next) 
             return id;
         },
         .effect => return try effectRun(c, s[0..1], after),
-        .flow => |*f| return try flow(c, f, try c.tags(tagged), after),
-        .flow_if => |*f| return try c.b.node(.{ .tags = try c.tags(tagged), .step = .{ .branch = .{
+        .flow => |*f| return try flow(c, f, try c.tags(tagged, null), after),
+        .flow_if => |*f| return try c.b.node(.{ .tags = try c.tags(tagged, null), .step = .{ .branch = .{
             .cond = try exprs.condition(c, &f.cond),
             .then = try flow(c, &f.then, .empty, after),
             .otherwise = try flow(c, &f.otherwise, .empty, after),
@@ -74,7 +74,7 @@ fn line(c: *Compiler, s: *const ast.Stmt, l: *const ast.Line, tagged: []const as
         else => unreachable, // unreachable: a speaker names a speaker
     } else null;
     const effects = try effectList(c, l.effects);
-    return try c.b.node(.{ .tags = try c.tags(tagged), .step = .{ .line = .{ .text = try text.text(c, c.lineId(s), l.text), .speaker = speaker, .effects = effects, .next = after } } });
+    return try c.b.node(.{ .tags = try c.tags(tagged, c.lineId(s)), .step = .{ .line = .{ .text = try text.text(c, c.lineId(s), l.text), .speaker = speaker, .effects = effects, .next = after } } });
 }
 
 fn choices(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeId {
@@ -88,7 +88,7 @@ fn choices(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeI
             .cond = if (ch.cond) |*k| try exprs.condition(c, k) else .empty,
             .sticky = ch.sticky,
             .visits = try c.b.visits(try c.arena.print("*{s}", .{id})),
-            .tags = try c.tags(s.tags),
+            .tags = try c.tags(s.tags, id),
             .target = target,
         };
     }

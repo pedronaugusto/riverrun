@@ -114,8 +114,9 @@ fn str(text: []const u8, s: format.Str) []const u8 {
 
 pub const CheckError = error{ MissingLine, TooManySlots } || templates.Error;
 
-/// Whether `strings` serves `story`: every text's and every speaker's line
-/// present, and every template using its text's slots as the graph does.
+/// Whether `strings` serves `story`: every text's, every speaker's and every
+/// tag value's line present, and every template using its text's slots as
+/// the graph does (a tag value's using none).
 pub fn check(story: *const Story, strings: *const Strings) CheckError!void {
     for (0..story.len(.texts)) |i| {
         const t = story.text(.fromRaw(@intCast(i))); // safe: below a u32 count
@@ -132,6 +133,11 @@ pub fn check(story: *const Story, strings: *const Strings) CheckError!void {
         const c = story.castMember(.fromRaw(@intCast(i))); // safe: validated below none16
         if (strings.find(c.display) == null) return error.MissingLine;
         if (c.relation) |r| if (strings.find(r) == null) return error.MissingLine;
+    }
+    for (0..story.len(.tag_values)) |i| {
+        const line = story.tagValue(@intCast(i)).line orelse continue; // safe: below a u32 count
+        const words = strings.template(line) orelse return error.MissingLine;
+        try templates.validate(words, &.{});
     }
 }
 

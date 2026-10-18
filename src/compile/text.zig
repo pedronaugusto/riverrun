@@ -3,7 +3,9 @@
 //! graph's. `{fact}` is a value slot, `{ cond: a | b }` a choice of two
 //! branches, alternatives a slot of their arity whose state is a fact of
 //! the reserved scope, named for the line and the slot so it survives a
-//! recompiled story.
+//! recompiled story; a selection a plural or gender slot whose branches the
+//! template labels by category, `{0?one:pelt|other:pelts}`, so a
+//! translation labels its own language's.
 
 const std = @import("std");
 const syntax = @import("../syntax.zig");
@@ -43,6 +45,21 @@ fn pieces(c: *Compiler, w: *Writing, t: ast.Text) Error!void {
             try pieces(c, w, ch.then);
             try w.template.append(c.arena, '|');
             try pieces(c, w, ch.otherwise);
+            try w.template.append(c.arena, '}');
+        },
+        .select => |*sel| {
+            const typed = c.checked.exprs.get(&sel.operand) orelse unreachable; // unreachable: the checker typed it
+            const s: story.Slot = if (typed.ref != null and typed.ref.? == .speaker)
+                .{ .kind = .gender, .expr = try c.b.expr(&.{.of(.int, try c.b.int(c.cast[typed.ref.?.speaker.raw()].raw()))}) }
+            else
+                .{ .kind = if (typed.type == .int) .plural else .gender, .expr = try exprs.value(c, &sel.operand) };
+            const i = try slot(c, w, s);
+            try w.template.print(c.arena, "{{{d}?", .{i});
+            for (sel.branches, 0..) |b, k| {
+                if (k > 0) try w.template.append(c.arena, '|');
+                try w.template.print(c.arena, "{s}:", .{b.label.text});
+                try pieces(c, w, b.text);
+            }
             try w.template.append(c.arena, '}');
         },
         .alternatives => |alt| {

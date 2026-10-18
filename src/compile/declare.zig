@@ -3,7 +3,6 @@
 //! alone. Enumerations, kinds of things, facts, externs, the cast, the visit
 //! counts and the sections, in that order, each kept in the compiler's maps.
 
-const std = @import("std");
 const check = @import("../check.zig");
 const story = @import("riverrun").story;
 const Compiler = @import("Compiler.zig");
@@ -25,8 +24,9 @@ pub fn run(c: *Compiler) Error!void {
     }
     // tags may name any section, so they come once every section has its place
     for (k.sections, c.sections, c.parts) |*s, id, parts| {
-        c.b.sectionTags(id, try c.tags(s.node.tags));
-        for (s.parts, parts) |p, ps| if (ps) |pid| c.b.sectionTags(pid, try c.tags(p.node.tags));
+        const name = try c.qualified(s.module, s.name);
+        c.b.sectionTags(id, try c.tags(s.node.tags, name));
+        for (s.parts, parts) |p, ps| if (ps) |pid| c.b.sectionTags(pid, try c.tags(p.node.tags, try c.arena.print("{s}.{s}", .{ name, p.name })));
     }
     for (k.speakers, c.cast) |*s, *out| out.* = try speaker(c, s);
     for (k.labels, c.labels) |_, *out| out.* = try c.b.reserve();
@@ -71,19 +71,14 @@ fn speaker(c: *Compiler, s: *const sym.Speaker) Error!story.CastId {
         .name = if (s.extra) "" else try c.qualified(s.module, s.key),
         .display = display,
         .relation = relation,
-        .tags = try c.tags(s.tags),
+        .tags = try c.tags(s.tags, try c.arena.print("cast:{s}", .{s.key})),
         .extra = s.extra,
     });
 }
 
-/// Words as a template that holds no slot: `\`, `{`, `}` and `|` escaped.
+/// Words as a template that holds no slot.
 pub fn escaped(c: *Compiler, words: []const u8) Error![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    for (words) |ch| {
-        if (ch == '\\' or ch == '{' or ch == '}' or ch == '|') try out.append(c.arena, '\\');
-        try out.append(c.arena, ch);
-    }
-    return out.items;
+    return Compiler.escaped(c.arena, words);
 }
 
 // A visit count's name: a section's, `section.part`, or `section#label` (`section.part#label` in a part).

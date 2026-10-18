@@ -34,6 +34,27 @@ pub const Builtins = struct {
     call: *const fn (user: ?*anyopaque, s: *const story.Story, index: u32, cx: host_.Context) error{BuiltinFailed}!Value,
 };
 
+/// What a language says that riverrun cannot know: an int's plural category in the string table's language, and
+/// a thing's grammatical gender. With none given, plurals are English's (`one` for 1, `other` else) and every
+/// thing's gender is `other`.
+pub const Language = struct {
+    user: ?*anyopaque = null,
+    /// The CLDR plural category of `n` in `locale` (a BCP 47 tag): `zero`, `one`, `two`, `few`, `many` or `other`.
+    plural: ?*const fn (user: ?*anyopaque, locale: []const u8, n: i64) []const u8 = null,
+    /// The grammatical gender of the thing `handle`, as the host knows it: `masculine`, `feminine`, `neuter` or `other`.
+    gender: ?*const fn (user: ?*anyopaque, handle: u64) []const u8 = null,
+
+    pub fn pluralOf(l: Language, locale: []const u8, n: i64) []const u8 {
+        if (l.plural) |f| return f(l.user, locale, n);
+        return if (n == 1) "one" else "other";
+    }
+
+    pub fn genderOf(l: Language, handle: u64) []const u8 {
+        if (l.gender) |f| return f(l.user, handle);
+        return "other";
+    }
+};
+
 /// What evaluation reads: the story's terms, the facts, the host's queries
 /// and the context they are asked in, and where a query's text answer is
 /// copied so it outlives the next answer.
@@ -44,6 +65,7 @@ pub const Context = struct {
     call: host_.Context,
     arena: std.mem.Allocator,
     builtins: ?Builtins = null,
+    language: Language = .{},
 };
 
 pub fn condition(cx: Context, r: Range) Error!bool {

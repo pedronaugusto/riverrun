@@ -190,4 +190,6 @@ pub const TagValue = struct {
     text: []const u8,
     /// The section the value names, where the host's tag schema says so.
     section: ?SectionId = null,
+    /// The value's line in the string table, where the host's tag schema types it as words a player reads.
+    line: ?LineId = null,
 };

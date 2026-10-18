@@ -58,6 +58,8 @@ pub const Options = struct {
     max_walk: u32 = 100_000,
     /// What answers registered kinds' builtins, for a session that tells their sections.
     builtins: ?eval.Builtins = null,
+    /// Plural categories and things' genders, for the words plural and gender slots choose.
+    language: eval.Language = .{},
 };
 
 /// What a flow has for the host. Its slices are valid until the flow's next `next`.
@@ -232,7 +234,7 @@ fn startedFlow(s: *Session, id: FlowId) Error!*Flow {
 }
 
 fn evaluation(s: *Session, f: *Flow) eval.Context {
-    return .{ .story = s.story, .store = s.store, .host = s.host, .call = s.context(.fromRaw(f.id)), .arena = f.arena.allocator(), .builtins = s.options.builtins };
+    return .{ .story = s.story, .store = s.store, .host = s.host, .call = s.context(.fromRaw(f.id)), .arena = f.arena.allocator(), .builtins = s.options.builtins, .language = s.options.language };
 }
 
 // One step of the walk: a step for the host, or null to keep walking.

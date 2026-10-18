@@ -116,6 +116,8 @@ names: std.AutoHashMapUnmanaged(*const ast.Name, sym.Ref) = .empty,
 exprs: std.AutoHashMapUnmanaged(*const ast.Expr, sym.Typed) = .empty,
 lines: std.AutoHashMapUnmanaged(*const ast.Stmt, sym.LineId) = .empty,
 tags: std.AutoHashMapUnmanaged(*const ast.Tag, []const sym.SectionId) = .empty,
+/// The tags whose values the schema types as words a player reads, which a translation carries.
+text_tags: std.AutoHashMapUnmanaged(*const ast.Tag, void) = .empty,
 /// Each line id in use, and where, so a second use can say where the first is.
 line_ids: std.StringHashMapUnmanaged(Span) = .empty,
 /// Where a section first returns with `<-`, for the warning when nothing calls it.

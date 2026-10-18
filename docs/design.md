@@ -70,8 +70,13 @@ DAD: Go.
   run time; it holds:
   - `{fact}`, a value;
   - `{ condition: these words | those words }`, words chosen by a condition;
-  - `{seq: a | b | c}`, `{cycle: …}`, `{once: …}` and `{shuffle: …}`, alternatives, each keeping its own state in
-    the `story` scope (a shuffle needs more than a count).
+  - `{seq: a | b | c}`, `{cycle: …}`, `{once: …}` and `{shuffle: …}`, alternatives, each keeping its own
+    state in the `story` scope (a shuffle needs more than a count);
+  - `{pelts -> one: a pelt | other: {pelts} pelts}`, words chosen by a number's plural category, and
+    `{marta -> feminine: she | other: they}` by a gender: a cast member's, from its `# gender` tag, or a thing's,
+    which the host answers. The labels are CLDR's (`zero`, `one`, `two`, `few`, `many`, `other`) or the genders
+    (`masculine`, `feminine`, `neuter`, `other`), each language's string table labels its own, and `other`,
+    which every language falls back to, is required.
 - **A line's own effects** are indented under it and happen when the host delivers the line. A host that does not
   deliver it does not apply them: a memory overheard in hide and seek is carried only if the line is heard.
 - **Choices:** `*` is offered once, `+` stays; `{ condition }` before the text gates one. A gated choice is still
@@ -102,8 +107,10 @@ DAD: Go.
   kept per thing by a key written as a constant is filed under that key alone; a query a rule asks must
   declare its stamp, so the rule wakes when its answer may change.
 - **Tags:** `# key value · key value` at the end of a line, a choice or a heading. `id` is riverrun's: a line's
-  stable id. Every other key is the host's, typed by its schema; a key the schema marks `leads` carries the flow on
-  into the host's mechanic.
+  stable id; so is `gender` on a cast entry. Every other key is the host's, typed by its schema; a key the schema
+  marks `leads` carries the flow on into the host's mechanic, and a value it types as text (a quest's `# title`) is
+  words a player reads, which go into the string table under an id made of where the tag stands, so a translation
+  carries them and a typo fixed keeps them.
 - **Comments:** `//`.
 
 Built: the reader and the checker, all of the above.
@@ -243,6 +250,9 @@ saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapsho
 - **Cursors are saved by name:** each step by its section, its place in that section and its line id. Restored under
   a recompiled story, a step that moved is found by its line id and one that is gone ends its flow, as the report
   says.
+- **A language's rules are the host's:** the plural category of a number in the string table's locale, and a
+  thing's gender, given as `Language` in a session's options; without them plurals are English's and every thing's
+  gender is `other`. riverrun ships no CLDR tables: a host brings its locales' plural rules.
 - **Deterministic:** no clock, no I/O, no randomness outside the seed in `story`. Each flow keeps one arena, reset at
   every step, so a step allocates nothing once the arena has grown; what a step hands over is valid until that
   flow's next step.

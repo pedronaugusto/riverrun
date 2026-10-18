@@ -30,6 +30,7 @@ pub const RefName = host.RefName;
 pub const Resolver = host.Resolver;
 pub const RefLookup = host.RefLookup;
 pub const Builtins = @import("run/eval.zig").Builtins;
+pub const Language = @import("run/eval.zig").Language;
 /// The evaluator, for what watches conditions outside a session (riverrun's rules, a package's).
 pub const eval = @import("run/eval.zig");
 pub const EvalError = eval.Error;

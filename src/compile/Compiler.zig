@@ -40,6 +40,9 @@ sections: []story.SectionId,
 parts: [][]?story.SectionId,
 /// The gather each label names, reserved before the bodies are compiled.
 labels: []story.NodeId,
+/// The section or part being compiled, for `place`.
+where: []const u8 = "",
+places: u32 = 0,
 
 /// A name as the format keeps it: qualified by its module, the root module's bare.
 pub fn qualified(c: *const Compiler, module: sym.ModuleId, name: []const u8) Error![]const u8 {
@@ -76,20 +79,45 @@ pub fn param(c: *const Compiler, t: sym.Type) story.Param {
 }
 
 /// A tag list as the format carries it: each value that names a section, where the host's schema typed it so,
-/// carries what that section became.
-pub fn tags(c: *const Compiler, list: []const ast.Tag) Error!story.Range {
+/// carries what that section became; each the schema types as words a player reads goes into the string table,
+/// its line id made of where the tag stands (`at`), its key and its place, never of its words, so a typo fixed
+/// keeps its translations.
+pub fn tags(c: *Compiler, list: []const ast.Tag, at: ?[]const u8) Error!story.Range {
     if (list.len == 0) return .empty;
     const out = try c.arena.alloc(story.TagIn, list.len);
     for (list, out) |*t, *o| {
         const named = c.checked.tags.get(t);
+        const words = c.checked.text_tags.contains(t);
+        const where: []const u8 = if (!words) "" else at orelse try c.place();
         const values = try c.arena.alloc(story.TagValue, t.values.len);
         for (t.values, values, 0..) |v, *to, i| {
             const s: ?story.SectionId = if (named) |n| (if (n.len == t.values.len) c.section(n[i]) else null) else null;
-            to.* = .{ .text = v, .section = s };
+            const line: ?story.LineId = if (!words) null else blk: {
+                const id = if (t.values.len == 1) try c.arena.print("{s}#{s}", .{ where, t.key.text }) else try c.arena.print("{s}#{s}.{d}", .{ where, t.key.text, i });
+                break :blk try c.b.line(id, try escaped(c.arena, v));
+            };
+            to.* = .{ .text = v, .section = s, .line = line };
         }
         o.* = .{ .key = t.key.text, .values = values };
     }
     return c.b.tagList(out);
+}
+
+/// Where tags stand that no line or choice holds: the section or part being compiled and a count of them, so each
+/// has a place of its own for its words' line id.
+pub fn place(c: *Compiler) Error![]const u8 {
+    c.places += 1;
+    return c.arena.print("{s}@{d}", .{ c.where, c.places });
+}
+
+/// Words as a template that holds no slot: `\`, `{`, `}` and `|` escaped.
+pub fn escaped(arena: std.mem.Allocator, words: []const u8) Error![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    for (words) |ch| {
+        if (ch == '\\' or ch == '{' or ch == '}' or ch == '|') try out.append(arena, '\\');
+        try out.append(arena, ch);
+    }
+    return out.items;
 }
 
 /// The id text a line or a choice is known by.

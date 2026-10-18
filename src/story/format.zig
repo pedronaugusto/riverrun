@@ -263,6 +263,11 @@ pub const SlotKind = enum(u8) {
     once = 4,
     /// Alternatives: in an order the seed shuffles.
     shuffle = 5,
+    /// Words chosen by the plural category of an int, in the table's language: `{n -> one: pelt | other: pelts}`.
+    plural = 6,
+    /// Words chosen by the grammatical gender of a cast member (an int, its index) or a thing (a ref, which the
+    /// host answers for).
+    gender = 7,
 };
 
 pub const Slot = extern struct {
@@ -298,6 +303,10 @@ pub const TagValue = extern struct {
     text: Str,
     /// The section the value names, where the host's schema types it so.
     section: u32,
+    pad: u32 = 0,
+    /// Where the host's schema types the value as words a player reads: their line id in the string table, so a
+    /// translation carries them; 0 otherwise.
+    line: u64 = 0,
 };
 
 pub const BuiltinCall = extern struct {
@@ -443,7 +452,7 @@ pub const Term = packed struct(u32) {
 
 comptime {
     // The sizes docs/format.md gives.
-    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 12 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 }, .{ Change, 8 }, .{ Bounds, 16 } };
+    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 24 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 }, .{ Change, 8 }, .{ Bounds, 16 } };
     for (sizes) |s| if (@sizeOf(s[0]) != s[1]) @compileError("a record's size is not the specification's");
     for (@typeInfo(Table).@"enum".field_names) |field| {
         const R = Record(@field(Table, field));

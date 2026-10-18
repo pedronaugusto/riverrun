@@ -95,6 +95,8 @@ fn file(c: *Compiler, f: syntax.FileId) Compiler.Error!void {
 
 fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Section) Compiler.Error!void {
     const to = c.section(id);
+    c.where = try c.qualified(s.module, s.name);
+    c.places = 0;
     switch (s.kind) {
         .scene, .other => {
             // a scene with parts and no body of its own opens with its first part
@@ -111,7 +113,7 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
                 try c.b.candidate(to, .{
                     .name = p.name,
                     .when = if (p.node.when) |*w| try exprs.condition(c, w) else .empty,
-                    .tags = try c.tags(p.node.tags),
+                    .tags = try c.tags(p.node.tags, try c.arena.print("{s}.{s}", .{ base, p.name })),
                     .entry = entry,
                     .visits = c.visits[p.visit.raw()],
                     .seen = try c.b.state(try c.arena.print("rule.{s}.{s}", .{ base, p.name })),
@@ -125,7 +127,7 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
                 try c.b.candidate(to, .{
                     .name = p.name,
                     .when = if (p.node.when) |*w| try exprs.condition(c, w) else .empty,
-                    .tags = try c.tags(p.node.tags),
+                    .tags = try c.tags(p.node.tags, try c.arena.print("{s}.{s}", .{ base, p.name })),
                     .entry = entry,
                     .visits = c.visits[p.visit.raw()],
                     .seen = try c.b.state(try c.arena.print("seen.{s}.{s}", .{ base, p.name })),

@@ -283,7 +283,7 @@ pub const Story = struct {
 
     pub fn tagValue(s: *const Story, i: u32) model.TagValue {
         const v = s.g.get(.tag_values, i);
-        return .{ .text = s.str(v.text), .section = codec.optional(model.SectionId, v.section) };
+        return .{ .text = s.str(v.text), .section = codec.optional(model.SectionId, v.section), .line = if (v.line == 0) null else model.LineId.fromRaw(v.line) catch null };
     }
 
     /// The first value of the tag `key` in `r`, if it carries one.
