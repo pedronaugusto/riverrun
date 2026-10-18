@@ -30,7 +30,8 @@ registered: []const sym.Registered,
 sections: []const sym.Section,
 labels: []const sym.Label,
 visits: []const sym.Visit,
-/// Where the story starts: the host's entries, or every section nothing else leads to.
+/// Where the story starts: the host's entries, or every section nothing else leads to; and every section of a
+/// registered kind, which its package runs.
 entries: []const sym.SectionId,
 /// Every flow between sections, for tools that draw the graph.
 edges: []const sym.Edge,

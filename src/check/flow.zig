@@ -12,8 +12,9 @@
 //! - A choice point goes on past its choices if any choice's body does; when
 //!   every open choice has been taken, that is the runtime's to report.
 //! - Every section is reached from where the story starts: the host's
-//!   entries, or else every section nothing else leads to. A rules section
-//!   is reached by what its rules react to, and nothing goes to it. Tags typed as
+//!   entries, or else every section nothing else leads to, and every section
+//!   of a registered kind, which its package runs. A rules section is reached
+//!   by what its rules react to, and nothing goes to it. Tags typed as
 //!   sections are edges, so a section only a mechanic leads to is reached.
 
 const std = @import("std");
@@ -166,13 +167,18 @@ fn reach(c: *Checker) Error!void {
                 try c.err(.none, "the host starts the story at `{s}`, and the story has no such section", .{name});
                 continue;
             };
-            try c.entries.append(c.arena, id);
+            if (c.sections.items[id.raw()].kind != .other) try c.entries.append(c.arena, id);
         }
     } else {
         var led = try std.DynamicBitSetUnmanaged.initEmpty(c.arena, n);
         for (c.edges.items) |e| if (!e.from.eql(e.to)) led.set(e.to.raw());
-        for (0..n) |i| if (!led.isSet(i) and c.sections.items[i].kind != .rules) try c.entries.append(c.arena, sym.idOf(sym.SectionId, i));
+        for (0..n) |i| {
+            const kind = c.sections.items[i].kind;
+            if (!led.isSet(i) and kind != .rules and kind != .other) try c.entries.append(c.arena, sym.idOf(sym.SectionId, i));
+        }
     }
+    // a registered kind's section is run by its package (a calendar, a quest), so it is an entry by its kind
+    for (c.sections.items, 0..) |s, i| if (s.kind == .other) try c.entries.append(c.arena, sym.idOf(sym.SectionId, i));
     // rules are reached by what they react to, never by a flow
     for (c.sections.items, 0..) |s, i| if (s.kind == .rules) {
         reached.set(i);

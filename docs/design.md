@@ -183,7 +183,8 @@ every diagnostic as `file:line:col: severity: message`.
    and modules.
 3. **Check**, reporting every error, not the first:
    - types;
-   - every section reachable, a section a tag names counting as an edge;
+   - every section reachable from where the host starts the story (its `entries`) and from every section of a
+     registered kind, which its package runs and no vocabulary lists, a section a tag names counting as an edge;
    - no path that runs off a scene without `-> end`, a return, a jump or a tag that leads on;
    - no choice whose condition can never hold, where that is decidable;
    - `(game)` facts never set by the story, and a story fact nothing sets;

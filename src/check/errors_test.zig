@@ -157,6 +157,29 @@ test "a section nothing reaches from the entries is refused" {
     try o.only(.err, 5, 4, "nothing reaches `island` from where the story starts");
 }
 
+test "a registered kind's section is an entry by its kind, the host's entries naming it or not" {
+    var o = try checkOne(
+        \\== a
+        \\-> end
+        \\== pelts (quest)
+        \\= asked
+    , .{ .entries = &.{"a"}, .kinds = &.{quest_kind} });
+    defer o.deinit();
+    try std.testing.expectEqual(@as(usize, 0), o.diags.list.items.len);
+    const entries = o.checked.?.entries;
+    try std.testing.expectEqual(@as(usize, 2), entries.len);
+    try std.testing.expectEqualStrings("pelts", o.checked.?.sections[entries[1].raw()].name);
+    // named among the entries too, it is one entry still
+    var named = try checkOne(
+        \\== a
+        \\-> end
+        \\== pelts (quest)
+        \\= asked
+    , .{ .entries = &.{ "a", "pelts" }, .kinds = &.{quest_kind} });
+    defer named.deinit();
+    try std.testing.expectEqual(@as(usize, 2), named.checked.?.entries.len);
+}
+
 test "with no entries, a loop nothing leads into is still unreached" {
     var o = try checkOne(
         \\== a
