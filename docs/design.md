@@ -162,6 +162,14 @@ and a line id, which survive edits, where an instruction offset moves with any e
 are exact over fixed node kinds. The cost is expressiveness: riverrun has no functions, loops or text assembled at
 run time, and procedural text comes from the host's queries.
 
+### What packages add
+
+A package registers a kind of section (`(quest)`) with `check.Options.kinds`: a tag schema its sections are held
+to before the host's, and builtins their conditions may call (`since(stage, fact) -> int`), whose arguments name
+things of the story, never values. The compiled story carries each builtin call for the package to answer, and a
+named, versioned **block** the package owns beside the graph. A query's stamp and a `(clock)` fact are carried too,
+so a package can wake a condition only when what it reads moves.
+
 ## The runtime
 
 A small data-oriented Zig **executor** walks the graph. There is no virtual machine.

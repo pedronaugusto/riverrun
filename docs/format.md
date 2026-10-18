@@ -72,7 +72,7 @@ Directory entries are in the fixed order of the tables below.
 | 4 | items | Str | 8 |
 | 5 | facts | Fact | 16 |
 | 6 | cast | Cast | 40 |
-| 7 | externs | Extern | 24 |
+| 7 | externs | Extern | 32 |
 | 8 | params | Param | 4 |
 | 9 | literals | Str | 8 |
 | 10 | ints | i64 | 8 |
@@ -88,6 +88,10 @@ Directory entries are in the fixed order of the tables below.
 | 20 | tag_values | TagValue | 12 |
 | 21 | kinds | Str | 8 |
 | 22 | things | Thing | 12 |
+| 23 | builtins | BuiltinCall | 28 |
+| 24 | builtin_args | u32 | 4 |
+| 25 | blocks | Block | 24 |
+| 26 | block_bytes | u8 | 1 |
 
 ### Declarations
 
@@ -128,8 +132,12 @@ padding: one of the host's things a story names. A host resolves every thing to 
 they are, or 0), `name: Str` (empty for an extra), `tags: Range`, `extra: u8` (1 for
 someone who speaks once and has no name), 7 bytes padding. At most 65,534.
 
-**Extern**: a host function. `name: Str`, `params: Range` into params, `enumeration:
-u16`, `returns: u8` (a kind, or `0xFF` for nothing), `action: u8`, 4 bytes padding.
+**Extern**: a host function. `name: Str`, `params: Range` into params (at most 32),
+`stamp: Str`, `enumeration: u16`, `returns: u8` (a kind, or `0xFF` for nothing),
+`action: u8`, `keys: u32`. A query may name the **stamp** of what it reads: a family
+(`stock`) the host bumps, keyed by the parameters whose bits are set in `keys` (bit 0
+for the first), so whatever evaluates the query (cairn's quests) wakes only when that
+stamp, for those arguments, moves. An empty stamp has no keys; an action has no stamp.
 A **query** (`action` 0) is pure, returns a value, and may be asked at any time. An
 **action** (`action` 1) is performed by the host when the story reaches it; it may
 return an outcome, which the host writes into the effect's result fact.
@@ -156,6 +164,7 @@ its argument in the high 24 bits.
 | 13 query | call a query on its arguments | extern id | args → its kind |
 | 14 lt, 15 le, 16 gt, 17 ge | ints compared | 0 | int int → bool |
 | 18 thing | push a thing's handle | index into things | → ref of its kind |
+| 19 builtin | push a builtin's answer | index into builtins | → its kind |
 
 `eq` and `ne` compare refs of one kind by handle; a ref that holds no thing equals
 nothing, as a `one of` that holds no value does.
@@ -165,6 +174,23 @@ There are no jumps: `and` and `or` evaluate both sides, which is sound because
 queries are pure. A condition leaves one bool; a value one value; a `set` effect one
 value of its fact's kind and enumeration; a call's arguments exactly its parameters,
 in order.
+
+### Registered kinds: builtins and blocks
+
+A package registers a kind of section (`quest`), with tags and **builtins** its
+sections' conditions may call. riverrun compiles such a call and never evaluates it:
+the package does, when it evaluates the condition.
+
+**BuiltinCall**: `kind: Str` (the registered kind), `name: Str`, `args: Range` into
+builtin_args, `returns: u8` (0 boolean or 1 int), 3 bytes padding. An argument is a
+u32 naming something of the story: a section by its index, a part as its section's
+index shifted left 16 bits with the part's ordinal, or a fact by its id; which, the
+builtin's declaration says, and its package reads them so.
+
+**Block**: `name: Str`, `version: u32`, 4 bytes padding, `bytes: Range` into
+block_bytes. A package's own data beside the graph (cairn's stages and dependency
+index), one block per name. riverrun checks only that the bytes lie in the table; the
+package owns their layout, validates them before use, and versions them itself.
 
 ### Sections and pools
 
@@ -325,7 +351,8 @@ Before it trusts a graph, a reader checks:
 4. Bounds: at most 32 scopes, 4,096 facts, 256 items an enumeration, 32 choices at a
    point, 32 slots a text; the cast, externs, enums and kinds below 65,535 records.
 5. Every index in range, and every enumeration tag (kind, role, node, slot, effect,
-   section kind) a known value.
+   section kind) a known value; a clock an int; a stamp a query's, keying only its
+   parameters; a builtin's return a boolean or an int; block names unique.
 6. Kinds: an enumeration exactly where the kind needs one; visit counts, states,
    seed and turn int facts; seed and turn of role `state` in the reserved scope, which
    is named `story`.

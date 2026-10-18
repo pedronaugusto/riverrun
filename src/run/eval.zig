@@ -19,6 +19,17 @@ pub const Error = error{
     QueryFailed,
     /// A query answered with a value not of the kind the story declared.
     QueryWrongKind,
+    /// A builtin of a registered kind, evaluated where no package answers it.
+    NoBuiltins,
+    /// The package could not answer its builtin, or answered with the wrong kind.
+    BuiltinFailed,
+};
+
+/// What answers the builtins registered kinds add (cairn's `since`): the package that owns them.
+pub const Builtins = struct {
+    user: ?*anyopaque,
+    /// The answer to the call `index` of the story's `builtins`, whose arguments it reads from the story.
+    call: *const fn (user: ?*anyopaque, s: *const story.Story, index: u32, cx: host_.Context) error{BuiltinFailed}!Value,
 };
 
 /// What evaluation reads: the story's terms, the facts, the host's queries
@@ -30,6 +41,7 @@ pub const Context = struct {
     host: *const host_.Host,
     call: host_.Context,
     arena: std.mem.Allocator,
+    builtins: ?Builtins = null,
 };
 
 pub fn condition(cx: Context, r: Range) Error!bool {
@@ -80,6 +92,12 @@ fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
             .item => push(stack, &n, .{ .one_of = t.itemIndex() }),
             .text => push(stack, &n, .{ .text = cx.story.literal(t.arg) }),
             .thing => push(stack, &n, .{ .ref = cx.host.refs[t.arg] }),
+            .builtin => {
+                const b = cx.builtins orelse return error.NoBuiltins;
+                const v = try b.call(b.user, cx.story, t.arg, cx.call);
+                if (@as(facts.Kind, v) != cx.story.builtin(t.arg).returns) return error.BuiltinFailed;
+                push(stack, &n, v);
+            },
             .true => push(stack, &n, .{ .boolean = true }),
             .false => push(stack, &n, .{ .boolean = false }),
             .not => stack[n - 1] = .{ .boolean = !stack[n - 1].boolean },

@@ -636,3 +636,32 @@ test "a story's things are resolved once, compared as handles, and saved by thei
     try facts.snapshot.writeNamed(&memory, &out.writer, life, s.hash(), lookup.names());
     try std.testing.expect(std.mem.find(u8, out.written(), "margaret") != null);
 }
+
+test "a builtin is answered by the package that owns it, and nothing else" {
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const life = try b.scope("life");
+    const day = try b.fact(.{ .name = "day", .scope = life, .kind = .int, .role = .clock });
+    const since = try b.builtinCall("quest", "since", &.{ 0, day.raw() }, .int);
+    const journal = try b.section(.{ .name = "journal", .kind = .other, .kind_name = "quest", .visits = try b.visits("journal") });
+    const late = try testing.say(&b, "late", "Too late.", null);
+    const soon = try testing.say(&b, "soon", "There is time.", null);
+    const when = try b.expr(&.{ .of(.builtin, since), .of(.int, try b.int(3)), .of(.gt, 0) });
+    b.enter(journal, try b.node(.{ .step = .{ .branch = .{ .cond = when, .then = late, .otherwise = soon } } }));
+    const Cairn = struct {
+        days: i64 = 5,
+        fn call(user: ?*anyopaque, s: *const story.Story, index: u32, _: run_host.Context) error{BuiltinFailed}!facts.Value {
+            const self: *@This() = @ptrCast(@alignCast(user)); // safe: the test's own pointer
+            if (!std.mem.eql(u8, s.builtin(index).name, "since")) return error.BuiltinFailed;
+            return .{ .int = self.days };
+        }
+    };
+    var cairn: Cairn = .{};
+    const t = try Told.plain(gpa, try testing.finish(&b, gpa));
+    defer t.deinit();
+    try t.session.start(.fromRaw(0), t.section("journal"));
+    try std.testing.expectError(error.NoBuiltins, t.session.next(.fromRaw(0)));
+    t.session.options.builtins = .{ .user = &cairn, .call = Cairn.call };
+    try t.session.start(.fromRaw(0), t.section("journal"));
+    try t.expectLine(0, "Too late.");
+}

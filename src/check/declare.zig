@@ -230,7 +230,7 @@ fn kindOf(c: *Checker, s: *const ast.Section) Error!sym.Section.Kind {
         .scene => .scene,
         .pool => |n| .{ .pool = n },
         .other => |name| {
-            for (c.options.kinds) |k| if (std.mem.eql(u8, k, name.text)) return .{ .other = name.text };
+            for (c.options.kinds) |k| if (std.mem.eql(u8, k.name, name.text)) return .{ .other = name.text };
             try c.err(name.span, "`({s})` is not a kind of section: a scene, `(pool)`, or a kind the host registers", .{name.text});
             return .scene;
         },

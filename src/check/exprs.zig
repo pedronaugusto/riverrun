@@ -116,6 +116,7 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
 
 fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) Error!?sym.Type {
     if (std.mem.eql(u8, call.name.text, "seen")) return seen(c, scope, e, call);
+    if (c.kindOfSection(scope.section)) |kind| if (kind.builtin(call.name.text)) |b| return builtin(c, scope, e, call, kind, b);
     const id = try externOf(c, scope, call) orelse return null;
     const ext = c.externs.items[id.raw()];
     if (ext.action) {
@@ -162,6 +163,70 @@ fn seen(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) Er
     c.visits.items[visit.raw()].read = true;
     _ = try record(c, arg, .int, .{ .visits = visit });
     return record(c, e, .int, .{ .visits = visit });
+}
+
+// A builtin of the section's registered kind: its arguments name things of the story, never values.
+fn builtin(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call, kind: *const Checker.Kind, index: u16) Error!?sym.Type {
+    const b = kind.builtins[index];
+    if (call.args.len != b.params.len) {
+        try c.err(call.name.span, "`{s}` takes {d} names, not {d}", .{ b.name, b.params.len, call.args.len });
+        return null;
+    }
+    const args = try c.arena.alloc(sym.BuiltinArg, b.params.len);
+    for (call.args, b.params, args) |*arg, want, *out| {
+        if (arg.kind != .name) {
+            try c.err(arg.span, "`{s}` takes names: {s}", .{ b.name, argName(want) });
+            return null;
+        }
+        out.* = try builtinArg(c, scope, arg, want) orelse return null;
+    }
+    const k: u16 = @intCast(kind - c.options.kinds.ptr); // safe: a kind of the options, which are few
+    const t: sym.Type = switch (b.returns) {
+        .boolean => .boolean,
+        .int => .int,
+    };
+    try c.names.put(c.arena, &call.name, .{ .builtin = .{ .kind = k, .builtin = index, .args = args } });
+    return record(c, e, t, .{ .builtin = .{ .kind = k, .builtin = index, .args = args } });
+}
+
+fn argName(a: Checker.Builtin.Arg) []const u8 {
+    return switch (a) {
+        .part => "a part of this section",
+        .section => "a section",
+        .int_fact => "an int fact",
+        .fact => "a fact",
+    };
+}
+
+fn builtinArg(c: *Checker, scope: Scope, arg: *const ast.Expr, want: Checker.Builtin.Arg) Error!?sym.BuiltinArg {
+    const n = arg.kind.name;
+    switch (want) {
+        .part => {
+            const s = &c.sections.items[scope.section.raw()];
+            for (s.parts, 0..) |p, i| if (std.mem.eql(u8, p.name, n)) {
+                const ref: sym.PartRef = .{ .section = scope.section, .index = @intCast(i) }; // safe: parts were numbered in u16
+                _ = try record(c, arg, .int, .{ .target = .{ .part = ref } });
+                return .{ .part = ref };
+            };
+            try c.err(arg.span, "`{s}` is not a part of `{s}`", .{ n, s.name });
+        },
+        .section => if (c.sectionNamed(scope.module, n)) |id| {
+            _ = try record(c, arg, .int, .{ .target = .{ .section = id } });
+            return .{ .section = id };
+        } else try c.err(arg.span, "nothing is called `{s}`: no section", .{n}),
+        .int_fact, .fact => if (c.valueNamed(scope.module, n)) |named| if (named == .fact) {
+            const t = c.facts.items[named.fact.raw()].type;
+            if (want == .int_fact and t != .int) {
+                try c.err(arg.span, "`{s}` is {s}, where an int fact is wanted", .{ n, try c.describe(t) });
+                return null;
+            }
+            _ = try record(c, arg, t, .{ .fact = named.fact });
+            return .{ .fact = named.fact };
+        },
+        // a name that is not a fact
+    }
+    if (want == .int_fact or want == .fact) try c.err(arg.span, "nothing is called `{s}`: no fact", .{n});
+    return null;
 }
 
 // What `seen` can name, nearest first: a label here, a part of this section, a section.

@@ -111,7 +111,26 @@ pub const Story = struct {
             .params = x.params,
             .returns = if (x.returns == format.no_kind) null else typed(@fromBackingInt(x.returns), x.enumeration),
             .action = x.action == 1,
+            .stamp = if (x.stamp.len == 0) null else .{ .family = s.str(x.stamp), .keys = x.keys },
         };
+    }
+
+    pub fn builtin(s: *const Story, i: u32) model.BuiltinCall {
+        const b = s.g.get(.builtins, i);
+        return .{ .kind = s.str(b.kind), .name = s.str(b.name), .args = b.args, .returns = @fromBackingInt(b.returns) };
+    }
+
+    pub fn builtinArg(s: *const Story, i: u32) u32 {
+        return s.g.get(.builtin_args, i);
+    }
+
+    /// The block a package named `name` owns, if the story carries one: the package validates its bytes.
+    pub fn block(s: *const Story, name: []const u8) ?model.Block {
+        for (0..s.len(.blocks)) |i| {
+            const b = s.g.get(.blocks, @intCast(i)); // safe: below a u32 count
+            if (std.mem.eql(u8, s.str(b.name), name)) return .{ .version = b.version, .bytes = s.g.raw(.block_bytes)[b.bytes.start..][0..b.bytes.len] };
+        }
+        return null;
     }
 
     pub fn param(s: *const Story, i: u32) model.Param {

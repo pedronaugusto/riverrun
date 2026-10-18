@@ -37,6 +37,8 @@ pub const Error = error{
     DuplicateFact,
     DuplicateItem,
     DuplicateLineId,
+    DuplicateBlock,
+    TooManyParams,
     LineIdZero,
     /// A scope named `story` declared by the story, or a story fact put in it.
     ReservedScope,
@@ -96,6 +98,10 @@ pub const Builder = struct {
     tag_values: std.ArrayList(format.TagValue) = .empty,
     kinds: std.ArrayList(format.Str) = .empty,
     things: std.ArrayList(format.Thing) = .empty,
+    builtins: std.ArrayList(format.BuiltinCall) = .empty,
+    builtin_args: std.ArrayList(u32) = .empty,
+    blocks: std.ArrayList(format.Block) = .empty,
+    block_bytes: std.ArrayList(u8) = .empty,
     lines: std.ArrayList(strings.Line) = .empty,
     reserved: ScopeId = .fromRaw(0),
     seed: FactId = .fromRaw(0),
@@ -115,7 +121,7 @@ pub const Builder = struct {
         const gpa = b.gpa;
         b.interned.deinit(gpa);
         b.fact_names.deinit(gpa);
-        inline for (.{ "names", "scopes", "enums", "items", "facts", "cast", "externs", "params", "literals", "ints", "terms", "sections", "candidates", "nodes", "defined", "choices", "texts", "slots", "effects", "tags", "tag_values", "kinds", "things", "lines" }) |field| {
+        inline for (.{ "names", "scopes", "enums", "items", "facts", "cast", "externs", "params", "literals", "ints", "terms", "sections", "candidates", "nodes", "defined", "choices", "texts", "slots", "effects", "tags", "tag_values", "kinds", "things", "builtins", "builtin_args", "blocks", "block_bytes", "lines" }) |field| {
             @field(b, field).deinit(gpa);
         }
         b.arena.deinit();
@@ -242,6 +248,7 @@ pub const Builder = struct {
 
     pub fn externFn(b: *Builder, name: []const u8, params: []const model.Param, returns: ?model.Param, action: bool) Error!facts.ExternId {
         if (b.externs.items.len == format.none16 - 1) return error.TooLarge;
+        if (params.len > format.max_params) return error.TooManyParams;
         const start: u32 = @intCast(b.params.items.len); // safe: below max_bytes
         for (params) |p| try b.params.append(b.gpa, .{ .kind = @backingInt(p.kind), .enumeration = codec.typeField(p.enumeration, p.ref_kind) });
         try b.externs.append(b.gpa, .{
@@ -250,8 +257,40 @@ pub const Builder = struct {
             .enumeration = if (returns) |r| codec.typeField(r.enumeration, r.ref_kind) else format.none16,
             .returns = if (returns) |r| @backingInt(r.kind) else format.no_kind,
             .action = @intFromBool(action),
+            .stamp = .empty,
+            .keys = 0,
         });
         return .fromRaw(@intCast(b.externs.items.len - 1)); // safe: checked above
+    }
+
+    /// The stamp of what the query `x` reads, keyed by the parameters whose bits are set in `keys`.
+    pub fn stamp(b: *Builder, x: facts.ExternId, family: []const u8, keys: u32) Error!void {
+        const e = &b.externs.items[x.raw()];
+        e.stamp = try b.declName(family);
+        e.keys = keys;
+    }
+
+    /// A call of a registered kind's builtin, for `Term.of(.builtin, i)`.
+    pub fn builtinCall(b: *Builder, kind: []const u8, name: []const u8, args: []const u32, returns: facts.Kind) Error!u24 {
+        const start = try count(b.builtin_args.items.len);
+        try b.builtin_args.appendSlice(b.gpa, args);
+        try b.builtins.append(b.gpa, .{
+            .kind = try b.declName(kind),
+            .name = try b.declName(name),
+            .args = .{ .start = start, .len = try count(args.len) },
+            .returns = @backingInt(returns),
+        });
+        return arg(b.builtins.items.len - 1);
+    }
+
+    /// A block a package owns, carried beside the graph. One name, one block.
+    pub fn block(b: *Builder, name: []const u8, version: u32, data: []const u8) Error!void {
+        const n = try b.declName(name);
+        for (b.blocks.items) |have| if (have.name.offset == n.offset and have.name.len == n.len) return error.DuplicateBlock;
+        if (b.block_bytes.items.len + data.len > format.max_bytes) return error.TooLarge;
+        const start = try count(b.block_bytes.items.len);
+        try b.block_bytes.appendSlice(b.gpa, data);
+        try b.blocks.append(b.gpa, .{ .name = n, .version = version, .bytes = .{ .start = start, .len = try count(data.len) } });
     }
 
     /// A line's words for the string table, keyed by the hash of its `# id` text.
@@ -357,6 +396,7 @@ pub const Builder = struct {
                 .not => 1,
                 .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => 2,
                 .query => if (t.arg < b.externs.items.len) b.externs.items[t.arg].params.len else return 0,
+                .builtin => 0,
             };
             if (n < pops or n - pops == stack.len) return 0;
             const top = n - pops;
@@ -364,7 +404,7 @@ pub const Builder = struct {
                 .fact => 1,
                 .int, .item, .text, .true, .false, .thing => 0,
                 .not => stack[top],
-                .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .query => 1,
+                .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .query, .builtin => 1,
                 .@"and" => stack[top] +| stack[top + 1],
                 .@"or" => @min(stack[top], stack[top + 1]),
             };

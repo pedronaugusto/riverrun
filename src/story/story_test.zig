@@ -193,3 +193,35 @@ fn walk(story: *const Story) void {
     var memory = facts.Memory.init(std.testing.allocator, schema) catch return;
     memory.deinit();
 }
+
+test "a story carries stamps, builtins and the blocks its packages own" {
+    const gpa = std.testing.allocator;
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const life = try b.scope("life");
+    const item_kind = try b.refKind("item_kind");
+    const count = try b.externFn("count", &.{.{ .kind = .ref, .ref_kind = item_kind }}, .{ .kind = .int }, false);
+    try b.stamp(count, "stock", 0b1);
+    const day = try b.fact(.{ .name = "day", .scope = life, .kind = .int, .role = .clock });
+    const since = try b.builtinCall("quest", "since", &.{ 7, day.raw() }, .int);
+    const quest = try b.section(.{ .name = "pelts", .kind = .other, .kind_name = "quest", .visits = try b.visits("pelts") });
+    const when = try b.expr(&.{ .of(.builtin, since), .of(.int, try b.int(3)), .of(.gt, 0) });
+    b.enter(quest, try b.node(.{ .step = .{ .branch = .{ .cond = when, .then = null, .otherwise = null } } }));
+    try b.block("cairn", 1, "stages");
+    try std.testing.expectError(error.DuplicateBlock, b.block("cairn", 2, "again"));
+    try std.testing.expectError(error.BadKind, b.fact(.{ .name = "dawn", .scope = life, .kind = .boolean, .role = .clock }));
+    const graph = try b.bytes(gpa);
+    defer gpa.free(graph);
+    const story: Story = try .init(graph, .{});
+    const x = story.externFn(count);
+    try std.testing.expectEqualStrings("stock", x.stamp.?.family);
+    try std.testing.expectEqual(@as(u32, 1), x.stamp.?.keys);
+    try std.testing.expectEqual(facts.Role.clock, story.fact(day).role);
+    const call = story.builtin(since);
+    try std.testing.expectEqualStrings("since", call.name);
+    try std.testing.expectEqual(@as(u32, 7), story.builtinArg(call.args.start));
+    const block = story.block("cairn").?;
+    try std.testing.expectEqual(@as(u32, 1), block.version);
+    try std.testing.expectEqualStrings("stages", block.bytes);
+    try std.testing.expect(story.block("delta") == null);
+}

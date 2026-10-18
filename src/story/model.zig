@@ -59,7 +59,27 @@ pub const Extern = struct {
     /// An action is performed by the host when the story reaches it, and may
     /// return an outcome the host writes into a fact; a query is pure, asked at any time.
     action: bool,
+    /// For a query: the stamp the host bumps when what it reads changes, keyed by some of its parameters.
+    stamp: ?Stamp = null,
 };
+
+pub const Stamp = struct {
+    family: []const u8,
+    /// Bit `i` for parameter `i`.
+    keys: u32 = 0,
+};
+
+/// A call of a builtin a registered kind adds: its package evaluates it.
+pub const BuiltinCall = struct {
+    kind: []const u8,
+    name: []const u8,
+    /// What each argument names, in `builtin_args`.
+    args: Range,
+    returns: facts.Kind,
+};
+
+/// A block a package owns, as it wrote it.
+pub const Block = struct { version: u32, bytes: []const u8 };
 
 pub const Section = struct {
     name: []const u8,

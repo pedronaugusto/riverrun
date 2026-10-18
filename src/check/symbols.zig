@@ -215,7 +215,18 @@ pub const Ref = union(enum) {
     visits: VisitId,
     target: Target,
     thing: Thing,
+    /// A builtin of the section's registered kind: which kind of `check.Options.kinds`, which builtin.
+    builtin: BuiltinRef,
 };
+
+pub const BuiltinRef = struct {
+    kind: u16,
+    builtin: u16,
+    /// What each argument names, in order: a part, a section or a fact.
+    args: []const BuiltinArg,
+};
+
+pub const BuiltinArg = union(enum) { part: PartRef, section: SectionId, fact: FactId };
 
 /// An expression's type, and what it names when it is a name or a call.
 pub const Typed = struct { type: Type, ref: ?Ref = null };

@@ -19,6 +19,9 @@ pub const Schema = @import("check/schema.zig").Schema;
 pub const Options = Checker.Options;
 pub const Mode = Checker.Mode;
 pub const Width = Checker.Width;
+pub const Kind = Checker.Kind;
+pub const Builtin = Checker.Builtin;
+pub const Things = Checker.Things;
 
 const declare = @import("check/declare.zig");
 const walk = @import("check/walk.zig");

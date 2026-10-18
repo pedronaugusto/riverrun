@@ -28,6 +28,8 @@ pub const BindError = host.BindError;
 pub const QueryError = host.QueryError;
 pub const RefName = host.RefName;
 pub const Resolver = host.Resolver;
+pub const RefLookup = host.RefLookup;
+pub const Builtins = @import("run/eval.zig").Builtins;
 
 pub const max_flows = Session_.max_flows;
 pub const max_call_depth = Session_.max_call_depth;

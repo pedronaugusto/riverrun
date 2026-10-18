@@ -80,6 +80,13 @@ pub const Table = enum(u32) {
     kinds,
     /// The host's things a story names by their text ids, each of a kind.
     things,
+    /// Calls of the builtins a registered kind of section adds, which its package evaluates.
+    builtins,
+    /// Their arguments: what each names, by its index in the story.
+    builtin_args,
+    /// Named, versioned blocks a package owns (`cairn`), beside the graph, which its own reader validates.
+    blocks,
+    block_bytes,
 };
 
 pub const table_count = @typeInfo(Table).@"enum".field_names.len;
@@ -139,14 +146,20 @@ pub const Cast = extern struct {
 pub const Extern = extern struct {
     name: Str,
     params: Range,
-    /// Of the return, for a query that returns a `one of` or a `set of`.
+    /// The family of the stamp the host bumps when what a query reads changes; empty for none.
+    stamp: Str,
+    /// Of the return: its enumeration, or a ref's kind.
     enumeration: u16,
     /// The kind it returns, or `no_kind`.
     returns: u8,
     /// 1 for an action, performed by the host when reached; 0 for a query, pure and asked at any time.
     action: u8,
-    pad: [4]u8 = @splat(0),
+    /// Which parameters key the stamp: bit `i` for parameter `i`.
+    keys: u32,
 };
+
+/// The most parameters an extern takes: a stamp keys them by a 32-bit mask.
+pub const max_params = 32;
 
 pub const Param = extern struct {
     enumeration: u16,
@@ -277,6 +290,25 @@ pub const TagValue = extern struct {
     section: u32,
 };
 
+pub const BuiltinCall = extern struct {
+    /// The registered kind of section that adds it: `quest`.
+    kind: Str,
+    name: Str,
+    /// What each argument names, in `builtin_args`: a section, a part (its section's index << 16 | the part), or a fact.
+    args: Range,
+    /// The kind it pushes: boolean or int.
+    returns: u8,
+    pad: [3]u8 = @splat(0),
+};
+
+pub const Block = extern struct {
+    name: Str,
+    version: u32,
+    pad: u32 = 0,
+    /// Its bytes, in `block_bytes`.
+    bytes: Range,
+};
+
 /// One of the host's things a story names: its kind and its text id, resolved to a handle at load.
 pub const Thing = extern struct {
     id: Str,
@@ -308,6 +340,10 @@ pub fn Record(comptime t: Table) type {
         .tag_values => TagValue,
         .kinds => Str,
         .things => Thing,
+        .builtins => BuiltinCall,
+        .builtin_args => u32,
+        .blocks => Block,
+        .block_bytes => u8,
     };
 }
 
@@ -353,6 +389,8 @@ pub const Term = packed struct(u32) {
         ge = 17,
         /// Push one of the host's things, by its handle: `arg` indexes `things`.
         thing = 18,
+        /// Push a builtin's answer, which its package gives: `arg` indexes `builtins`.
+        builtin = 19,
     };
 
     pub fn of(op: Op, arg: u24) Term {
@@ -374,7 +412,7 @@ pub const Term = packed struct(u32) {
 
 comptime {
     // The sizes docs/format.md gives.
-    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 24 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 12 }, .{ Thing, 12 } };
+    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 12 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 } };
     for (sizes) |s| if (@sizeOf(s[0]) != s[1]) @compileError("a record's size is not the specification's");
     for (@typeInfo(Table).@"enum".field_names) |field| {
         const R = Record(@field(Table, field));

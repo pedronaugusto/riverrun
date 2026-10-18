@@ -21,6 +21,19 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tags: []co
             if (at != .line and at != .choice) try c.err(tag.key.span, "only a line or a choice has an `id`", .{});
             continue;
         }
+        if (from) |s| if (c.kindOfSection(s)) |kind| if (kind.schema) |ks| switch (ks.find(tag.key.text, at)) {
+            // a registered kind's own keys are checked by its schema; the rest fall to the host's
+            .found => |k| {
+                try count(c, tag, k);
+                try values(c, module, from, tag, k, at);
+                continue;
+            },
+            .elsewhere => {
+                try c.err(tag.key.span, "`{s}` is not a tag of a {s} in a `({s})`", .{ tag.key.text, placeName(at), kind.name });
+                continue;
+            },
+            .unknown => {},
+        };
         const schema = c.options.schema orelse continue;
         const key = switch (schema.find(tag.key.text, at)) {
             .found => |k| k,

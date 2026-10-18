@@ -24,8 +24,8 @@ pub const Options = struct {
     entries: []const []const u8 = &.{},
     /// The host's tags. Null: tags are carried unchecked, and none leads anywhere.
     schema: ?*const Schema = null,
-    /// Kinds of section besides scenes and pools that the host registers: `quest`.
-    kinds: []const []const u8 = &.{},
+    /// Kinds of section besides scenes and pools that a package registers: `quest`.
+    kinds: []const Kind = &.{},
     width: Width = .{},
     /// The host's things by kind, the ids a story may name: `item_kind` holds `wolf_pelt`. A kind not listed is
     /// carried unchecked, so a host without a manifest still compiles.
@@ -33,6 +33,47 @@ pub const Options = struct {
 };
 
 pub const Things = struct { kind: []const u8, ids: []const []const u8 };
+
+/// A kind of section a package registers, `(quest)`: the vocabulary it adds to the language, never grammar.
+pub const Kind = struct {
+    name: []const u8,
+    /// The tags its sections, parts, lines and choices may carry, checked before the host's.
+    schema: ?*const Schema = null,
+    /// Functions its sections' conditions may call, which the package evaluates: `since(stage, fact)`.
+    builtins: []const Builtin = &.{},
+
+    pub fn builtin(k: Kind, name: []const u8) ?u16 {
+        for (k.builtins, 0..) |b, i| if (std.mem.eql(u8, b.name, name)) return @intCast(i); // safe: a kind has few builtins
+        return null;
+    }
+};
+
+pub const Builtin = struct {
+    name: []const u8,
+    params: []const Arg,
+    returns: Returns,
+
+    /// What a builtin's argument names: never a value, always something of the story.
+    pub const Arg = enum {
+        /// A part of the section the call is in: a quest's stage.
+        part,
+        section,
+        /// A fact, which must be an int.
+        int_fact,
+        /// Any fact.
+        fact,
+    };
+
+    pub const Returns = enum { boolean, int };
+};
+
+/// The kind a package registered for `section`, if it is one.
+pub fn kindOfSection(c: *const Checker, id: sym.SectionId) ?*const Kind {
+    const k = c.sections.items[id.raw()].kind;
+    if (k != .other) return null;
+    for (c.options.kinds) |*registered| if (std.mem.eql(u8, registered.name, k.other)) return registered;
+    return null;
+}
 
 /// The most terminal columns a line's or a choice's text may take. A `{value}`
 /// counts as `value` columns, or as none when that is null: only the host knows

@@ -514,3 +514,31 @@ test "a thing is said through a query, never as itself" {
     defer o.deinit();
     try o.only(.err, 7, 8, "a thing is said through a query the host answers, such as `{name(…)}`");
 }
+
+test "a registered kind adds its tags and builtins to its own sections, and nowhere else" {
+    const quest_tags: check.Schema = .{ .keys = &.{
+        .{ .name = "stage", .on = .{ .part = true } },
+        .{ .name = "after", .on = .{ .part = true }, .value = .word, .count = .many },
+    } };
+    const quest: check.Kind = .{ .name = "quest", .schema = &quest_tags, .builtins = &.{
+        .{ .name = "since", .params = &.{ .part, .int_fact }, .returns = .int },
+    } };
+    var o = try checkOne(
+        \\facts:
+        \\  day:  int    (clock)
+        \\  life: one of stay, go
+        \\== pelts (quest)
+        \\= asked      when { day > 1 }                    # stage
+        \\= late       when { since(asked, day) > 3 }      # stage · after asked
+        \\= wrong      when { since(gone, day) > 3 and since(asked, life) > 0 }
+        \\== a
+        \\~ life = go
+        \\{ since(asked, day) > 3 } -> end
+        \\-> end
+    , .{ .kinds = &.{quest} });
+    defer o.deinit();
+    try o.has(.err, 7, 27, "`gone` is not a part of `pelts`");
+    try o.has(.err, 7, 59, "`life` is one of stay, go, where an int fact is wanted");
+    try o.has(.err, 10, 3, "nothing is called `since`: no query or action");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
+}

@@ -56,6 +56,8 @@ pub const Error = text.Error || pool.Error || error{
 pub const Options = struct {
     /// The most steps one `next` walks through before it gives up on a story that says nothing.
     max_walk: u32 = 100_000,
+    /// What answers registered kinds' builtins, for a session that tells their sections.
+    builtins: ?eval.Builtins = null,
 };
 
 /// What a flow has for the host. Its slices are valid until the flow's next `next`.
@@ -230,7 +232,7 @@ fn startedFlow(s: *Session, id: FlowId) Error!*Flow {
 }
 
 fn evaluation(s: *Session, f: *Flow) eval.Context {
-    return .{ .story = s.story, .store = s.store, .host = s.host, .call = s.context(.fromRaw(f.id)), .arena = f.arena.allocator() };
+    return .{ .story = s.story, .store = s.store, .host = s.host, .call = s.context(.fromRaw(f.id)), .arena = f.arena.allocator(), .builtins = s.options.builtins };
 }
 
 // One step of the walk: a step for the host, or null to keep walking.

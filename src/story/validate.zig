@@ -26,6 +26,28 @@ pub fn all(g: *const Graph) Error!void {
     try texts(g);
     try effects(g);
     try tagTables(g);
+    try extensions(g);
+}
+
+fn extensions(g: *const Graph) Error!void {
+    for (0..g.len(.builtins)) |i| {
+        const b = g.get(.builtins, @intCast(i)); // safe: below a u32 count
+        try nonEmptyName(g, b.kind);
+        try nonEmptyName(g, b.name);
+        try range(g, .builtin_args, b.args);
+        if (b.returns != @backingInt(facts.Kind.boolean) and b.returns != @backingInt(facts.Kind.int)) return error.BadKind;
+        if (b.pad[0] | b.pad[1] | b.pad[2] != 0) return error.BadNode;
+    }
+    for (0..g.len(.blocks)) |i| {
+        const b = g.get(.blocks, @intCast(i)); // safe: below a u32 count
+        try nonEmptyName(g, b.name);
+        try range(g, .block_bytes, b.bytes);
+        if (b.pad != 0) return error.BadNode;
+        for (0..i) |k| {
+            const before = g.get(.blocks, @intCast(k)); // safe: below a u32 count
+            if (std.mem.eql(u8, g.raw(.names)[before.name.offset..][0..before.name.len], g.raw(.names)[b.name.offset..][0..b.name.len])) return error.BadName;
+        }
+    }
 }
 
 fn name(g: *const Graph, s: format.Str) Error!void {
@@ -131,6 +153,15 @@ fn externs(g: *const Graph) Error!void {
         try nonEmptyName(g, e.name);
         try range(g, .params, e.params);
         if (e.action > 1) return error.BadKind;
+        if (e.params.len > format.max_params) return error.BadKind;
+        try name(g, e.stamp);
+        // a stamp is a query's, and keys only parameters it has
+        if (e.stamp.len == 0) {
+            if (e.keys != 0) return error.BadKind;
+        } else {
+            if (e.action != 0) return error.BadKind;
+            if (e.params.len < 32 and e.keys >> @intCast(e.params.len) != 0) return error.BadKind;
+        }
         if (e.returns == format.no_kind) {
             if (e.action == 0) return error.BadKind; // a query answers
             if (e.enumeration != none16) return error.BadKind;
@@ -385,6 +416,11 @@ fn expr(g: *const Graph, r: Range, want: Want) Error!void {
             },
             .true, .false => {
                 stack[n] = .boolean;
+                n += 1;
+            },
+            .builtin => {
+                try index(g, .builtins, arg);
+                stack[n] = .{ .kind = g.get(.builtins, arg).returns, .enumeration = none16 };
                 n += 1;
             },
             .thing => {
