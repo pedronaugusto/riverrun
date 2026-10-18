@@ -102,7 +102,7 @@ fn named(c: *Compiler, out: *Terms, e: *const ast.Expr) Error!void {
         .fact => |id| .of(.fact, c.fact(id).raw()),
         .constant => |id| return constant(c, out, c.checked.consts[id.raw()].value),
         .value => |v| Term.item(c.enums[v.enumeration.raw()].raw(), @intCast(v.index)), // safe: an enumeration holds at most 256 values
-        .visits => |id| .of(.fact, c.visits[id.raw()].raw()),
+        .visits => |id| .of(.fact, c.visits[id.raw()].?.raw()), // a visit count read is kept
         .thing => |th| .of(.thing, try c.b.thing(c.kinds[th.kind.raw()], th.id)),
         else => unreachable, // unreachable: a name in an expression is a fact, a constant, a value, a visit count or a thing
     });
@@ -119,7 +119,7 @@ pub fn constant(c: *Compiler, out: *Terms, k: sym.Constant) Error!void {
 fn calls(c: *Compiler, out: *Terms, e: *const ast.Expr, call: *const ast.Call) Error!void {
     const ref = typed(c, e).ref orelse unreachable; // unreachable: a call the checker passed names something
     switch (ref) {
-        .visits => |id| try out.append(c.arena, .of(.fact, c.visits[id.raw()].raw())),
+        .visits => |id| try out.append(c.arena, .of(.fact, c.visits[id.raw()].?.raw())), // a visit count read is kept
         .query => |id| {
             for (call.args) |*a| try val(c, out, a);
             try out.append(c.arena, .of(.query, c.externs[id.raw()].raw()));

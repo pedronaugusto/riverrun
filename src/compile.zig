@@ -76,7 +76,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, checked: *const c
         .kinds = try a.alloc(story.RefKindId, checked.kinds.len),
         .externs = try a.alloc(@import("riverrun").facts.ExternId, checked.externs.len),
         .cast = try a.alloc(story.CastId, checked.speakers.len),
-        .visits = try a.alloc(story.FactId, checked.visits.len),
+        .visits = try a.alloc(?story.FactId, checked.visits.len),
         .sections = try a.alloc(story.SectionId, checked.sections.len),
         .parts = try a.alloc([]?story.SectionId, checked.sections.len),
         .labels = try a.alloc(story.NodeId, checked.labels.len),
@@ -140,7 +140,7 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
                     .when = if (p.node.when) |*w| try exprs.condition(c, w) else .empty,
                     .tags = try c.tags(p.node.tags, try c.arena.print("{s}.{s}", .{ base, p.name })),
                     .entry = entry,
-                    .visits = c.visits[p.visit.raw()],
+                    .visits = c.visits[p.visit.raw()].?, // a rule's visits are always kept
                     .seen = try c.b.state(try c.arena.print("rule.{s}.{s}", .{ base, p.name })),
                     .migrate = ownNumber(p.node.tags, "migrate"),
                 });
@@ -155,7 +155,7 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
                     .when = if (p.node.when) |*w| try exprs.condition(c, w) else .empty,
                     .tags = try c.tags(p.node.tags, try c.arena.print("{s}.{s}", .{ base, p.name })),
                     .entry = entry,
-                    .visits = c.visits[p.visit.raw()],
+                    .visits = c.visits[p.visit.raw()].?, // a candidate's visits are always kept
                     .seen = try c.b.state(try c.arena.print("seen.{s}.{s}", .{ base, p.name })),
                     .weight = ownNumber(p.node.tags, "weight"),
                 });

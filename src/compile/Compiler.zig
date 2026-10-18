@@ -37,7 +37,8 @@ enums: []story.EnumId,
 kinds: []story.RefKindId,
 externs: []ExternId,
 cast: []story.CastId,
-visits: []story.FactId,
+/// Null for a registered kind's section or part whose visits nothing reads: its package runs it, and counts nothing.
+visits: []?story.FactId,
 sections: []story.SectionId,
 /// For each section, the sections its parts compile to; null for a pool's candidates.
 parts: [][]?story.SectionId,

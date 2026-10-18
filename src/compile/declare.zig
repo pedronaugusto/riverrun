@@ -17,7 +17,7 @@ pub fn run(c: *Compiler) Error!void {
     for (k.kinds, c.kinds) |name, *out| out.* = try c.b.refKind(name);
     for (k.facts, c.facts) |*f, *out| out.* = try fact(c, f);
     for (k.externs, c.externs) |*x, *out| out.* = try external(c, x);
-    for (k.visits, c.visits) |v, *out| out.* = try c.b.visits(try visitName(c, v));
+    for (k.visits, c.visits) |v, *out| out.* = if (kept(c, v)) try c.b.visits(try visitName(c, v)) else null;
     for (k.sections, c.sections, c.parts) |*s, *out, *parts| {
         out.* = try section(c, s);
         parts.* = try partSections(c, s);
@@ -79,6 +79,18 @@ fn speaker(c: *Compiler, s: *const sym.Speaker) Error!story.CastId {
 /// Words as a template that holds no slot.
 pub fn escaped(c: *Compiler, words: []const u8) Error![]const u8 {
     return Compiler.escaped(c.arena, words);
+}
+
+// Whether a visit count is kept: always, but for a registered kind's section or part nothing reads `seen` of,
+// which its package runs and no session counts.
+fn kept(c: *const Compiler, v: sym.Visit) bool {
+    if (v.read) return true;
+    const s = switch (v.of) {
+        .section => |id| id,
+        .part => |p| p.section,
+        .label => return true,
+    };
+    return c.checked.sections[s.raw()].kind != .other;
 }
 
 // A visit count's name: a section's, `section.part`, or `section#label` (`section.part#label` in a part).

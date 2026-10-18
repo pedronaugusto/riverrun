@@ -12,7 +12,7 @@ pub const magic = "RIVERRUN".*;
 /// A reader refuses another major version; a newer minor adds tables at the
 /// end of the directory or fields at the end of a record, which an older
 /// reader skips by the stride the directory gives.
-pub const major: u16 = 1;
+pub const major: u16 = 2;
 pub const minor: u16 = 0;
 
 /// The largest story a reader accepts.

@@ -101,7 +101,8 @@ pub const Section = struct {
     /// The first node; null for a pool with only candidates, or a section declared and not yet entered.
     entry: ?NodeId = null,
     candidates: Range = .empty,
-    visits: FactId,
+    /// Its visit count; null for a registered kind's section or part whose visits nothing reads.
+    visits: ?FactId,
 
     pub const Kind = format.SectionKind;
 };

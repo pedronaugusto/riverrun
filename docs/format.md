@@ -37,7 +37,7 @@ Tables      each starting at a multiple of 8
 | Header field | type | |
 |---|---|---|
 | magic | [8]u8 | `RIVERRUN` or `RIVERTXT` |
-| major | u16 | 1 |
+| major | u16 | 2 |
 | minor | u16 | 0 |
 | flags | u32 | 0 |
 | hash | u64 | XxHash64 of the whole file with these 8 bytes taken as zero |
@@ -123,9 +123,10 @@ A `one of` fact holds one item or none; a `set of` fact holds any of them.
 A fact kept per thing is never a text, a clock, a moment, a visit count or the executor's state. Its terms read it
 with `keyed` and never with `fact`; an effect writing it leaves the key first (see *Effects*).
 
-At most 4,096 facts. Visit counts are int facts of role `visits`, one per section
+At most 65,535 facts. Visit counts are int facts of role `visits`, one per section
 (`visits:<section>`), per part (`visits:<section>.<part>`), per choice (`visits:*<line
-id text>`) and per labelled gather (`visits:<section>#<label>`). Alternatives' state
+id text>`) and per labelled gather (`visits:<section>#<label>`); a registered kind's
+section or part keeps one only where `seen` reads it, since its package runs it. Alternatives' state
 (`state:alt.<line id text>.<slot>`) and a candidate's last-seen turn
 (`state:seen.<pool>.<candidate>`) are int facts of role `state`. They are facts like
 any other, so they are saved and restored with their scope, and their names, made of
@@ -226,7 +227,7 @@ package owns their layout, validates them before use, and versions them itself.
 | candidates | Range | a pool's candidates, else empty |
 | entry | u32 | first node; `none` only for a pool |
 | pick | u16 | a pool gives this many candidates at once, at least 1 |
-| visits | u16 | int fact |
+| visits | u16 | int fact; `none` for a section of kind `other` that keeps no visit count |
 | kind | u8 | 0 scene, 1 pool, 2 other, 3 rules |
 | padding | 3 bytes | |
 
@@ -368,7 +369,7 @@ magic    "RRFACTS\0"
 version  u16 (2), flags u16 (0)
 story    u64     the hash of the graph it was taken under
 scope    str
-count    u32     at most 4,096
+count    u32     at most 65,535
 facts    count × { name str, kind u8, value }
 keyed    u32, then that many × { name str, kind u8, n u32, n × { key, value } }
 
@@ -402,7 +403,7 @@ Before it trusts a graph, a reader checks:
 2. The directory: every table inside the file, after the directory, aligned to 8,
    with a stride at least its record's size.
 3. Names: the names table is UTF-8, and every Str lies in it on character boundaries.
-4. Bounds: at most 32 scopes, 4,096 facts, 256 items an enumeration, 32 choices at a
+4. Bounds: at most 32 scopes, 65,535 facts, 256 items an enumeration, 32 choices at a
    point, 32 slots a text; the cast, externs, enums and kinds below 65,535 records.
 5. Every index in range, and every enumeration tag (kind, role, node, slot, effect,
    section kind) a known value; a clock an int; a stamp a query's, keying only its

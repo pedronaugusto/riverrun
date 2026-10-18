@@ -318,7 +318,7 @@ saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapsho
   every step, so a step allocates nothing once the arena has grown; what a step hands over is valid until that
   flow's next step.
 - **Every bound is a named error:** call depth 64 (calls, interruptions and pools together), choices at a point 32,
-  candidates given at once 8, outcomes owed by one step 8, facts 4,096, flows 16, and a step walking 100,000 nodes
+  candidates given at once 8, outcomes owed by one step 8, facts 65,535, flows 16, and a step walking 100,000 nodes
   without saying anything (`NoProgress`, a loop of jumps).
 
 Built.

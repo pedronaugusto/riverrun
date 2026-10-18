@@ -57,7 +57,8 @@ pub const SectionIn = struct {
     pick: u16 = 1,
     kind_name: []const u8 = "",
     tags: Range = .empty,
-    visits: FactId,
+    /// Null only for a registered kind's section or part whose visits nothing reads.
+    visits: ?FactId,
 };
 
 pub const CandidateIn = struct {
@@ -391,7 +392,7 @@ pub const Builder = struct {
             .candidates = .{ .start = try count(b.candidates.items.len), .len = 0 },
             .entry = format.none,
             .pick = s.pick,
-            .visits = s.visits.raw(),
+            .visits = if (s.visits) |v| v.raw() else format.none16,
             .kind = @backingInt(s.kind),
         });
         return .fromRaw(try count(b.sections.items.len - 1));

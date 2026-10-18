@@ -218,7 +218,7 @@ pub const Story = struct {
             .tags = r.tags,
             .entry = codec.optional(model.NodeId, r.entry),
             .candidates = r.candidates,
-            .visits = .fromRaw(r.visits),
+            .visits = codec.optional(facts.FactId, r.visits),
         };
     }
 

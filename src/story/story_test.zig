@@ -22,8 +22,8 @@ test "a built story reads back step for step" {
     try std.testing.expectEqualStrings("kitchen_1985", kitchen.name);
     try std.testing.expectEqualStrings("kitchen_1985", story.tagValue(story.tagNamed(kitchen.tags, "picture").?.values.start).text);
     try std.testing.expect(story.sectionNamed("fork_1985").?.eql(built.fork));
-    try std.testing.expectEqualStrings("visits:kitchen_1985", story.fact(kitchen.visits).name);
-    try std.testing.expect(story.reservedScope().eql(story.fact(kitchen.visits).scope));
+    try std.testing.expectEqualStrings("visits:kitchen_1985", story.fact(kitchen.visits.?).name);
+    try std.testing.expect(story.reservedScope().eql(story.fact(kitchen.visits.?).scope));
 }
 
 test "a choice is gated by a condition over the facts, in postfix" {

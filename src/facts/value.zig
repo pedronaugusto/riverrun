@@ -8,8 +8,9 @@
 const std = @import("std");
 const aegis = @import("aegis");
 
-/// The most facts a story declares, its visit counts and the executor's own state included.
-pub const max_facts = 4096;
+/// The most facts a story declares, its visit counts and the executor's own state included: every 16-bit id
+/// but the one that means none.
+pub const max_facts = 65_535;
 /// The most scopes a story keeps facts in.
 pub const max_scopes = 32;
 /// The most values of a `one of`, and items of a `set of`.

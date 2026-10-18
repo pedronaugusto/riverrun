@@ -231,8 +231,10 @@ fn sections(g: *const Graph) Error!void {
         try name(g, s.kind_name);
         try range(g, .tags, s.tags);
         try optionalNode(g, s.entry);
-        try intFact(g, s.visits);
-        switch (std.enums.fromInt(format.SectionKind, s.kind) orelse return error.BadKind) {
+        const of = std.enums.fromInt(format.SectionKind, s.kind) orelse return error.BadKind;
+        // only a registered kind's section may keep no visit count: its package runs it
+        if (s.visits != format.none16 or of != .other) try intFact(g, s.visits);
+        switch (of) {
             .pool => {
                 if (s.pick == 0) return error.BadNode;
                 try range(g, .candidates, s.candidates);

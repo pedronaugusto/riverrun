@@ -229,6 +229,10 @@ test "the facts a registered kind declares are compiled and saved as the story's
     defer out.deinit();
     try facts.snapshot.write(&t.memory, &out.writer, t.story.fact(late).scope, t.story.hash());
     try std.testing.expect(std.mem.find(u8, out.written(), "pelts.late") != null);
+    // the quest's package runs its sections, so no visit count is kept for them but what `seen` reads
+    try std.testing.expectEqual(@as(?facts.FactId, null), t.story.section(t.section("pelts")).visits);
+    try std.testing.expectEqual(@as(?facts.FactId, null), t.story.section(t.section("pelts.asked")).visits);
+    try std.testing.expect(t.story.section(t.section("a")).visits != null);
 }
 
 test "rules from the text: a slight lowers honor, and time alone brings it back" {

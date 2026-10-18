@@ -274,7 +274,7 @@ fn walk(s: *Session, f: *Flow, at: NodeId) Error!?Step {
 // Into a section: its visit counted, a pool's candidates chosen.
 fn enter(s: *Session, f: *Flow, id: story_.SectionId) Error!void {
     const section = s.story.section(id);
-    try s.count(section.visits);
+    if (section.visits) |v| try s.count(v);
     f.effect_at = 0;
     if (section.kind == .pool) {
         const picks = try pool.pick(s.evaluation(f), section);

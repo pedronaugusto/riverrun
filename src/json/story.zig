@@ -63,7 +63,7 @@ const SectionDump = struct {
     kind_name: ?[]const u8 = null,
     pick: ?u16 = null,
     entry: ?u32 = null,
-    visits: []const u8,
+    visits: ?[]const u8 = null,
     tags: ?[]const TagDump = null,
     candidates: ?[]const CandidateDump = null,
 };
@@ -189,7 +189,7 @@ fn sectionList(story: *const Story, arena: Allocator) ![]const SectionDump {
             .kind_name = if (s.kind == .other) s.kind_name else null,
             .pick = if (s.kind == .pool) s.pick else null,
             .entry = if (s.entry) |e| e.raw() else null,
-            .visits = story.fact(s.visits).name,
+            .visits = if (s.visits) |v| story.fact(v).name else null,
             .tags = try tagList(story, arena, s.tags),
             .candidates = candidates,
         };

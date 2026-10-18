@@ -31,7 +31,7 @@ pub const root: ModuleId = .fromRaw(0);
 /// The most of each a story declares; past it the checker says so.
 pub const limits = struct {
     /// Facts, as the runtime's store bounds them.
-    pub const facts = 4096;
+    pub const facts = @import("riverrun").facts.max_facts;
     /// Values of one enumeration.
     pub const values = std.math.maxInt(u16);
     /// Anything numbered by a 16-bit id: speakers, sections, labels, visit counts.

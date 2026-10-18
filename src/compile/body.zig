@@ -54,7 +54,7 @@ fn stmt(c: *Compiler, s: *const ast.Stmt, tagged: []const ast.Tag, after: Next) 
             if (g.label == null) return then;
             const l = labelOf(c, s);
             const id = c.labels[l.raw()];
-            c.b.define(id, .{ .step = .{ .gather = .{ .visits = c.visits[c.checked.labels[l.raw()].visit.raw()], .next = then } } });
+            c.b.define(id, .{ .step = .{ .gather = .{ .visits = c.visits[c.checked.labels[l.raw()].visit.raw()].?, .next = then } } });
             return id;
         },
         .effect => return try effectRun(c, s[0..1], after),
