@@ -147,6 +147,26 @@ test "a line's effects are handed over with it and applied only by the host" {
     try t.expectEnd(0);
 }
 
+test "an int's change is handed over with its amount worked out" {
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const life = try b.scope("life");
+    const points = try b.fact(.{ .name = "ryuji_points", .scope = life, .kind = .int });
+    const ramen = try testing.scene(&b, "ramen");
+    const effects = try b.effectList(&.{
+        .{ .change = .{ .fact = points, .by = try b.expr(&.{.of(.int, try b.int(2))}) } },
+        .{ .change = .{ .fact = points, .by = try b.expr(&.{.of(.int, try b.int(-5))}) } },
+    });
+    b.enter(ramen, try b.node(.{ .step = .{ .line = .{ .text = try testing.words(&b, "sure", "Sure."), .effects = effects } } }));
+    const t = try Told.plain(gpa, try testing.finish(&b, gpa));
+    defer t.deinit();
+    try t.session.start(.fromRaw(0), t.section("ramen"));
+    const said = (try t.session.next(.fromRaw(0))).line;
+    try std.testing.expectEqual(@as(i64, 2), said.effects[0].change.by);
+    for (said.effects) |e| _ = try facts.apply(t.memory.store(), e);
+    try std.testing.expectEqual(@as(i64, -3), t.memory.get(t.fact("ryuji_points")).int);
+}
+
 // A pool of the wake's night: a plain candidate, one for the front room, one
 // for the front room at ten; and a pool of two equals.
 fn night() !testing.Built {

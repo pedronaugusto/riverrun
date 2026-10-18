@@ -550,8 +550,8 @@ const Reader = struct {
     }
 
     fn effect(r: *Reader, l: Line, t: []const u8) Fail!ast.Effect {
-        if (std.mem.find(u8, t, "+=")) |k| return .{ .add = .{ .fact = try r.fact(l, t[0..k], 2), .item = try r.word(l, t[k + 2 ..], k + 4) } };
-        if (std.mem.find(u8, t, "-=")) |k| return .{ .remove = .{ .fact = try r.fact(l, t[0..k], 2), .item = try r.word(l, t[k + 2 ..], k + 4) } };
+        if (std.mem.find(u8, t, "+=")) |k| return .{ .add = try r.change(l, t, k) };
+        if (std.mem.find(u8, t, "-=")) |k| return .{ .remove = try r.change(l, t, k) };
         if (std.mem.findScalar(u8, t, '=')) |k| {
             const value = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[k + 1 ..], " "), r.at(l, k + 3 + lead(t[k + 1 ..])));
             return .{ .set = .{ .fact = try r.fact(l, t[0..k], 2), .value = value.* } };
@@ -562,6 +562,17 @@ const Reader = struct {
             return error.Invalid;
         }
         return .{ .call = call.kind.call };
+    }
+
+    // `fact += amount` or `fact -= amount`, the operator at `k`: an item's name or a number, and nothing more.
+    fn change(r: *Reader, l: Line, t: []const u8, k: usize) Fail!ast.Change {
+        const right = t[k + 2 ..];
+        const amount = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, right, " "), r.at(l, k + 4 + lead(right)));
+        if (amount.kind != .name and amount.kind != .int) {
+            try r.diags.add(r.gpa, amount.span, .err, "`+=` and `-=` take an item, a number or a constant, never an expression", .{});
+            return error.Invalid;
+        }
+        return .{ .fact = try r.fact(l, t[0..k], 2), .amount = amount.* };
     }
 
     // The fact an effect writes, which another module's may be: `harbour.met`.
@@ -820,7 +831,7 @@ test "a span points where the words start, past the spaces trimmed" {
     const body = f.sections[0].body;
     try std.testing.expectEqual(@as(u32, 3), body[0].kind.cond.cond.span.col);
     try std.testing.expectEqual(@as(u32, 3), body[1].kind.effect.add.fact.span.col);
-    try std.testing.expectEqual(@as(u32, 14), body[1].kind.effect.add.item.span.col);
+    try std.testing.expectEqual(@as(u32, 14), body[1].kind.effect.add.amount.span.col);
     try std.testing.expectEqual(@as(u32, 6), body[2].kind.choice.cond.?.span.col);
 }
 
@@ -860,6 +871,26 @@ test "a module, clocks, refs and the host's vocabulary with outcomes and stamps"
     // a tag's span is where its key is written
     try std.testing.expectEqual(@as(u32, 17), f.sections[0].tags[0].key.span.col);
     try std.testing.expectEqual(@as(u32, 36), f.sections[0].tags[1].key.span.col);
+}
+
+test "an int changes by a number or a constant, never by an expression" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(gpa);
+    const story =
+        \\== a
+        \\~ ryuji_points += 2
+        \\~ ryuji_points -= penalty
+        \\~ ryuji_points += 2 and 3
+        \\-> end
+    ;
+    const f = try parseFile(arena.allocator(), gpa, &diags, 0, "a.river", story);
+    const body = f.sections[0].body;
+    try std.testing.expectEqual(@as(i64, 2), body[0].kind.effect.add.amount.kind.int);
+    try std.testing.expectEqualStrings("penalty", body[1].kind.effect.remove.amount.kind.name);
+    try std.testing.expectEqual(@as(usize, 1), diags.errors());
 }
 
 test "else follows a condition block, and nothing else" {

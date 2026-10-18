@@ -75,7 +75,8 @@ DAD: Go.
 - **Expressions:** `=`, `!=`, `<`, `<=`, `>`, `>=` on ints, `has` and `hasnt` on sets, `and`, `or`, `not`, queries,
   and `seen(name)`, the visits of a section, part or label (an int; true when above zero). No arithmetic and nothing
   that loops: the host computes, through its queries.
-- **Effects:** `~ fact = value`, `~ set += item`, `~ set -= item`, `~ action(args)` and `~ fact = action(args)`.
+- **Effects:** `~ fact = value`, `~ set += item`, `~ set -= item`, `~ int += n` and `~ int -= n` (a number or an int
+  constant, never an expression: approval, bonds, reputation), `~ action(args)` and `~ fact = action(args)`.
 - **Flow:** `-> name` jumps (a section, a part or a label), `->> name` calls and `<-` returns, `-> end` ends, and
   `{ condition } -> name` jumps on a condition.
 - **Pools:** a `(pool)` section's candidates are parts with `when { condition }`. riverrun picks the most specific

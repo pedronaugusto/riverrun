@@ -8,6 +8,7 @@
 //! its tick boundary. A host backs the interface with whatever holds its
 //! state; `Memory` is the default.
 
+const std = @import("std");
 const value = @import("value.zig");
 const Changes = @import("changes.zig").Changes;
 
@@ -22,6 +23,8 @@ pub const SetError = error{
     /// A `one of` or an item past the fact's items.
     ItemOutOfRange,
     TextTooLong,
+    /// An int changed past what it holds.
+    Overflow,
 };
 
 pub const Store = struct {
@@ -60,6 +63,8 @@ pub const Effect = union(enum) {
     remove: Item,
     /// `~ action(args)`: an action the story declared, performed by the host.
     call: Call,
+    /// `~ int += n`, `~ int -= n`: the int moves by `by`.
+    change: struct { fact: FactId, by: i64 },
 
     pub const Item = struct { fact: FactId, item: u16 };
 };
@@ -85,6 +90,11 @@ pub fn apply(store: Store, effect: Effect) SetError!?Call {
             var items = now.set_of;
             items.setValue(e.item, effect == .add);
             try store.set(e.fact, .{ .set_of = items });
+        },
+        .change => |e| {
+            const now = store.get(e.fact);
+            if (now != .int) return error.WrongKind;
+            try store.set(e.fact, .{ .int = std.math.add(i64, now.int, e.by) catch return error.Overflow });
         },
         .call => |c| return c,
     }

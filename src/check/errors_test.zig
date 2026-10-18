@@ -474,3 +474,28 @@ test "another module's names are reached qualified" {
     o.checked = try check.run(std.testing.allocator, &o.diags, files, .{});
     try o.only(.err, 3, 3, "nothing is called `met`: no fact or constant");
 }
+
+test "an int changes by a number or an int constant; a set by one of its items" {
+    var o = try checkOne(
+        \\facts:
+        \\  points: int
+        \\  kept:   set of ruth, dad
+        \\  met:    bool
+        \\const:
+        \\  penalty = 3
+        \\  word = "no"
+        \\== a
+        \\~ points += 2
+        \\~ points -= penalty
+        \\~ points += word
+        \\~ kept += 2
+        \\~ met += 1
+        \\{ points > 0 and kept has dad and met } -> end
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 11, 13, "`+=` changes the int `points` by a number or an int constant, and `word` is neither");
+    try o.has(.err, 12, 11, "`+=` changes the set `kept` by an item: ruth, dad");
+    try o.has(.err, 13, 3, "`+=` changes a set or an int; `met` is true or false");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
+}

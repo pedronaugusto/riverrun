@@ -229,8 +229,8 @@ pub fn effect(c: *Checker, scope: Scope, eff: *const ast.Effect) Error!void {
             if (try outcome(c, scope, &s.value, id)) return;
             try value(c, scope, &s.value, c.facts.items[id.raw()].type);
         },
-        .add => |*a| try item(c, scope, &a.fact, &a.item, "+="),
-        .remove => |*r| try item(c, scope, &r.fact, &r.item, "-="),
+        .add => |*a| try change(c, scope, a, "+="),
+        .remove => |*r| try change(c, scope, r, "-="),
         .call => |*call| {
             const id = try externOf(c, scope, call) orelse return;
             const ext = c.externs.items[id.raw()];
@@ -257,12 +257,32 @@ fn outcome(c: *Checker, scope: Scope, v: *const ast.Expr, fact: sym.FactId) Erro
     return true;
 }
 
-fn item(c: *Checker, scope: Scope, fact: *const ast.Name, it: *const ast.Name, op: []const u8) Error!void {
-    const id = try settable(c, scope, fact) orelse return;
+// `+=` and `-=`: a set gains or loses an item; an int moves by a number or an int constant.
+fn change(c: *Checker, scope: Scope, ch: *const ast.Change, op: []const u8) Error!void {
+    const id = try settable(c, scope, &ch.fact) orelse return;
     const t = c.facts.items[id.raw()].type;
-    if (t != .set_of) return c.err(fact.span, "`{s}` changes a set; `{s}` is {s}", .{ op, fact.text, try c.describe(t) });
-    const ix = c.valueOf(t.set_of, it.text) orelse return c.err(it.span, "`{s}` is not in `{s}`: {s}", .{ it.text, fact.text, try c.valueList(t.set_of) });
-    try c.names.put(c.arena, it, .{ .value = .{ .enumeration = t.set_of, .index = ix } });
+    const amount = &ch.amount;
+    switch (t) {
+        .set_of => |en| {
+            if (amount.kind != .name) return c.err(amount.span, "`{s}` changes the set `{s}` by an item: {s}", .{ op, ch.fact.text, try c.valueList(en) });
+            const it = amount.kind.name;
+            const ix = c.valueOf(en, it) orelse return c.err(amount.span, "`{s}` is not in `{s}`: {s}", .{ it, ch.fact.text, try c.valueList(en) });
+            _ = try record(c, amount, .{ .one_of = en }, .{ .value = .{ .enumeration = en, .index = ix } });
+        },
+        .int => {
+            if (amount.kind == .int) {
+                _ = try record(c, amount, .int, null);
+                return;
+            }
+            const named = c.valueNamed(scope.module, amount.kind.name);
+            if (named != null and named.? == .constant and c.consts.items[named.?.constant.raw()].type == .int) {
+                _ = try record(c, amount, .int, .{ .constant = named.?.constant });
+                return;
+            }
+            try c.err(amount.span, "`{s}` changes the int `{s}` by a number or an int constant, and `{s}` is neither", .{ op, ch.fact.text, amount.kind.name });
+        },
+        else => try c.err(ch.fact.span, "`{s}` changes a set or an int; `{s}` is {s}", .{ op, ch.fact.text, try c.describe(t) }),
+    }
 }
 
 // The fact an effect writes, if the story may write it.

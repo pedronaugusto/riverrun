@@ -264,7 +264,7 @@ fn effects(g: *const Graph) Error!void {
         const k = std.enums.fromInt(format.EffectKind, e.kind) orelse return error.BadKind;
         // Fields a kind does not use hold nothing, so one story has one encoding.
         const canonical = switch (k) {
-            .set => e.item == 0 and e.action == none16 and e.result == none16,
+            .set, .change => e.item == 0 and e.action == none16 and e.result == none16,
             .add, .remove => e.expr.len == 0 and e.expr.start == 0 and e.action == none16 and e.result == none16,
             .call => e.fact == none16 and e.item == 0,
         };
@@ -273,6 +273,10 @@ fn effects(g: *const Graph) Error!void {
             .set => {
                 try index(g, .facts, e.fact);
                 try expr(g, e.expr, .{ .of = tyOfFact(g.get(.facts, e.fact)) });
+            },
+            .change => {
+                try intFact(g, e.fact);
+                try expr(g, e.expr, .{ .of = .int });
             },
             .add, .remove => {
                 try index(g, .facts, e.fact);

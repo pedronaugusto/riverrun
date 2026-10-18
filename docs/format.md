@@ -227,8 +227,10 @@ The words are the string table's: a slot is only what fills a place in them.
 | 0 set | fact, expr (its value) | item 0, action and result `none` |
 | 1 add, 2 remove | fact (a set), item | expr empty, action and result `none` |
 | 3 call | action (an action), expr (its arguments), result (a fact or `none`) | fact `none`, item 0 |
+| 4 change | fact (an int), expr (an int: the amount, negative for `-=`) | item 0, action and result `none` |
 
-riverrun never applies an effect: a step emits it for the host. A call with a result
+riverrun never applies an effect: a step emits it for the host. A `change` moves an int by its
+amount; a host that applies it refuses a result past what an i64 holds. A call with a result
 is a check with an outcome: the host writes the action's result into `result` before
 the story's next step, and the story branches on it.
 

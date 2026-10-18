@@ -141,3 +141,16 @@ test "effects are applied by the host, and an action is handed back" {
     m.reset(testing.life_scope);
     try std.testing.expectEqual(@as(usize, 0), s.get(testing.kept).set_of.count());
 }
+
+test "an int changes by an amount, and never past what it holds" {
+    const gpa = std.testing.allocator;
+    var m: Memory = try .init(gpa, testing.schema);
+    defer m.deinit();
+    const s = m.store();
+    _ = try store_.apply(s, .{ .change = .{ .fact = testing.hour, .by = 5 } });
+    _ = try store_.apply(s, .{ .change = .{ .fact = testing.hour, .by = -2 } });
+    try std.testing.expectEqual(@as(i64, 3), s.get(testing.hour).int);
+    try s.set(testing.hour, .{ .int = std.math.maxInt(i64) });
+    try std.testing.expectError(error.Overflow, store_.apply(s, .{ .change = .{ .fact = testing.hour, .by = 1 } }));
+    try std.testing.expectError(error.WrongKind, store_.apply(s, .{ .change = .{ .fact = testing.met, .by = 1 } }));
+}

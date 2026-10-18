@@ -176,13 +176,17 @@ pub const Gather = struct { label: ?Name, then: ?*const Stmt };
 pub const Effect = union(enum) {
     /// `~ fact = value`
     set: struct { fact: Name, value: Expr },
-    /// `~ set += item`
-    add: struct { fact: Name, item: Name },
-    /// `~ set -= item`
-    remove: struct { fact: Name, item: Name },
+    /// `~ set += item`, or `~ int += amount`
+    add: Change,
+    /// `~ set -= item`, or `~ int -= amount`
+    remove: Change,
     /// `~ action(args)`
     call: Call,
 };
+
+/// What `+=` and `-=` change: a set by an item, or an int by a number or a constant. Which is the fact's
+/// type to say, so the reader keeps the right side as an expression, a name or a number, and the checker decides.
+pub const Change = struct { fact: Name, amount: Expr };
 
 pub const Flow = union(enum) {
     /// `-> name`, or `-> end`.

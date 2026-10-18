@@ -248,10 +248,10 @@ pub const Slot = extern struct {
     arity: u8,
 };
 
-pub const EffectKind = enum(u8) { set = 0, add = 1, remove = 2, call = 3 };
+pub const EffectKind = enum(u8) { set = 0, add = 1, remove = 2, call = 3, change = 4 };
 
 pub const Effect = extern struct {
-    /// The value of a `set`, or the arguments of a `call`.
+    /// The value of a `set`, the amount of a `change`, or the arguments of a `call`.
     expr: Range,
     fact: u16,
     item: u16,

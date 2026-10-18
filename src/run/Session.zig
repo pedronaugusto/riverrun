@@ -405,6 +405,7 @@ fn emit(cx: eval.Context, e: story_.Effect, owed: *Owed) Error!facts.Effect {
     return switch (e) {
         .set => |x| .{ .set = .{ .fact = x.fact, .value = try eval.own(cx.arena, try eval.value(cx, x.value)) } },
         .add => |x| .{ .add = .{ .fact = x.fact, .item = x.item } },
+        .change => |x| .{ .change = .{ .fact = x.fact, .by = (try eval.value(cx, x.by)).int } },
         .remove => |x| .{ .remove = .{ .fact = x.fact, .item = x.item } },
         .call => |x| blk: {
             if (x.result) |r| owed.add(r);

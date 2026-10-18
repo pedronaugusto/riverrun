@@ -136,6 +136,8 @@ pub const Effect = union(format.EffectKind) {
     add: Item,
     remove: Item,
     call: struct { action: ExternId, args: Range, result: ?FactId = null },
+    /// `~ int += n`, `~ int -= n`: the int moves by the value of `by`, a number (negative for `-=`).
+    change: struct { fact: FactId, by: Range },
 
     pub const Item = struct { fact: FactId, item: u8 };
 };

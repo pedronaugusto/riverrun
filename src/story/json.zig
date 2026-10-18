@@ -219,6 +219,7 @@ fn effectList(story: *const Story, arena: Allocator, r: Range) !?[]const EffectD
             .add => |e| .{ .kind = .add, .fact = story.fact(e.fact).name, .item = itemOf(story, e.fact, e.item) },
             .remove => |e| .{ .kind = .remove, .fact = story.fact(e.fact).name, .item = itemOf(story, e.fact, e.item) },
             .call => |e| .{ .kind = .call, .action = story.externFn(e.action).name, .args = try exprText(story, arena, e.args), .result = if (e.result) |f| story.fact(f).name else null },
+            .change => |e| .{ .kind = .change, .fact = story.fact(e.fact).name, .value = try exprText(story, arena, e.by) },
         };
     }
     return out;

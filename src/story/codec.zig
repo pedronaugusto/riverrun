@@ -96,6 +96,10 @@ pub fn encodeEffect(e: model.Effect) format.Effect {
             r.expr = s.args;
             r.result = raw16(s.result);
         },
+        .change => |s| {
+            r.fact = s.fact.raw();
+            r.expr = s.by;
+        },
     }
     return r;
 }
@@ -107,5 +111,6 @@ pub fn decodeEffect(r: format.Effect) model.Effect {
         .add => .{ .add = .{ .fact = .fromRaw(r.fact), .item = @intCast(r.item) } }, // safe: validated below max_items
         .remove => .{ .remove = .{ .fact = .fromRaw(r.fact), .item = @intCast(r.item) } }, // safe: validated below max_items
         .call => .{ .call = .{ .action = .fromRaw(r.action), .args = r.expr, .result = optional(model.FactId, r.result) } },
+        .change => .{ .change = .{ .fact = .fromRaw(r.fact), .by = r.expr } },
     };
 }
