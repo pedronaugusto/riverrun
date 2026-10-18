@@ -5,12 +5,12 @@
 
 const std = @import("std");
 const check = @import("../check.zig");
-const story = @import("../story.zig");
+const story = @import("riverrun").story;
 const Compiler = @import("Compiler.zig");
 
 const sym = check.symbols;
 const Error = Compiler.Error;
-const ExternId = @import("../facts.zig").ExternId;
+const ExternId = @import("riverrun").facts.ExternId;
 
 pub fn run(c: *Compiler) Error!void {
     const k = c.checked;

@@ -9,7 +9,7 @@
 //! severity: message`; an error stops it before anything is written.
 
 const std = @import("std");
-const riverrun = @import("riverrun");
+const riverrun = @import("riverrun-compiler");
 const vocabulary = @import("vocabulary");
 
 const syntax = riverrun.syntax;

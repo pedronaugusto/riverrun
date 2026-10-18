@@ -1,21 +1,15 @@
-//! riverrun: stories written in `.river` files, read, checked and run.
-//!
-//! Layers, each importing only those before it: `syntax` (text into a tree),
-//! then `facts`, `check`, `story`, `compile` and `run`. Nothing at run time
-//! imports `syntax`, `check` or `compile`.
+//! riverrun's runtime: stories compiled from `.river` files, told over the
+//! host's facts. `facts` (typed state in scopes, behind a store), `story`
+//! (the compiled format, read in place) and `run` (the executor), each
+//! importing only those before it, on std and aegis alone. The compiler is
+//! the `riverrun-compiler` module, which a game runs at build time.
 
-pub const syntax = @import("syntax.zig");
 pub const facts = @import("facts.zig");
-pub const check = @import("check.zig");
 pub const story = @import("story.zig");
-pub const compile = @import("compile.zig");
 pub const run = @import("run.zig");
 
 test {
-    _ = syntax;
     _ = facts;
-    _ = check;
     _ = story;
-    _ = compile;
     _ = run;
 }

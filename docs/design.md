@@ -255,8 +255,11 @@ ffi       the C ABI over run                                                   r
 tools     the program, on ensign                                               all
 ```
 
-A game that only plays links `story`, `facts` and `run`, never `syntax` or `check`. *Protects:* a small runtime, and
-compile-time work that stays at build time.
+The layers are two modules. `riverrun`, the runtime, is `facts`, `story` and `run` on std and aegis alone;
+`riverrun-compiler` is `syntax`, `check`, `compile` and the JSON forms, standing on the runtime and adding
+xenoglyph (for widths) and strand (for JSON), both lazy dependencies. A game that only tells stories imports
+`riverrun` and never fetches the compiler's dependencies; its build runs the compiler through `addStory`, and a tool
+asks for it with `.compiler = true`. *Protects:* a small runtime, and compile-time work that stays at build time.
 
 ## Napkin math
 

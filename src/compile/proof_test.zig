@@ -7,9 +7,9 @@
 const std = @import("std");
 const syntax = @import("../syntax.zig");
 const check = @import("../check.zig");
-const story = @import("../story.zig");
-const facts = @import("../facts.zig");
-const run = @import("../run.zig");
+const story = @import("riverrun").story;
+const facts = @import("riverrun").facts;
+const run = @import("riverrun").run;
 const compile = @import("../compile.zig");
 const wake_options = @import("../check/proof_test.zig").wake_options;
 

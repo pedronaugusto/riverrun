@@ -14,7 +14,7 @@
 const std = @import("std");
 const syntax = @import("syntax.zig");
 const check = @import("check.zig");
-const story = @import("story.zig");
+const story = @import("riverrun").story;
 
 pub const Compiler = @import("compile/Compiler.zig");
 const declare = @import("compile/declare.zig");
@@ -69,7 +69,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *const syntax.Diagnostics, checked: *c
         .facts = try a.alloc(story.FactId, checked.facts.len),
         .enums = try a.alloc(story.EnumId, checked.enums.len),
         .kinds = try a.alloc(story.RefKindId, checked.kinds.len),
-        .externs = try a.alloc(@import("facts.zig").ExternId, checked.externs.len),
+        .externs = try a.alloc(@import("riverrun").facts.ExternId, checked.externs.len),
         .cast = try a.alloc(story.CastId, checked.speakers.len),
         .visits = try a.alloc(story.FactId, checked.visits.len),
         .sections = try a.alloc(story.SectionId, checked.sections.len),

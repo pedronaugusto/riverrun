@@ -10,9 +10,10 @@
 
 const std = @import("std");
 const strand = @import("strand");
-const value = @import("value.zig");
-const Memory = @import("memory.zig").Memory;
-const snapshot = @import("snapshot.zig");
+const riverrun = @import("riverrun");
+const value = riverrun.facts;
+const Memory = riverrun.facts.Memory;
+const snapshot = riverrun.facts.snapshot;
 
 const ScopeId = value.ScopeId;
 const Kind = value.Kind;
@@ -90,7 +91,18 @@ pub fn read(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, story_hash: u6
     return snapshot.restoreSaved(m, arena, scope, hash == story_hash, saved, .none);
 }
 
-const testing = @import("testing.zig");
+// A scope of a life, shaped like the proof's.
+const testing = struct {
+    const life_scope: value.ScopeId = .fromRaw(0);
+    const life: value.FactId = .fromRaw(0);
+    const kept: value.FactId = .fromRaw(1);
+    const hour: value.FactId = .fromRaw(2);
+    const schema: riverrun.facts.Schema = .{ .scopes = &.{"life"}, .facts = &.{
+        .{ .name = "life", .scope = life_scope, .kind = .one_of, .items = &.{ "stay", "go" } },
+        .{ .name = "kept", .scope = life_scope, .kind = .set_of, .items = &.{ "ruth", "stock", "dad" } },
+        .{ .name = "hour", .scope = life_scope, .kind = .int, .role = .game },
+    } };
+};
 
 test "a scope's JSON form reads back to the same facts" {
     const gpa = std.testing.allocator;

@@ -11,7 +11,6 @@ const strings_ = @import("story/strings.zig");
 
 pub const format = format_;
 pub const template = @import("story/template.zig");
-pub const json = @import("story/json.zig");
 
 pub const Story = @import("story/reader.zig").Story;
 pub const Options = @import("story/reader.zig").Options;
@@ -66,7 +65,6 @@ test {
     _ = format_;
     _ = model;
     _ = template;
-    _ = json;
     _ = strings_;
     _ = @import("story/tables.zig");
     _ = @import("story/validate.zig");

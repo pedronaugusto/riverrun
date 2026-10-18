@@ -7,7 +7,7 @@
 const std = @import("std");
 const syntax = @import("../syntax.zig");
 const check = @import("../check.zig");
-const story = @import("../story.zig");
+const story = @import("riverrun").story;
 const Compiler = @import("Compiler.zig");
 
 const sym = check.symbols;

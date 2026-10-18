@@ -1,17 +1,28 @@
 const std = @import("std");
 
-/// What a host that depends on riverrun builds: the `riverrun` module. A
-/// game compiles its story with `addStory`. The tests and the gate are
-/// `dev`'s.
+/// What a host that depends on riverrun builds: the `riverrun` module, the
+/// runtime, on aegis alone. A build that passes `.compiler = true` gets the
+/// `riverrun-compiler` module too, whose dependencies (xenoglyph, strand) are
+/// lazy, so a game that only tells stories never fetches them. A game
+/// compiles its story with `addStory`. The tests and the gate are `dev`'s.
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    _ = b.addModule("riverrun", .{
+    const runtime = b.addModule("riverrun", .{
         .root_source_file = b.path("src/riverrun.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = imports(b, target, optimize),
+        .imports = runtimeImports(b, target, optimize),
     });
+    if (b.option(bool, "compiler", "Offer the riverrun-compiler module") orelse false) {
+        const imports = compilerImports(b, runtime, target, optimize) orelse return;
+        _ = b.addModule("riverrun-compiler", .{
+            .root_source_file = b.path("src/compiler.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = imports,
+        });
+    }
 }
 
 pub const StoryOptions = struct {
@@ -44,17 +55,20 @@ pub fn addStory(b: *std.Build, dep: *std.Build.Dependency, options: StoryOptions
     const d = dep.builder;
     const host = b.graph.host;
     // the compiler runs while the game builds, so it is built for the machine doing the building
-    const riverrun = b.createModule(.{
+    const runtime = b.createModule(.{
         .root_source_file = d.path("src/riverrun.zig"),
         .target = host,
         .optimize = .ReleaseSafe,
-        .imports = imports(d, host, .ReleaseSafe),
+        .imports = runtimeImports(d, host, .ReleaseSafe),
     });
+    // fetched on first use, after which the build runs again with them
+    const imports = compilerImports(d, runtime, host, .ReleaseSafe) orelse return .{ .graph = options.vocabulary, .words = options.vocabulary, .module = b.createModule(.{}) };
+    const compiler = b.createModule(.{ .root_source_file = d.path("src/compiler.zig"), .target = host, .optimize = .ReleaseSafe, .imports = imports });
     const vocabulary = b.createModule(.{
         .root_source_file = options.vocabulary,
         .target = host,
         .optimize = .ReleaseSafe,
-        .imports = &.{.{ .name = "riverrun", .module = riverrun }},
+        .imports = &.{ .{ .name = "riverrun", .module = runtime }, .{ .name = "riverrun-compiler", .module = compiler } },
     });
     const exe = b.addExecutable(.{
         .name = "riverrun-compile",
@@ -62,10 +76,7 @@ pub fn addStory(b: *std.Build, dep: *std.Build.Dependency, options: StoryOptions
             .root_source_file = d.path("tools/compile.zig"),
             .target = host,
             .optimize = .ReleaseSafe,
-            .imports = &.{
-                .{ .name = "riverrun", .module = riverrun },
-                .{ .name = "vocabulary", .module = vocabulary },
-            },
+            .imports = &.{ .{ .name = "riverrun-compiler", .module = compiler }, .{ .name = "vocabulary", .module = vocabulary } },
         }),
     });
     const run = b.addRunArtifact(exe);
@@ -85,27 +96,34 @@ pub fn addStory(b: *std.Build, dep: *std.Build.Dependency, options: StoryOptions
     return .{ .graph = graph, .words = words, .module = b.createModule(.{ .root_source_file = root }) };
 }
 
-/// riverrun's development: its tests under preflight's gate, and a story compiled through `addStory` and told.
-/// Run through bay.
+/// riverrun's development: the runtime's tests, the compiler's, and a story compiled through `addStory` and told,
+/// under preflight's gate. Run through bay.
 pub fn dev(b: *std.Build, tools: type) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const test_filter = b.option([]const u8, "test-filter", "Select tests by name");
-    const package = b.dependency("riverrun", .{ .target = target, .optimize = optimize });
+    const package = b.dependency("riverrun", .{ .target = target, .optimize = optimize, .compiler = true });
     const p = package.builder;
     const filters: []const []const u8 = if (test_filter) |filter| &.{filter} else &.{};
     const test_step = b.step("test", "Run the tests");
-    const tests = b.addTest(.{
+    const runtime = b.addTest(.{
         .name = "riverrun-tests",
         .filters = filters,
         .root_module = b.createModule(.{
             .root_source_file = p.path("src/riverrun.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = imports(p, target, optimize),
+            .imports = runtimeImports(p, target, optimize),
         }),
     });
-    test_step.dependOn(&b.addRunArtifact(tests).step);
+    test_step.dependOn(&b.addRunArtifact(runtime).step);
+    const imports = compilerImports(p, package.module("riverrun"), target, optimize) orelse return;
+    const compiler = b.addTest(.{
+        .name = "riverrun-compiler-tests",
+        .filters = filters,
+        .root_module = b.createModule(.{ .root_source_file = p.path("src/compiler.zig"), .target = target, .optimize = optimize, .imports = imports }),
+    });
+    test_step.dependOn(&b.addRunArtifact(compiler).step);
     const sample = addStory(b, package, .{ .files = &.{p.path("tools/testdata/sample.river")}, .vocabulary = p.path("tools/testdata/vocabulary.zig") });
     const built = b.addTest(.{
         .name = "add-story-tests",
@@ -124,11 +142,21 @@ pub fn dev(b: *std.Build, tools: type) void {
     tools.preflight.addCi(b, p, .{ .tests = test_step });
 }
 
-fn imports(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) []const std.Build.Module.Import {
+// The runtime needs aegis alone.
+fn runtimeImports(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) []const std.Build.Module.Import {
     const aegis = b.dependency("aegis", .{ .target = target, .optimize = optimize });
-    const xenoglyph = b.dependency("xenoglyph", .{ .target = target, .optimize = optimize });
-    const strand = b.dependency("strand", .{ .target = target, .optimize = optimize });
+    return b.allocator.dupe(std.Build.Module.Import, &.{.{ .name = "aegis", .module = aegis.module("aegis") }}) catch @panic("OOM");
+}
+
+// The compiler stands on the runtime and adds xenoglyph, for widths, and strand, for the JSON forms: both lazy,
+// so null until they are fetched.
+fn compilerImports(b: *std.Build, runtime: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) ?[]const std.Build.Module.Import {
+    const aegis = b.dependency("aegis", .{ .target = target, .optimize = optimize });
+    // not yet fetched: the toolchain fetches them, then runs the build again
+    const xenoglyph = b.dependencyLazy("xenoglyph", .{ .target = target, .optimize = optimize }) catch return null;
+    const strand = b.dependencyLazy("strand", .{ .target = target, .optimize = optimize }) catch return null;
     return b.allocator.dupe(std.Build.Module.Import, &.{
+        .{ .name = "riverrun", .module = runtime },
         .{ .name = "aegis", .module = aegis.module("aegis") },
         .{ .name = "xenoglyph", .module = xenoglyph.module("xenoglyph") },
         .{ .name = "strand", .module = strand.module("strand") },

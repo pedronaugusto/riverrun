@@ -5,10 +5,11 @@
 
 const std = @import("std");
 const strand = @import("strand");
-const facts = @import("../facts.zig");
-const format = @import("format.zig");
-const model = @import("model.zig");
-const Story = @import("reader.zig").Story;
+const riverrun = @import("riverrun");
+const facts = riverrun.facts;
+const format = riverrun.story.format;
+const model = riverrun.story;
+const Story = riverrun.story.Story;
 
 const Allocator = std.mem.Allocator;
 const Range = format.Range;
@@ -319,9 +320,29 @@ pub fn exprText(story: *const Story, arena: Allocator, r: Range) !?[]const u8 {
 
 test "a story's dump names what its ids point at" {
     const gpa = std.testing.allocator;
-    var built = try @import("testing.zig").kitchen(gpa);
-    defer built.deinit(gpa);
-    const story: Story = try .init(built.graph, .{});
+    var b: riverrun.story.Builder = try .init(gpa);
+    defer b.deinit();
+    const player = try b.scope("player");
+    const memories = try b.enumeration(&.{ "play", "gave" });
+    const sides = try b.enumeration(&.{ "stay", "go" });
+    const carried = try b.fact(.{ .name = "carried", .scope = player, .kind = .set_of, .enumeration = memories });
+    const lived = try b.externFn("lived", &.{.{ .kind = .one_of, .enumeration = sides }}, .{ .kind = .boolean }, false);
+    const kitchen = try b.section(.{ .name = "kitchen_1985", .visits = try b.visits("kitchen_1985") });
+    const fork = try b.section(.{ .name = "fork_1985", .visits = try b.visits("fork_1985") });
+    const ask = try b.node(.{ .step = .{ .gather = .{ .visits = try b.visits("kitchen_1985.ask") } } });
+    const play = try b.text(try b.line("play", "You could still play."), &.{});
+    const leave = try b.node(.{ .step = .{ .jump = fork } });
+    b.enter(kitchen, try b.node(.{ .step = .{ .choices = .{ .choices = try b.choiceList(&.{.{
+        .text = play,
+        .cond = try b.expr(&.{ .of(.fact, carried.raw()), riverrun.story.Term.item(memories.raw(), 0), .of(.has, 0) }),
+        .visits = try b.visits("play"),
+        .target = ask,
+    }}), .next = leave } } }));
+    const unlived = try b.expr(&.{ riverrun.story.Term.item(sides.raw(), 1), .of(.query, lived.raw()), .of(.not, 0) });
+    b.enter(fork, try b.node(.{ .step = .{ .branch = .{ .cond = unlived, .then = null, .otherwise = null } } }));
+    const graph = try b.bytes(gpa);
+    defer gpa.free(graph);
+    const story: Story = try .init(graph, .{});
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
     var out: std.Io.Writer.Allocating = .init(gpa);
