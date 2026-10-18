@@ -1,0 +1,148 @@
+//! Conditions, values and arguments: postfix terms over the facts, evaluated
+//! by one loop on a small stack. There are no jumps: a term pushes or
+//! combines, so evaluation always ends, and `and` and `or` evaluate both
+//! sides, which is sound because queries are pure. The reader has typed
+//! every range for its place; what is checked here is only what the host
+//! answers.
+
+const std = @import("std");
+const facts = @import("../facts.zig");
+const story = @import("../story.zig");
+const host_ = @import("host.zig");
+
+const Value = facts.Value;
+const Term = story.Term;
+const Range = story.Range;
+
+pub const Error = error{
+    OutOfMemory,
+    QueryFailed,
+    /// A query answered with a value not of the kind the story declared.
+    QueryWrongKind,
+};
+
+/// What evaluation reads: the story's terms, the facts, the host's queries
+/// and the context they are asked in, and where a query's text answer is
+/// copied so it outlives the next answer.
+pub const Context = struct {
+    story: *const story.Story,
+    store: facts.Store,
+    host: *const host_.Host,
+    call: host_.Context,
+    arena: std.mem.Allocator,
+};
+
+pub fn condition(cx: Context, r: Range) Error!bool {
+    if (r.len == 0) return true;
+    return (try value(cx, r)).boolean;
+}
+
+pub fn value(cx: Context, r: Range) Error!Value {
+    var stack: [story.max_stack]Value = undefined;
+    const n = try run(cx, r, &stack);
+    std.debug.assert(n == 1);
+    return stack[0];
+}
+
+/// A call's arguments, in order, copied into `cx.arena`.
+pub fn arguments(cx: Context, r: Range) Error![]Value {
+    var stack: [story.max_stack]Value = undefined;
+    const n = try run(cx, r, &stack);
+    const out = try cx.arena.alloc(Value, n);
+    for (out, stack[0..n]) |*o, v| o.* = try own(cx.arena, v);
+    return out;
+}
+
+/// `v` with its text copied into `arena`, so it outlives the fact or answer it came from.
+pub fn own(arena: std.mem.Allocator, v: Value) error{OutOfMemory}!Value {
+    return if (v == .text) .{ .text = try arena.dupe(u8, v.text) } else v;
+}
+
+/// The enumeration of the value `r` leaves, for writing a `one of` or a set by name.
+pub fn enumeration(s: *const story.Story, r: Range) ?story.EnumId {
+    if (r.len == 0) return null;
+    const t = s.term(r.start + r.len - 1);
+    return switch (t.op) {
+        .fact => s.fact(.fromRaw(@intCast(t.arg))).enumeration, // safe: validated to a fact id
+        .item => .fromRaw(t.itemEnum()),
+        .query => if (s.externFn(.fromRaw(@intCast(t.arg))).returns) |ret| ret.enumeration else null, // safe: validated to an extern id
+        else => null,
+    };
+}
+
+fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
+    var n: usize = 0;
+    for (0..r.len) |k| {
+        const t = cx.story.term(r.start + @as(u32, @intCast(k))); // safe: below a u32 length
+        switch (t.op) {
+            .fact => push(stack, &n, cx.store.get(.fromRaw(@intCast(t.arg)))), // safe: validated to a fact id
+            .int => push(stack, &n, .{ .int = cx.story.int(t.arg) }),
+            .item => push(stack, &n, .{ .one_of = t.itemIndex() }),
+            .text => push(stack, &n, .{ .text = cx.story.literal(t.arg) }),
+            .true => push(stack, &n, .{ .boolean = true }),
+            .false => push(stack, &n, .{ .boolean = false }),
+            .not => stack[n - 1] = .{ .boolean = !stack[n - 1].boolean },
+            .query => try query(cx, t, stack, &n),
+            else => {
+                const a = stack[n - 2];
+                const b = stack[n - 1];
+                n -= 1;
+                stack[n - 1] = .{ .boolean = binary(t.op, a, b) };
+            },
+        }
+    }
+    return n;
+}
+
+fn push(stack: *[story.max_stack]Value, n: *usize, v: Value) void {
+    stack[n.*] = v;
+    n.* += 1;
+}
+
+fn binary(op: Term.Op, a: Value, b: Value) bool {
+    return switch (op) {
+        .eq => same(a, b),
+        .ne => !same(a, b),
+        .has => holds(a, b),
+        .hasnt => !holds(a, b),
+        .@"and" => a.boolean and b.boolean,
+        .@"or" => a.boolean or b.boolean,
+        .lt => a.int < b.int,
+        .le => a.int <= b.int,
+        .gt => a.int > b.int,
+        .ge => a.int >= b.int,
+        else => unreachable, // unreachable: the other ops push or take one value, handled by `run`
+    };
+}
+
+// Whether a set holds an item; an item that is none is held by no set.
+fn holds(set: Value, item: Value) bool {
+    return item.one_of < facts.max_items and set.set_of.isSet(item.one_of);
+}
+
+// Equality, where a `one of` that holds nothing equals nothing.
+fn same(a: Value, b: Value) bool {
+    if (a == .one_of and (a.one_of == Value.none or b.one_of == Value.none)) return false;
+    return a.eql(b);
+}
+
+fn query(cx: Context, t: Term, stack: *[story.max_stack]Value, n: *usize) Error!void {
+    const id: facts.ExternId = .fromRaw(@intCast(t.arg)); // safe: validated to an extern id
+    const x = cx.story.externFn(id);
+    const args = stack[n.* - x.params.len .. n.*];
+    const answer = try own(cx.arena, try cx.host.query(id, cx.call, args));
+    const ret = x.returns.?; // a query returns a value: validated
+    if (@as(facts.Kind, answer) != ret.kind) return error.QueryWrongKind;
+    if (ret.enumeration) |e| {
+        const items = cx.story.items(e).len;
+        const fits = switch (answer) {
+            .one_of => |i| i == Value.none or i < items,
+            .set_of => |set| if (set.findLastSet()) |last| last < items else true,
+            else => true,
+        };
+        if (!fits) return error.QueryWrongKind;
+    }
+    if (answer == .text and answer.text.len > facts.max_text) return error.QueryWrongKind;
+    n.* -= x.params.len;
+    push(stack, n, answer);
+}

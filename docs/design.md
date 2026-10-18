@@ -158,21 +158,52 @@ run time, and procedural text comes from the host's queries.
 A small data-oriented Zig **executor** walks the graph. There is no virtual machine.
 
 ```
-load(bytes) → story · Session.init(story, store, host)
-start(flow, section) · next(flow) → line | choices | action | end · choose(flow, i) · interrupt(flow, section)
-get(fact) · set(fact, value) · snapshot(scope) → bytes · restore(scope, bytes)
+Story.init(bytes) · Strings.init(bytes) · Host.bind(story, impls)
+Session.init(gpa, story, strings, store, host, options)
+start(flow, section) · next(flow) → line | choices | effects | action | end
+choose(flow, i) · outcome(flow, value) · interrupt(flow, section) · stop(flow)
+saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapshot and restore per scope)
 ```
 
-- **Effects are emitted, never applied.** `next` returns the effects it reached as typed records, and the host
-  applies them: at once, or as commands at its own tick boundary, so its journal, replay, undo and network authority
-  cover the story too.
+- **`next` walks until it has something for the host**: branches, gathers, jumps, calls and pools are walked
+  through. A line comes with its own effects; choices come open or closed, a once-only choice gone after it is taken,
+  and when none is open the flow goes past them; an effects step on its own comes as `effects`.
+- **The host is bound by name at load.** The story's externs carry names and signatures; a Zig host binds a struct
+  of functions, reflected by field name into a table indexed by extern id, and a host in another language binds a
+  function pointer and its data per name through `Binder`. Every extern must be bound with its signature, or the
+  bind fails naming what is unbound or mismatched; at run time a call is an array index.
+- **Calls carry their context:** the flow that asked, and whose facts each scope holds (`setOwner`: a player, a
+  region), so a query on a server knows whose inventory it counts. An emitted action carries the same context.
+- **Things the host owns are resolved once.** A story names them by stable text ids of a kind (`wolf_pelt`, a
+  `ref of item_kind`); the host resolves each to its own 64-bit handle at load, refusing an id it does not know, and
+  the evaluator only ever sees handles.
+- **Effects are emitted, never applied.** The host applies them: at once, or as commands at its own tick boundary,
+  so its journal, replay, undo and network authority cover the story too. The executor writes only its own
+  bookkeeping, in the reserved `story` scope: visits, alternatives, pools' memory and the turn.
 - **Conditions are a formula evaluator,** a tight loop over a postfix array: it cannot loop, branch the story or call
   what the host did not declare.
-- **Queries** may be evaluated at any time; **actions** only when their line is reached, and nothing looks ahead. An
-  action with an outcome holds its flow until the host sets the fact.
-- **Deterministic:** no clock, no I/O, no randomness outside the seed in `story`. No allocation per step (one arena
-  per session).
-- **Every bound is a named error:** call depth 64, choices at a point 32, facts 4,096, flows 16.
+- **Queries** may be evaluated at any time; **actions** only when their step is reached, and nothing looks ahead. An
+  action with an outcome is handed over on its own (`action`, which the bound host can `perform`), and its flow
+  waits until the host gives `outcome`,
+  which the session writes into the result fact. Actions with outcomes in a line's effects hold the flow the same way,
+  in order.
+- **Pools** give the most specific candidates that hold, then the least recently given, then an order the seed and
+  the turn decide, so equals take turns; `(pool N)` gives N, one after another.
+- **A section runs out** when a step has no next: a call or an interruption goes back to where it began, a pool to
+  its next candidate; with nothing to go back to, the flow ends. `<-` runs a section out at once.
+- **Interruptions** run a section as a call and come back to the step after the one being delivered, or to the
+  choices being offered, which are offered again.
+- **Cursors are saved by name:** each step by its section, its place in that section and its line id. Restored under
+  a recompiled story, a step that moved is found by its line id and one that is gone ends its flow, as the report
+  says.
+- **Deterministic:** no clock, no I/O, no randomness outside the seed in `story`. Each flow keeps one arena, reset at
+  every step, so a step allocates nothing once the arena has grown; what a step hands over is valid until that
+  flow's next step.
+- **Every bound is a named error:** call depth 64 (calls, interruptions and pools together), choices at a point 32,
+  candidates given at once 8, outcomes owed by one step 8, facts 4,096, flows 16, and a step walking 100,000 nodes
+  without saying anything (`NoProgress`, a loop of jumps).
+
+Built.
 
 ## Reach
 
@@ -194,7 +225,7 @@ facts     types, scopes, the store interface, the default store, snapshots      
 check     resolve and check the tree against a host's schema → a checked story  syntax · built
 story     the compiled format: builder, writer, validated reader               facts · built
 compile   a checked story → the format, file by file, then linked              check, story
-run       the executor over the format and a store                             story, facts
+run       the executor over the format and a store                             story, facts · built
 ffi       the C ABI over run                                                   run
 tools     the program, on ensign                                               all
 ```
