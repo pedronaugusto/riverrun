@@ -636,6 +636,18 @@ test "what a section declares within it is `section.name` outside it, and `name`
     try std.testing.expect(o.checked.?.fact("pelts.asked") != null);
 }
 
+test "a name a section declares within it never hides the story's own there" {
+    var o = try checkOne(
+        \\facts:
+        \\  met: bool   (game)
+        \\== stranger (quest)
+        \\= met
+        \\= named   when { met }
+    , .{ .kinds = &.{quest_kind} });
+    defer o.deinit();
+    try o.only(.err, 4, 3, "`met` in `stranger` would hide `met`, declared at a.river:2:3, inside it: name one otherwise");
+}
+
 test "a package judges its own tags' values, and says what is wrong where the tag stands" {
     const Stages = struct {
         // `after` names stages of the quest it stands in

@@ -125,11 +125,20 @@ fn brought(c: *Checker, id: sym.SectionId) Error!void {
     }
 }
 
-// A name declared within section `s` is read as `s.name`, unless a module of the section's name has a fact so named.
+// A name declared within section `s` is `s.name` outside it and `name` inside, so it must neither be read as a
+// module's (`s` a module's name too, with a fact so named) nor hide, inside `s`, a name the section's module sees.
 fn shadowed(c: *Checker, s: *const sym.Section, name: ast.Name) Error!bool {
-    const m = c.moduleNamed(s.name) orelse return false;
-    if (c.value_names.map.get(.{ .module = m, .name = name.text }) == null) return false;
-    try c.err(name.span, "`{s}.{s}` would name the module `{s}`'s `{s}`: rename the section or the module's fact", .{ s.name, name.text, s.name, name.text });
+    if (c.moduleNamed(s.name)) |m| if (c.value_names.map.get(.{ .module = m, .name = name.text }) != null) {
+        try c.err(name.span, "`{s}.{s}` would name the module `{s}`'s `{s}`: rename the section or the module's fact", .{ s.name, name.text, s.name, name.text });
+        return true;
+    };
+    const hidden = c.valueNamed(s.module, name.text) orelse return false;
+    const first = switch (hidden) {
+        .fact => |id| c.facts.items[id.raw()].span,
+        .constant => |id| c.consts.items[id.raw()].span,
+        .external => |id| c.externs.items[id.raw()].span,
+    };
+    try c.err(name.span, "`{s}` in `{s}` would hide `{s}`, declared at {f}, inside it: name one otherwise", .{ name.text, s.name, name.text, c.place(first) });
     return true;
 }
 

@@ -223,7 +223,8 @@ name is resolved, each is a `facts (scope):` entry as the reader would have made
 the index after the story's own declarations, so it is typed, scoped, read by conditions, compiled and saved in
 snapshots like any other, and a name declared twice is reported with both places. A calendar keeps `weekday` and
 `slot`, which the story then reads and never declares; a quest's stages are declared within it, `the_stranger.named`
-to the rest of the story and `named` inside the quest, so two quests' stages never meet.
+to the rest of the story and `named` inside the quest, so two quests' stages never meet, and a stage that would hide
+a name the story declares is refused.
 
 A key's value may be judged rather than typed (`Schema.Value.judge`): the package that defines the key is handed
 each such tag where it stands (its section, its place and the tags beside it) with the checker, and reports what is
