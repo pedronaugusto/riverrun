@@ -326,3 +326,44 @@ test "what changed is read from the store's log, or from every stamp once the lo
         try std.testing.expectEqual(@as(usize, 0), (try w.step()).len);
     }
 }
+
+test "conditions taken out of a list one by one leave the rest filed where they are" {
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const world = try b.scope("world");
+    const person = try b.refKind("person");
+    const lit = try b.fact(.{ .name = "lit", .scope = world, .kind = .boolean });
+    const seen = try b.fact(.{ .name = "seen", .scope = world, .kind = .boolean, .key = .{ .ref = person } });
+    // `lit and seen(tom) and lit`: one fact read twice, and one key
+    const when = try b.expr(&.{ .of(.fact, lit.raw()), .of(.thing, try b.thing(person, "tom")), .of(.keyed, seen.raw()), .of(.@"and", 0), .of(.fact, lit.raw()), .of(.@"and", 0) });
+    var f: Fixture = undefined;
+    try f.init(try testing.finish(&b, gpa));
+    defer f.deinit();
+    const Tom = struct {
+        fn resolve(_: ?*anyopaque, _: []const u8, _: []const u8) ?u64 {
+            return 7;
+        }
+    };
+    try f.host.resolveStory(gpa, &f.story, .{ .user = null, .resolve = Tom.resolve }, null);
+    var w: Watch = try .init(gpa, &f.story, f.memory.store(), &f.host, &f.owners, .{});
+    defer w.deinit();
+    var ids: [6]Watch.CondId = undefined;
+    for (&ids, 0..) |*id, i| id.* = try w.add(when, @intCast(i), .{}); // safe: a few
+    _ = try w.step();
+    try w.remove(ids[1]);
+    try w.remove(ids[4]);
+    try w.remove(ids[0]);
+    try f.memory.set(lit, .{ .boolean = true });
+    var users: u32 = 0;
+    for (try w.step()) |e| users |= @as(u32, 1) << @intCast(e.user); // safe: a few
+    try std.testing.expectEqual(@as(u32, 0b101100), users);
+    try f.memory.setKey(seen, 7, .{ .boolean = true });
+    try std.testing.expectEqual(@as(usize, 3), (try w.step()).len);
+    for ([_]usize{ 2, 3, 5 }) |i| try w.remove(ids[i]);
+    try f.memory.set(lit, .{ .boolean = false });
+    try f.memory.setKey(seen, 7, .{ .boolean = false });
+    try std.testing.expectEqual(@as(usize, 0), (try w.step()).len);
+    // the ids are the next conditions', filed afresh
+    _ = try w.add(when, 9, .{});
+    try std.testing.expectEqual(@as(u32, 9), (try w.step())[0].user);
+}

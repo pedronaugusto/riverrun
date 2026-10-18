@@ -89,7 +89,15 @@ const Cond = struct {
     live: bool = true,
 };
 
-const Filed = union(enum) { fact: FactId, key: FactKey, stamp: StampKey };
+// One list a condition is filed in, and its place there, so a removal takes it out at once.
+const Filed = struct {
+    in: union(enum) { fact: FactId, key: FactKey, stamp: StampKey },
+    pos: u32,
+
+    fn same(a: Filed, b: @FieldType(Filed, "in")) bool {
+        return std.meta.eql(a.in, b);
+    }
+};
 
 // A number a clock-like value is compared with: the clock's own value, how far it moved since a fact changed, or
 // a builtin's answer that moves with it.
@@ -121,7 +129,7 @@ by_fact: []std.ArrayList(u32),
 /// By a fact kept per thing and a key written as a constant: the conditions that read it.
 by_key: std.AutoHashMapUnmanaged(FactKey, std.ArrayList(u32)) = .empty,
 /// By fact: the keys conditions are filed under, which a change of the fact's stamp is checked against.
-keys_of: []std.ArrayList(facts.Key),
+keys_of: []std.array_hash_map.Auto(facts.Key, void),
 /// By a query's stamp and keyed values, or by its family alone (key 0).
 by_stamp: std.AutoHashMapUnmanaged(StampKey, std.ArrayList(u32)) = .empty,
 /// By clock fact: the heap of the next instants its comparisons flip at.
@@ -151,7 +159,7 @@ pub fn init(gpa: std.mem.Allocator, s: *const story_.Story, store: facts.Store, 
     const by_fact = try gpa.alloc(std.ArrayList(u32), n);
     errdefer gpa.free(by_fact);
     @memset(by_fact, .empty);
-    const keys_of = try gpa.alloc(std.ArrayList(facts.Key), n);
+    const keys_of = try gpa.alloc(std.array_hash_map.Auto(facts.Key, void), n);
     errdefer gpa.free(keys_of);
     @memset(keys_of, .empty);
     const heaps = try gpa.alloc(heap_.Heap, n);
@@ -269,21 +277,44 @@ pub fn remove(w: *Watch, cond: CondId) error{OutOfMemory}!void {
     w.free.appendAssumeCapacity(id);
 }
 
-// Takes condition `id` out of every list it is filed in, and its heaps' slots back.
-fn unfile(w: *Watch, id: u32, c: *const Cond) void {
-    for (c.filed.items) |f| switch (f) {
-        .fact => |fact| drop(&w.by_fact[fact.raw()], id),
-        .key => |k| if (w.by_key.getPtr(k)) |l| drop(l, id),
-        .stamp => |k| if (w.by_stamp.getPtr(k)) |l| drop(l, id),
-    };
+// Takes condition `id` out of every list it is filed in, each at its place, and its heaps' slots back. A list left
+// empty is let go.
+fn unfile(w: *Watch, id: u32, c: *Cond) void {
+    for (c.filed.items) |f| {
+        const l = w.listOf(f.in) orelse continue;
+        const last: u32 = @intCast(l.items.len - 1); // safe: it holds this condition
+        if (f.pos != last) {
+            // the last of the list takes this one's place, and is told so
+            const moved = l.items[last];
+            l.items[f.pos] = moved;
+            const other = if (moved == id) c else &w.conds.items[moved];
+            for (other.filed.items) |*g| if (g.same(f.in) and g.pos == last) {
+                g.pos = f.pos;
+                break;
+            };
+        }
+        l.items.len -= 1;
+        if (l.items.len == 0) switch (f.in) {
+            .fact => {},
+            .key => |k| {
+                var gone = w.by_key.fetchRemove(k).?; // listOf found it
+                gone.value.deinit(w.gpa);
+                _ = w.keys_of[k.fact].swapRemove(k.key);
+            },
+            .stamp => |k| {
+                var gone = w.by_stamp.fetchRemove(k).?; // listOf found it
+                gone.value.deinit(w.gpa);
+            },
+        };
+    }
     for (c.thresholds.items) |t| w.heaps[t.clock.raw()].release(t.slot);
 }
 
-// Takes `id` out of a list it is filed in, once.
-fn drop(l: *std.ArrayList(u32), id: u32) void {
-    for (l.items, 0..) |x, i| if (x == id) {
-        _ = l.swapRemove(i);
-        return;
+fn listOf(w: *Watch, in: @FieldType(Filed, "in")) ?*std.ArrayList(u32) {
+    return switch (in) {
+        .fact => |f| &w.by_fact[f.raw()],
+        .key => |k| w.by_key.getPtr(k),
+        .stamp => |k| w.by_stamp.getPtr(k),
     };
 }
 
@@ -385,7 +416,7 @@ fn changedOne(w: *Watch, f: FactId, key: ?facts.Key, before: u64) Error!void {
     for (w.by_fact[f.raw()].items) |ci| w.marked.set(ci);
     if (key) |k| {
         if (w.by_key.get(.{ .fact = f.raw(), .key = k })) |l| for (l.items) |ci| w.marked.set(ci);
-    } else for (w.keys_of[f.raw()].items) |k| if (w.store.keyStamp(f, k) > before) {
+    } else for (w.keys_of[f.raw()].keys()) |k| if (w.store.keyStamp(f, k) > before) {
         if (w.by_key.get(.{ .fact = f.raw(), .key = k })) |l| for (l.items) |ci| w.marked.set(ci);
     };
     if (w.story.fact(f).role == .clock) w.clockMoved(f);
@@ -421,7 +452,7 @@ fn arm(w: *Watch, cx: run.eval.Context, t: Threshold) Error!void {
 fn refreshInterest(w: *Watch) Error!void {
     w.interest.clearRetainingCapacity();
     for (w.by_fact, w.heaps, w.changes_of, w.keys_of, 0..) |l, h, ch, ks, i| {
-        if (l.items.len > 0 or h.slots() > 0 or ch.items.len > 0 or ks.items.len > 0) try w.interest.append(w.gpa, .fromRaw(@intCast(i))); // safe: below max_facts
+        if (l.items.len > 0 or h.slots() > 0 or ch.items.len > 0 or ks.count() > 0) try w.interest.append(w.gpa, .fromRaw(@intCast(i))); // safe: below max_facts
     }
     w.gpa.free(w.changed);
     w.changed = try w.gpa.alloc(FactId, w.interest.items.len);
@@ -468,8 +499,9 @@ fn file(w: *Watch, c: *Cond, id: u32, also: []const Read) Error!void {
 fn fileFact(w: *Watch, at: Filing, f: FactId) Error!void {
     const l = &w.by_fact[f.raw()];
     if (l.items.len > 0 and l.items[l.items.len - 1] == at.id) return;
+    try at.cond.filed.append(w.gpa, .{ .in = .{ .fact = f }, .pos = @intCast(l.items.len) }); // safe: below a u32 count
+    errdefer _ = at.cond.filed.pop();
     try l.append(w.gpa, at.id);
-    try at.cond.filed.append(w.gpa, .{ .fact = f });
 }
 
 // A role given is a constant, which nothing wakes; one not given reads as its fact, for the thing the condition is
@@ -482,13 +514,15 @@ fn fileRole(w: *Watch, at: Filing, f: FactId) Error!void {
 
 // A fact kept per thing, read for one key.
 fn fileKey(w: *Watch, at: Filing, f: FactId, key: facts.Key) Error!void {
-    const gop = try w.by_key.getOrPut(w.gpa, .{ .fact = f.raw(), .key = key });
+    const in: FactKey = .{ .fact = f.raw(), .key = key };
+    const gop = try w.by_key.getOrPut(w.gpa, in);
     if (!gop.found_existing) {
         gop.value_ptr.* = .empty;
-        try w.keys_of[f.raw()].append(w.gpa, key);
+        try w.keys_of[f.raw()].put(w.gpa, key, {});
     }
+    try at.cond.filed.append(w.gpa, .{ .in = .{ .key = in }, .pos = @intCast(gop.value_ptr.items.len) }); // safe: below a u32 count
+    errdefer _ = at.cond.filed.pop();
     try gop.value_ptr.append(w.gpa, at.id);
-    try at.cond.filed.append(w.gpa, .{ .key = .{ .fact = f.raw(), .key = key } });
 }
 
 // `clock OP number`, `number OP clock`, `since_changed(…) OP number`, a builtin that moves with a clock compared
@@ -562,8 +596,9 @@ fn fileQuery(w: *Watch, at: Filing, t: Term, starts: []const u32, k: u32) Error!
     const key: StampKey = .{ .family = family, .key = if (exact) keyHash(keyed[0..nk]) else 0 };
     const gop = try w.by_stamp.getOrPut(w.gpa, key);
     if (!gop.found_existing) gop.value_ptr.* = .empty;
+    try at.cond.filed.append(w.gpa, .{ .in = .{ .stamp = key }, .pos = @intCast(gop.value_ptr.items.len) }); // safe: below a u32 count
+    errdefer _ = at.cond.filed.pop();
     try gop.value_ptr.append(w.gpa, at.id);
-    try at.cond.filed.append(w.gpa, .{ .stamp = key });
 }
 
 // A read of a fact kept per thing: by its key where the key is one constant term, else by the whole fact.
