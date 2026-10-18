@@ -131,7 +131,11 @@ pub const Fact = extern struct {
     scope: u8,
     kind: u8,
     role: u8,
-    pad: [3]u8 = @splat(0),
+    /// For a fact kept per thing, what keys it: `one_of` (an enumeration's items) or `ref` (the things of a
+    /// kind); `no_kind` for a fact with one value.
+    key_kind: u8 = no_kind,
+    /// The key's enumeration or kind of things, or `none16`.
+    key_type: u16 = none16,
 };
 
 pub const Cast = extern struct {
@@ -409,6 +413,8 @@ pub const Term = packed struct(u32) {
         since_changed = 20,
         /// Push whether a moment happened: holds something other than its initial value. `arg` is its fact id.
         happened = 21,
+        /// Push a fact kept per thing's value for the key off the stack: `arg` is its fact id.
+        keyed = 22,
     };
 
     pub fn of(op: Op, arg: u24) Term {

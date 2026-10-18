@@ -96,6 +96,7 @@ pub fn encodeEffect(e: model.Effect) format.Effect {
         .add, .remove => |s| {
             r.fact = s.fact.raw();
             r.item = s.item;
+            r.expr = s.key;
         },
         .call => |s| {
             r.action = s.action.raw();
@@ -114,8 +115,8 @@ pub fn decodeEffect(r: format.Effect) model.Effect {
     const kind: format.EffectKind = @fromBackingInt(r.kind);
     return switch (kind) {
         .set => .{ .set = .{ .fact = .fromRaw(r.fact), .value = r.expr } },
-        .add => .{ .add = .{ .fact = .fromRaw(r.fact), .item = @intCast(r.item) } }, // safe: validated below max_items
-        .remove => .{ .remove = .{ .fact = .fromRaw(r.fact), .item = @intCast(r.item) } }, // safe: validated below max_items
+        .add => .{ .add = .{ .fact = .fromRaw(r.fact), .item = @intCast(r.item), .key = r.expr } }, // safe: validated below max_items
+        .remove => .{ .remove = .{ .fact = .fromRaw(r.fact), .item = @intCast(r.item), .key = r.expr } }, // safe: validated below max_items
         .call => .{ .call = .{ .action = .fromRaw(r.action), .args = r.expr, .result = optional(model.FactId, r.result) } },
         .change => .{ .change = .{ .fact = .fromRaw(r.fact), .by = r.expr } },
     };

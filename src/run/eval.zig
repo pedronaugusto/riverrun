@@ -23,6 +23,8 @@ pub const Error = error{
     NoBuiltins,
     /// The package could not answer its builtin, or answered with the wrong kind.
     BuiltinFailed,
+    /// A fact kept per thing written for a key that holds no thing or no value.
+    NoKey,
 };
 
 /// What answers the builtins registered kinds add (cairn's `since`): the package that owns them.
@@ -74,11 +76,33 @@ pub fn own(arena: std.mem.Allocator, v: Value) error{OutOfMemory}!Value {
 /// `cx.arena`.
 pub fn effect(cx: Context, e: story.Effect) Error!facts.Effect {
     return switch (e) {
-        .set => |x| .{ .set = .{ .fact = x.fact, .value = try own(cx.arena, try value(cx, x.value)) } },
-        .add => |x| .{ .add = .{ .fact = x.fact, .item = x.item } },
-        .change => |x| .{ .change = .{ .fact = x.fact, .by = (try value(cx, x.by)).int } },
-        .remove => |x| .{ .remove = .{ .fact = x.fact, .item = x.item } },
+        .set => |x| if (cx.story.fact(x.fact).key == .none)
+            .{ .set = .{ .fact = x.fact, .value = try own(cx.arena, try value(cx, x.value)) } }
+        else blk: {
+            const kv = try arguments(cx, x.value);
+            break :blk .{ .set = .{ .fact = x.fact, .key = keyOf(kv[0]) orelse return error.NoKey, .value = kv[1] } };
+        },
+        .add, .remove => |x| blk: {
+            const key: ?facts.Key = if (x.key.len == 0) null else keyOf(try value(cx, x.key)) orelse return error.NoKey;
+            const item: facts.Effect.Item = .{ .fact = x.fact, .key = key, .item = x.item };
+            break :blk if (e == .add) .{ .add = item } else .{ .remove = item };
+        },
+        .change => |x| if (cx.story.fact(x.fact).key == .none)
+            .{ .change = .{ .fact = x.fact, .by = (try value(cx, x.by)).int } }
+        else blk: {
+            const kv = try arguments(cx, x.by);
+            break :blk .{ .change = .{ .fact = x.fact, .key = keyOf(kv[0]) orelse return error.NoKey, .by = kv[1].int } };
+        },
         .call => |x| .{ .call = .{ .action = x.action, .args = try arguments(cx, x.args), .result = x.result } },
+    };
+}
+
+/// A value as the key of a fact kept per thing: a thing's handle, an item's index; null for none.
+pub fn keyOf(v: Value) ?facts.Key {
+    return switch (v) {
+        .ref => |r| if (r == Value.no_ref) null else r,
+        .one_of => |i| if (i == Value.none) null else i,
+        else => null,
     };
 }
 
@@ -87,7 +111,7 @@ pub fn enumeration(s: *const story.Story, r: Range) ?story.EnumId {
     if (r.len == 0) return null;
     const t = s.term(r.start + r.len - 1);
     return switch (t.op) {
-        .fact => s.fact(.fromRaw(@intCast(t.arg))).enumeration, // safe: validated to a fact id
+        .fact, .keyed => s.fact(.fromRaw(@intCast(t.arg))).enumeration, // safe: validated to a fact id
         .item => .fromRaw(t.itemEnum()),
         .query => if (s.externFn(.fromRaw(@intCast(t.arg))).returns) |ret| ret.enumeration else null, // safe: validated to an extern id
         else => null,
@@ -109,6 +133,10 @@ fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
                 const v = try b.call(b.user, cx.story, t.arg, cx.call);
                 if (@as(facts.Kind, v) != cx.story.builtin(t.arg).returns) return error.BuiltinFailed;
                 push(stack, &n, v);
+            },
+            .keyed => {
+                const f: facts.FactId = .fromRaw(@intCast(t.arg)); // safe: validated to a fact id
+                stack[n - 1] = if (keyOf(stack[n - 1])) |key| cx.store.getKey(f, key) else .initial(cx.story.fact(f).kind);
             },
             .happened => {
                 const f = cx.story.fact(.fromRaw(@intCast(t.arg))); // safe: validated to a fact id

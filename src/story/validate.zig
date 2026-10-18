@@ -37,6 +37,7 @@ fn watches(g: *const Graph) Error!void {
         const c = g.get(.changes, @intCast(i)); // safe: below a u32 count
         if (c.pad != 0) return error.BadNode;
         try index(g, .facts, c.fact);
+        if (keyed(g.get(.facts, c.fact))) return error.BadKind;
         try intFact(g, c.clock);
         if (g.get(.facts, c.clock).role != @backingInt(facts.Role.clock)) return error.BadKind;
         try intFact(g, c.at);
@@ -111,7 +112,16 @@ fn enumeration(g: *const Graph, k: facts.Kind, e: u16) Error!void {
 
 fn intFact(g: *const Graph, f: u16) Error!void {
     try index(g, .facts, f);
-    if (g.get(.facts, f).kind != @backingInt(facts.Kind.int)) return error.BadKind;
+    const d = g.get(.facts, f);
+    if (d.kind != @backingInt(facts.Kind.int) or keyed(d)) return error.BadKind;
+}
+
+fn keyed(f: format.Fact) bool {
+    return f.key_kind != format.no_kind;
+}
+
+fn keyTy(f: format.Fact) Ty {
+    return .{ .kind = f.key_kind, .enumeration = f.key_type };
 }
 
 fn optionalIntFact(g: *const Graph, f: u16) Error!void {
@@ -147,6 +157,14 @@ fn declarations(g: *const Graph) Error!void {
         const k = try kind(f.kind);
         if (role == .clock and k != .int) return error.BadKind;
         try enumeration(g, k, f.enumeration);
+        if (f.key_kind == format.no_kind) {
+            if (f.key_type != none16) return error.BadKind;
+        } else {
+            const key = try kind(f.key_kind);
+            if (key != .one_of and key != .ref) return error.BadKind;
+            if (k == .text or role == .clock or role == .moment or role == .visits or role == .state) return error.BadKind;
+            try enumeration(g, key, f.key_type);
+        }
     }
     if (g.len(.cast) >= none16) return error.OutOfRange;
     for (0..g.len(.cast)) |i| {
@@ -326,26 +344,30 @@ fn effects(g: *const Graph) Error!void {
         const e = g.get(.effects, @intCast(i)); // safe: below a u32 count
         const k = std.enums.fromInt(format.EffectKind, e.kind) orelse return error.BadKind;
         // Fields a kind does not use hold nothing, so one story has one encoding.
+        if (k != .call) try index(g, .facts, e.fact);
+        // a fact kept per thing is written with its key, which its terms leave first
+        const per = k != .call and keyed(g.get(.facts, e.fact));
         const canonical = switch (k) {
             .set, .change => e.item == 0 and e.action == none16 and e.result == none16,
-            .add, .remove => e.expr.len == 0 and e.expr.start == 0 and e.action == none16 and e.result == none16,
+            .add, .remove => (per or (e.expr.len == 0 and e.expr.start == 0)) and e.action == none16 and e.result == none16,
             .call => e.fact == none16 and e.item == 0,
         };
         if (!canonical) return error.BadNode;
         switch (k) {
             .set => {
-                try index(g, .facts, e.fact);
-                try expr(g, e.expr, .{ .of = tyOfFact(g.get(.facts, e.fact)) });
+                const f = g.get(.facts, e.fact);
+                try expr(g, e.expr, if (per) .{ .keyed = .{ .key = keyTy(f), .value = tyOfFact(f) } } else .{ .of = tyOfFact(f) });
             },
             .change => {
-                try intFact(g, e.fact);
-                try expr(g, e.expr, .{ .of = .int });
+                const f = g.get(.facts, e.fact);
+                if (f.kind != @backingInt(facts.Kind.int)) return error.BadKind;
+                try expr(g, e.expr, if (per) .{ .keyed = .{ .key = keyTy(f), .value = .int } } else .{ .of = .int });
             },
             .add, .remove => {
-                try index(g, .facts, e.fact);
                 const f = g.get(.facts, e.fact);
                 if (f.kind != @backingInt(facts.Kind.set_of)) return error.BadKind;
                 if (e.item >= enumLen(g, f.enumeration)) return error.OutOfRange;
+                if (per) try expr(g, e.expr, .{ .keyed = .{ .key = keyTy(f), .value = null } });
             },
             .call => {
                 try index(g, .externs, e.action);
@@ -398,6 +420,8 @@ const Want = union(enum) {
     condition,
     value,
     of: Ty,
+    /// A key, then a value of this type unless null: what writing a fact kept per thing takes.
+    keyed: struct { key: Ty, value: ?Ty },
     /// The values of these parameters, in order.
     args: Range,
 };
@@ -415,8 +439,15 @@ fn expr(g: *const Graph, r: Range, want: Want) Error!void {
         switch (op) {
             .fact => {
                 try index(g, .facts, arg);
+                if (keyed(g.get(.facts, arg))) return error.BadExpression;
                 stack[n] = tyOfFact(g.get(.facts, arg));
                 n += 1;
+            },
+            .keyed => {
+                try index(g, .facts, arg);
+                const f = g.get(.facts, arg);
+                if (!keyed(f) or n < 1 or !stack[n - 1].eql(keyTy(f))) return error.BadExpression;
+                stack[n - 1] = tyOfFact(f);
             },
             .int => {
                 try index(g, .ints, arg);
@@ -485,6 +516,7 @@ fn expr(g: *const Graph, r: Range, want: Want) Error!void {
         .value => n == 1,
         .of => |ty| n == 1 and stack[0].eql(ty),
         .args => |params| n == params.len and paramsFit(g, params, stack[0..n]),
+        .keyed => |kv| if (kv.value) |v| (n == 2 and stack[0].eql(kv.key) and stack[1].eql(v)) else (n == 1 and stack[0].eql(kv.key)),
     };
     if (!fits) return error.BadExpression;
 }

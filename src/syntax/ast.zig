@@ -43,6 +43,8 @@ pub const Facts = struct {
 
 pub const Fact = struct {
     name: Name,
+    /// `opinion(person): int`: a value for each of the things of a kind, or each value of an enumeration.
+    key: ?Type = null,
     type: Type,
     /// Written by the game's mechanics, never by the story.
     game: bool,
@@ -178,8 +180,8 @@ pub const Choice = struct {
 pub const Gather = struct { label: ?Name, then: ?*const Stmt };
 
 pub const Effect = union(enum) {
-    /// `~ fact = value`
-    set: struct { fact: Name, value: Expr },
+    /// `~ fact = value`, or `~ fact(key) = value` for a fact kept per thing
+    set: struct { fact: Name, key: ?*const Expr = null, value: Expr },
     /// `~ set += item`, or `~ int += amount`
     add: Change,
     /// `~ set -= item`, or `~ int -= amount`
@@ -190,7 +192,7 @@ pub const Effect = union(enum) {
 
 /// What `+=` and `-=` change: a set by an item, or an int by a number or a constant. Which is the fact's
 /// type to say, so the reader keeps the right side as an expression, a name or a number, and the checker decides.
-pub const Change = struct { fact: Name, amount: Expr };
+pub const Change = struct { fact: Name, key: ?*const Expr = null, amount: Expr };
 
 pub const Flow = union(enum) {
     /// `-> name`, or `-> end`.

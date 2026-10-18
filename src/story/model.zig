@@ -32,6 +32,10 @@ pub const FactDecl = struct {
     /// For a `ref`: the kind of the host's things it holds.
     ref_kind: ?RefKindId = null,
     role: facts.Role = .story,
+    /// For a fact kept per thing: what keys it.
+    key: Key = .none,
+
+    pub const Key = union(enum) { none, items: EnumId, ref: RefKindId };
 };
 
 pub const Cast = struct {
@@ -170,7 +174,9 @@ pub const Effect = union(format.EffectKind) {
     /// `~ int += n`, `~ int -= n`: the int moves by the value of `by`, a number (negative for `-=`).
     change: struct { fact: FactId, by: Range },
 
-    pub const Item = struct { fact: FactId, item: u8 };
+    /// `key`: for a fact kept per thing, the terms of its key; empty for a fact with one value. A `set`'s and a
+    /// `change`'s terms leave the key first, then the value.
+    pub const Item = struct { fact: FactId, item: u8, key: Range = .empty };
 };
 
 pub const Tag = struct {

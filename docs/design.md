@@ -51,6 +51,11 @@ DAD: Go.
     all, its value aside.
   - `ref of kind` is a type for one of the host's things (a person, an item kind, a place), named in the story by
     its stable id (`wolf_pelt`) and checked against the host's manifest.
+  - **A fact kept per thing,** `opinion(person): int` or `mood(one of calm, angry): bool`, holds a value for each
+    thing of a kind, or each value of an enumeration: read `opinion(marta) < 0`, written `~ opinion(wife) -= 50`,
+    its key a thing's id, a ref fact or a value. It is stored sparsely, a value only for the keys set, each with its
+    own stamp, so a rule reading `killed(hank)` wakes when hank's value moves and no other's. It is never a clock, a
+    moment or text.
   - `const:` fixed points every run shares (`dies_at = "ten past nine"`).
   - `extern:` the host's vocabulary. `name(params) -> type` is a **query**, pure and callable anywhere; `name(params)`
     is an **action**, run when its line is reached; `name(params) -> type (action)` is an action with an **outcome**
@@ -93,7 +98,8 @@ DAD: Go.
   read reaches it. A puzzle with an order, honor that drifts back, a reaction to a crime, a threshold a faction
   acts on: rules over facts, and a state machine is an enumeration fact and the rules that move it.
   `since_changed(fact, clock)` reads how far a `(clock)` fact has moved since `fact` last changed, and
-  `happened(moment)` whether a moment happened, in rules and in what a package watches; a query a rule asks must
+  `happened(moment)` whether a moment happened, in rules and in what a package watches; a condition reading a fact
+  kept per thing by a key written as a constant is filed under that key alone; a query a rule asks must
   declare its stamp, so the rule wakes when its answer may change.
 - **Tags:** `# key value · key value` at the end of a line, a choice or a heading. `id` is riverrun's: a line's
   stable id. Every other key is the host's, typed by its schema; a key the schema marks `leads` carries the flow on

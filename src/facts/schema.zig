@@ -41,6 +41,8 @@ pub const Decl = struct {
     /// For a `ref`: the kind of the host's things it holds, which names it in a snapshot.
     ref_kind: []const u8 = "",
     role: Role = .story,
+    /// For a fact kept per thing: what keys it.
+    key: KeyDecl = .none,
 
     pub fn itemNamed(d: Decl, name: []const u8) ?u16 {
         for (d.items, 0..) |item, i| {
@@ -48,6 +50,14 @@ pub const Decl = struct {
         }
         return null;
     }
+};
+
+/// What a fact kept per thing is keyed by: the things of a kind (their handles), or an enumeration's items (their
+/// indexes), each named in a snapshot.
+pub const KeyDecl = union(enum) {
+    none,
+    ref: []const u8,
+    items: []const []const u8,
 };
 
 pub const Error = error{
@@ -90,6 +100,11 @@ pub const Schema = struct {
             if (listed != (d.items.len > 0)) return error.ItemsDoNotFitKind;
             if ((d.kind == .ref) != (d.ref_kind.len > 0)) return error.ItemsDoNotFitKind;
             if (d.items.len > value.max_items) return error.TooManyItems;
+            switch (d.key) {
+                .none => {},
+                .ref => |k| if (k.len == 0 or d.kind == .text) return error.ItemsDoNotFitKind,
+                .items => |keys| if (keys.len == 0 or keys.len > value.max_items or d.kind == .text) return error.ItemsDoNotFitKind,
+            }
             items.clearRetainingCapacity();
             for (d.items) |item| {
                 try checkName(item);

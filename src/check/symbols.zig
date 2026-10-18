@@ -100,6 +100,8 @@ pub const Fact = struct {
     clock: bool = false,
     /// What happened: seen only by what watches conditions.
     moment: bool = false,
+    /// For a fact kept per thing: what keys it, the things of a kind or an enumeration's values.
+    key: ?Type = null,
     module: ModuleId,
     span: Span,
     /// Whether any effect of the story sets it.
@@ -225,6 +227,8 @@ pub const Ref = union(enum) {
     since_changed: SinceChanged,
     /// `happened(moment)`: whether a moment happened this step.
     happened: FactId,
+    /// `opinion(margaret)`: a fact kept per thing, read for one key.
+    keyed: FactId,
     /// A builtin of the section's registered kind: which kind of `check.Options.kinds`, which builtin.
     builtin: BuiltinRef,
 };

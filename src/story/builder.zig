@@ -204,12 +204,23 @@ pub const Builder = struct {
         const gop = try b.fact_names.getOrPut(b.gpa, d.name);
         if (gop.found_existing) return error.DuplicateFact;
         gop.key_ptr.* = try b.arena.allocator().dupe(u8, d.name);
+        if (d.key != .none and (d.kind == .text or d.role == .clock or d.role == .moment or in_reserved)) return error.BadKind;
         try b.facts.append(b.gpa, .{
             .name = name,
             .enumeration = codec.typeField(d.enumeration, d.ref_kind),
             .scope = d.scope.raw(),
             .kind = @backingInt(d.kind),
             .role = @backingInt(d.role),
+            .key_kind = switch (d.key) {
+                .none => format.no_kind,
+                .items => @backingInt(facts.Kind.one_of),
+                .ref => @backingInt(facts.Kind.ref),
+            },
+            .key_type = switch (d.key) {
+                .none => format.none16,
+                .items => |e| e.raw(),
+                .ref => |k| k.raw(),
+            },
         });
         return .fromRaw(@intCast(b.facts.items.len - 1)); // safe: below max_facts
     }
@@ -418,6 +429,7 @@ pub const Builder = struct {
                 .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => 2,
                 .query => if (t.arg < b.externs.items.len) b.externs.items[t.arg].params.len else return 0,
                 .builtin, .since_changed, .happened => 0,
+                .keyed => 1,
             };
             if (n < pops or n - pops == stack.len) return 0;
             const top = n - pops;
@@ -426,6 +438,7 @@ pub const Builder = struct {
                 .int, .item, .text, .true, .false, .thing => 0,
                 .not => stack[top],
                 .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .query, .builtin, .since_changed, .happened => 1,
+                .keyed => 1,
                 .@"and" => stack[top] +| stack[top + 1],
                 .@"or" => @min(stack[top], stack[top + 1]),
             };

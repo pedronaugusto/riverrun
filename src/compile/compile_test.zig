@@ -271,3 +271,55 @@ test "a lever puzzle: in order it opens, a wrong lever or a slow hand starts it 
     try std.testing.expectEqual(@as(u16, 3), t.memory.get(levers).one_of);
     try std.testing.expect(t.memory.get(t.fact("door")).boolean);
 }
+
+pub const Village = struct {
+    var me: Village = .{};
+    pub fn host(_: Village, g: std.mem.Allocator, s: *const story.Story) !run.Host {
+        var h = try run.Host.bind(g, s, &me, .{}, null);
+        errdefer h.deinit();
+        try h.resolveStory(g, s, .{ .user = null, .resolve = resolve }, null);
+        return h;
+    }
+    fn resolve(_: ?*anyopaque, kind: []const u8, id: []const u8) ?u64 {
+        if (!std.mem.eql(u8, kind, "person")) return null;
+        if (std.mem.eql(u8, id, "hank")) return 1;
+        if (std.mem.eql(u8, id, "marta")) return 2;
+        return null;
+    }
+};
+
+test "facts kept per person: kill him, and his wife's opinion of you falls, and she says so" {
+    const t = try Told.init(gpa, &.{
+        \\facts (world):
+        \\  opinion(person):  int
+        \\  killed(person):   bool   (game)
+        \\  furious:          bool
+        \\== village (rules)
+        \\= grief    when { killed(hank) }
+        \\  ~ opinion(marta) -= 50
+        \\= furor    when { opinion(marta) < 0 }
+        \\  ~ furious = true
+        \\== talk
+        \\{ opinion(marta) < 0 }
+        \\  She will not look at you.
+        \\{ else }
+        \\  She nods.
+        \\-> end
+    }, .{}, &.{}, Village{});
+    defer t.deinit();
+    var owners: [facts.max_scopes]u64 = @splat(0);
+    var rules: react.Rules = try .init(gpa, &t.story, t.memory.store(), &t.host, &owners, .{});
+    defer rules.deinit();
+    try settle(t, &rules);
+    // someone else killed: no rule reads that key, so none is evaluated
+    try t.memory.setKey(t.fact("killed"), 3, .{ .boolean = true });
+    _ = try rules.step();
+    try std.testing.expectEqual(@as(usize, 0), rules.watch.evaluated.items.len);
+    try t.memory.setKey(t.fact("killed"), 1, .{ .boolean = true });
+    try settle(t, &rules);
+    try std.testing.expectEqual(@as(i64, -50), t.memory.getKey(t.fact("opinion"), 2).int);
+    try std.testing.expect(t.memory.get(t.fact("furious")).boolean);
+    try t.session.start(.fromRaw(0), t.section("talk"));
+    try t.line("She will not look at you.");
+    try t.end();
+}

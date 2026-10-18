@@ -193,7 +193,8 @@ const Reader = struct {
             while (true) {
                 if (takeMark(&t, "(game)")) game = true else if (takeMark(&t, "(clock)")) clock = true else if (takeMark(&t, "(moment)")) moment = true else break;
             }
-            const name = std.mem.trim(u8, l.text[0..colon], " ");
+            const head = std.mem.trim(u8, l.text[0..colon], " ");
+            const name = if (std.mem.findScalar(u8, head, '(')) |p| std.mem.trim(u8, head[0..p], " ") else head;
             if (text_mod.alternativesOf(name) != null) {
                 try r.report(l, "`{s}` names alternatives in text, so it cannot name a fact", .{name});
                 continue;
@@ -202,9 +203,30 @@ const Reader = struct {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Invalid => continue,
             };
-            try out.append(r.arena, .{ .name = .{ .text = name, .span = r.at(l, 0) }, .type = parsed, .game = game or clock, .clock = clock, .moment = moment });
+            const key = r.keyOf(l, head) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Invalid => continue,
+            };
+            try out.append(r.arena, .{ .name = .{ .text = name, .span = r.at(l, 0) }, .key = key, .type = parsed, .game = game or clock, .clock = clock, .moment = moment });
         }
         return out.toOwnedSlice(r.arena);
+    }
+
+    // What a fact is kept per, from `name(key)`: a kind of the host's things, `opinion(person)`, or an
+    // enumeration's values, `mood(one of calm, angry)`; null for a fact with one value.
+    fn keyOf(r: *Reader, l: Line, head: []const u8) Fail!?ast.Type {
+        const open = std.mem.findScalar(u8, head, '(') orelse return null;
+        if (!std.mem.endsWith(u8, head, ")")) {
+            try r.report(l, "a fact kept per thing is `name(kind): type`", .{});
+            return error.Invalid;
+        }
+        const inner = std.mem.trim(u8, head[open + 1 .. head.len - 1], " ");
+        if (std.mem.startsWith(u8, inner, "one of ")) return try r.typeOf(l, inner, open + 1);
+        if (!isName(inner)) {
+            try r.report(l, "`{s}` is not what a fact is kept per: a kind of the host's things, or `one of …`", .{inner});
+            return error.Invalid;
+        }
+        return .{ .ref = .{ .text = inner, .span = r.at(l, open + 1) } };
     }
 
     fn typeOf(r: *Reader, l: Line, t: []const u8, col: usize) Fail!ast.Type {
@@ -557,7 +579,8 @@ const Reader = struct {
         if (std.mem.find(u8, t, "-=")) |k| return .{ .remove = try r.change(l, t, k) };
         if (std.mem.findScalar(u8, t, '=')) |k| {
             const value = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t[k + 1 ..], " "), r.at(l, k + 3 + lead(t[k + 1 ..])));
-            return .{ .set = .{ .fact = try r.fact(l, t[0..k], 2), .value = value.* } };
+            const w = try r.written(l, t[0..k], 2);
+            return .{ .set = .{ .fact = w.fact, .key = w.key, .value = value.* } };
         }
         const call = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, t, " "), r.at(l, 2 + lead(t)));
         if (call.kind != .call) {
@@ -575,7 +598,22 @@ const Reader = struct {
             try r.diags.add(r.gpa, amount.span, .err, "`+=` and `-=` take an item, a number or a constant, never an expression", .{});
             return error.Invalid;
         }
-        return .{ .fact = try r.fact(l, t[0..k], 2), .amount = amount.* };
+        const dest = try r.written(l, t[0..k], 2);
+        return .{ .fact = dest.fact, .key = dest.key, .amount = amount.* };
+    }
+
+    // What an effect writes: a fact, or a fact kept per thing and the key it writes, `opinion(wife)`.
+    fn written(r: *Reader, l: Line, t: []const u8, col: usize) Fail!struct { fact: ast.Name, key: ?*const ast.Expr } {
+        const w = std.mem.trim(u8, t, " ");
+        const open = std.mem.findScalar(u8, w, '(') orelse return .{ .fact = try r.fact(l, t, col), .key = null };
+        if (!std.mem.endsWith(u8, w, ")")) {
+            try r.report(l, "a fact kept per thing is written `name(key)`", .{});
+            return error.Invalid;
+        }
+        const start = col + lead(t);
+        const inner = w[open + 1 .. w.len - 1];
+        const key = try expr.parse(r.arena, r.gpa, r.diags, std.mem.trim(u8, inner, " "), r.at(l, start + open + 1 + lead(inner)));
+        return .{ .fact = try r.fact(l, w[0..open], start), .key = key };
     }
 
     // The fact an effect writes, which another module's may be: `harbour.met`.

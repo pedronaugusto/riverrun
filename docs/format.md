@@ -115,7 +115,11 @@ A `one of` fact holds one item or none; a `set of` fact holds any of them.
 | scope | u8 | |
 | kind | u8 | 0 boolean, 1 int, 2 one_of, 3 set_of, 4 text, 5 ref |
 | role | u8 | 0 story, 1 game (written by the game, never the story), 2 visits, 3 state, 4 clock (the game's, an int only ever advanced), 5 moment (what happened: back to its initial value once what watches conditions has seen it, never in a snapshot) |
-| padding | 3 bytes | |
+| key_kind | u8 | for a fact kept per thing, what keys it: 2 one_of (an enumeration's items) or 5 ref (the things of a kind); `0xFF` for a fact with one value |
+| key_type | u16 | the key's enumeration or kind of things, or `none` |
+
+A fact kept per thing is never a text, a clock, a moment, a visit count or the executor's state. Its terms read it
+with `keyed` and never with `fact`; an effect writing it leaves the key first (see *Effects*).
 
 At most 4,096 facts. Visit counts are int facts of role `visits`, one per section
 (`visits:<section>`), per part (`visits:<section>.<part>`), per choice (`visits:*<line
@@ -171,6 +175,7 @@ its argument in the high 24 bits.
 | 19 builtin | push a builtin's answer | index into builtins | → its kind |
 | 20 since_changed | how far a clock moved since a fact last changed | index into changes | → int |
 | 21 happened | a moment holds something other than its initial value | fact id, of role moment | → bool |
+| 22 keyed | a fact kept per thing's value for a key | fact id, of a fact kept per thing | key → its kind |
 
 `eq` and `ne` compare refs of one kind by handle; a ref that holds no thing equals
 nothing, as a `one of` that holds no value does.
@@ -282,6 +287,10 @@ The words are the string table's: a slot is only what fills a place in them.
 | 3 call | action (an action), expr (its arguments), result (a fact or `none`) | fact `none`, item 0 |
 | 4 change | fact (an int), expr (an int: the amount, negative for `-=`) | item 0, action and result `none` |
 
+A **fact kept per thing** is written for one key: a `set`'s terms leave the key, then the value; a `change`'s the key,
+then the amount; an `add`'s or a `remove`'s `expr` holds the key's terms alone. A key is a thing's handle (a ref)
+or an item's index (a `one of`); one that holds nothing is refused when the effect is emitted.
+
 riverrun never applies an effect: a step emits it for the host. A `change` moves an int by its
 amount; a host that applies it refuses a result past what an i64 holds. A call with a result
 is a check with an outcome: the host writes the action's result into `result` before
@@ -335,17 +344,23 @@ their fact, and what no longer fits is reported, never guessed.
 
 ```
 magic    "RRFACTS\0"
-version  u16 (1), flags u16 (0)
+version  u16 (2), flags u16 (0)
 story    u64     the hash of the graph it was taken under
 scope    str
 count    u32     at most 4,096
 facts    count × { name str, kind u8, value }
+keyed    u32, then that many × { name str, kind u8, n u32, n × { key, value } }
 
 str      u16 length, then that many bytes of UTF-8
 value    boolean u8 (0 or 1) · int i64 · one_of str (empty: none)
          · set_of u16 count (at most 256), then count × str · text str (at most 1,024 bytes)
          · ref u8 form, then form 0: u64 handle · form 1: str id
+key      u8 form, then form 0: u64 handle · form 1: str id · form 2: str item
 ```
+
+A fact kept per thing saves each key it holds a value other than the initial one for, in the order the keys were
+first set; a key that names a thing is saved by its id where the story names it, as a ref value is, and an item by
+its name. Restored, a key the host or the declaration no longer knows is reported lost.
 
 Names are at most 256 bytes. A restore applies nothing unless every byte is accepted. A moment is never in a
 snapshot, nor reported as added when a snapshot is restored: it is over before anything is saved.

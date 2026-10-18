@@ -7,16 +7,21 @@
 //! layout, all integers little-endian:
 //!
 //!     magic    "RRFACTS\x00"
-//!     version  u16 (1), flags u16 (0)
+//!     version  u16 (2), flags u16 (0)
 //!     story    u64     the hash of the story it was taken under
 //!     scope    str
 //!     count    u32
 //!     facts    count × { name str, kind u8, value }
+//!     keyed    u32, then that many × { name str, kind u8, n u32, n × { key, value } }
 //!
 //!     str      u16 length, then that many bytes of UTF-8
 //!     value    boolean u8 (0 or 1) · int i64 · one_of str (empty: none)
 //!              · set_of u16 count, then count × str · text str
 //!              · ref u8 form, then form 0: u64 handle · form 1: str id
+//!     key      u8 form, then form 0: u64 handle · form 1: str id · form 2: str item
+//!
+//! A fact kept per thing saves the keys it holds a value for, in the order of
+//! their raw keys, each named as a ref or an item is.
 //!
 //! A `ref` to a thing a story names by its text id is saved by that id, so a
 //! host may number its handles anew each run; any other is saved as the
@@ -33,7 +38,7 @@ const Kind = value.Kind;
 const Value = value.Value;
 
 pub const magic = "RRFACTS\x00";
-pub const version: u16 = 1;
+pub const version: u16 = 2;
 
 pub const Error = error{
     OutOfMemory,
@@ -47,6 +52,7 @@ pub const Error = error{
     TextTooLong,
     TooManyFacts,
     TooManyItems,
+    TooManyKeys,
     BadKind,
     BadBoolean,
     NotUtf8,
@@ -56,15 +62,26 @@ pub const Error = error{
 /// A fact as saved: values by name, so a restore can match them to the story it is restored under.
 pub const Saved = struct {
     name: []const u8,
-    value: union(Kind) {
-        boolean: bool,
-        int: i64,
-        one_of: ?[]const u8,
-        set_of: []const []const u8,
-        text: []const u8,
-        ref: SavedRef,
-    },
+    value: SavedValue,
 };
+
+pub const SavedValue = union(Kind) {
+    boolean: bool,
+    int: i64,
+    one_of: ?[]const u8,
+    set_of: []const []const u8,
+    text: []const u8,
+    ref: SavedRef,
+};
+
+/// A fact kept per thing as saved: each key named as a ref or an item is, with its value.
+pub const SavedKeyed = struct {
+    name: []const u8,
+    kind: Kind,
+    keys: []const struct { key: SavedKey, value: SavedValue },
+};
+
+pub const SavedKey = union(enum) { ref: SavedRef, item: []const u8 };
 
 pub const SavedRef = union(enum) { handle: u64, id: []const u8 };
 
@@ -113,30 +130,62 @@ pub fn writeNamed(m: *const Memory, w: *std.Io.Writer, scope: ScopeId, story_has
     try w.writeInt(u64, story_hash, .little);
     try str(w, m.schema.scopes[scope.raw()]);
     var count: u32 = 0;
-    for (m.schema.facts) |d| count += @intFromBool(isSaved(d, scope));
+    var keyed: u32 = 0;
+    for (m.schema.facts) |d| if (isSaved(d, scope)) {
+        if (d.key == .none) count += 1 else keyed += 1;
+    };
     try w.writeInt(u32, count, .little);
     for (m.schema.facts, m.values) |d, v| {
-        if (!isSaved(d, scope)) continue;
+        if (!isSaved(d, scope) or d.key != .none) continue;
         try str(w, d.name);
         try w.writeByte(@backingInt(d.kind));
-        switch (v) {
-            .boolean => |x| try w.writeByte(@intFromBool(x)),
-            .int => |x| try w.writeInt(i64, x, .little),
-            .one_of => |x| try str(w, if (x == Value.none) "" else d.items[x]),
-            .set_of => |x| {
-                try w.writeInt(u16, @intCast(x.count()), .little); // safe: at most max_items
-                var it = x.iterator(.{});
-                while (it.next()) |i| try str(w, d.items[i]);
-            },
-            .text => |x| try str(w, x),
-            .ref => |x| if (names.idOf(names.user, d.ref_kind, x)) |id| {
-                try w.writeByte(1);
-                try str(w, id);
-            } else {
-                try w.writeByte(0);
-                try w.writeInt(u64, x, .little);
-            },
+        try writeValue(w, d, v, names);
+    }
+    try w.writeInt(u32, keyed, .little);
+    for (m.schema.facts, m.keyed) |d, map| {
+        if (!isSaved(d, scope) or d.key == .none) continue;
+        try str(w, d.name);
+        try w.writeByte(@backingInt(d.kind));
+        var held: u32 = 0;
+        for (map.values()) |k| held += @intFromBool(!k.value.eql(.initial(d.kind)));
+        try w.writeInt(u32, held, .little);
+        for (map.keys(), map.values()) |key, k| {
+            if (k.value.eql(.initial(d.kind))) continue;
+            switch (d.key) {
+                .ref => |kind| try writeRef(w, kind, key, names),
+                .items => |items| {
+                    try w.writeByte(2);
+                    try str(w, items[@intCast(key)]); // safe: a key of items is an item's index
+                },
+                .none => unreachable, // unreachable: skipped above
+            }
+            try writeValue(w, d, k.value, names);
         }
+    }
+}
+
+fn writeValue(w: *std.Io.Writer, d: schema_.Decl, v: Value, names: RefNames) std.Io.Writer.Error!void {
+    switch (v) {
+        .boolean => |x| try w.writeByte(@intFromBool(x)),
+        .int => |x| try w.writeInt(i64, x, .little),
+        .one_of => |x| try str(w, if (x == Value.none) "" else d.items[x]),
+        .set_of => |x| {
+            try w.writeInt(u16, @intCast(x.count()), .little); // safe: at most max_items
+            var it = x.iterator(.{});
+            while (it.next()) |i| try str(w, d.items[i]);
+        },
+        .text => |x| try str(w, x),
+        .ref => |x| try writeRef(w, d.ref_kind, x, names),
+    }
+}
+
+fn writeRef(w: *std.Io.Writer, kind: []const u8, handle: u64, names: RefNames) std.Io.Writer.Error!void {
+    if (names.idOf(names.user, kind, handle)) |id| {
+        try w.writeByte(1);
+        try str(w, id);
+    } else {
+        try w.writeByte(0);
+        try w.writeInt(u64, handle, .little);
     }
 }
 
@@ -167,20 +216,27 @@ pub fn readNamed(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, story_has
     if (count > value.max_facts) return error.TooManyFacts;
     const saved = try arena.alloc(Saved, count);
     for (saved) |*s| s.* = try c.fact(arena);
+    const keyed_count = try c.int(u32);
+    if (keyed_count > value.max_facts) return error.TooManyFacts;
+    const keyed = try arena.alloc(SavedKeyed, keyed_count);
+    for (keyed) |*k| k.* = try c.keyedFact(arena);
     if (c.at != bytes.len) return error.TrailingBytes;
-    return restoreSaved(m, arena, scope, hash == story_hash, saved, names);
+    return restoreSaved(m, arena, scope, hash == story_hash, saved, keyed, names);
 }
 
+const Staged = struct { id: FactId, key: ?value.Key = null, value: Value };
+
 /// Restores facts read from any form of snapshot, matching by name. Nothing changes unless all of it is accepted.
-pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_story: bool, saved: []const Saved, names: RefNames) Error!Report {
+pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_story: bool, saved: []const Saved, keyed: []const SavedKeyed, names: RefNames) Error!Report {
     var by_name: std.StringHashMapUnmanaged(FactId) = .empty;
     for (m.schema.facts, 0..) |d, i| {
         if (isSaved(d, scope)) try by_name.put(arena, d.name, .fromRaw(@intCast(i))); // safe: validated to max_facts
     }
     var dropped: std.ArrayList([]const u8) = .empty;
     var lost: std.ArrayList(Report.Lost) = .empty;
-    var staged: std.ArrayList(struct { id: FactId, value: Value }) = .empty;
+    var staged: std.ArrayList(Staged) = .empty;
     var seen: std.StringHashMapUnmanaged(void) = .empty;
+    var restored: std.bit_set.Static(value.max_facts) = .empty;
     for (saved) |s| {
         if ((try seen.getOrPut(arena, s.name)).found_existing) return error.DuplicateFact;
         const id = by_name.get(s.name) orelse {
@@ -188,42 +244,106 @@ pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_s
             continue;
         };
         const d = m.schema.decl(id);
-        if (d.kind != @as(Kind, s.value)) {
+        if (d.kind != @as(Kind, s.value) or d.key != .none) {
             try dropped.append(arena, s.name);
             continue;
         }
-        try staged.append(arena, .{ .id = id, .value = try matched(arena, d, s, &lost, names) });
+        try staged.append(arena, .{ .id = id, .value = try matched(arena, d, s.name, s.value, &lost, names) });
+        restored.set(id.raw());
     }
-    var restored: std.bit_set.Static(value.max_facts) = .empty;
-    for (staged.items) |st| restored.set(st.id.raw());
+    for (keyed) |k| {
+        if ((try seen.getOrPut(arena, k.name)).found_existing) return error.DuplicateFact;
+        const id = by_name.get(k.name) orelse {
+            try dropped.append(arena, k.name);
+            continue;
+        };
+        const d = m.schema.decl(id);
+        if (d.kind != k.kind or d.key == .none) {
+            try dropped.append(arena, k.name);
+            continue;
+        }
+        if (k.keys.len > value.max_keys) return error.TooManyKeys;
+        for (k.keys) |entry| {
+            const key = keyOf(d, entry.key, k.name, arena, &lost, names) catch |err| switch (err) {
+                error.KeyLost => continue,
+                else => |e| return e,
+            };
+            try staged.append(arena, .{ .id = id, .key = key, .value = try matched(arena, d, k.name, entry.value, &lost, names) });
+        }
+        restored.set(id.raw());
+    }
     var added: std.ArrayList([]const u8) = .empty;
     for (m.schema.facts, 0..) |d, i| {
         if (isSaved(d, scope) and !restored.isSet(i)) try added.append(arena, d.name);
     }
-    // Owned texts first, so applying cannot fail halfway.
-    for (staged.items, 0..) |*st, i| {
+    try apply(m, scope, staged.items);
+    return .{ .same_story = same_story, .dropped = dropped.items, .added = added.items, .lost = lost.items };
+}
+
+// The staged values into `m`, with all the room they need taken first, so applying cannot fail halfway.
+fn apply(m: *Memory, scope: ScopeId, staged: []Staged) Error!void {
+    var room: std.AutoHashMapUnmanaged(u16, u32) = .empty;
+    defer room.deinit(m.gpa);
+    for (staged) |st| if (st.key != null) {
+        const gop = try room.getOrPut(m.gpa, st.id.raw());
+        gop.value_ptr.* = if (gop.found_existing) gop.value_ptr.* + 1 else 1;
+    };
+    var it = room.iterator();
+    while (it.next()) |r| try m.keyed[r.key_ptr.*].ensureTotalCapacity(m.gpa, r.value_ptr.*);
+    for (staged, 0..) |*st, i| {
         if (st.value != .text or st.value.text.len == 0) continue;
         st.value.text = m.gpa.dupe(u8, st.value.text) catch {
-            for (staged.items[0..i]) |done| if (done.value == .text and done.value.text.len > 0) m.gpa.free(done.value.text);
+            for (staged[0..i]) |done| if (done.value == .text and done.value.text.len > 0) m.gpa.free(done.value.text);
             return error.OutOfMemory;
         };
     }
     m.reset(scope);
-    for (staged.items) |st| {
+    for (staged) |st| {
+        if (st.key) |key| {
+            if (st.value.eql(.initial(st.value))) continue;
+            m.changes.mark(st.id);
+            m.keyed[st.id.raw()].putAssumeCapacity(key, .{ .value = st.value, .stamp = m.changes.now() });
+            continue;
+        }
         m.values[st.id.raw()] = st.value;
         if (!st.value.eql(.initial(st.value))) m.changes.mark(st.id);
     }
-    return .{ .same_story = same_story, .dropped = dropped.items, .added = added.items, .lost = lost.items };
+}
+
+// A saved key in the terms of the fact's declaration now: a thing's handle, or an item's index.
+fn keyOf(d: schema_.Decl, key: SavedKey, fact: []const u8, arena: std.mem.Allocator, lost: *std.ArrayList(Report.Lost), names: RefNames) (Error || error{KeyLost})!value.Key {
+    switch (d.key) {
+        .ref => |kind| switch (key) {
+            .ref => |r| switch (r) {
+                .handle => |h| return h,
+                .id => |id| {
+                    if (names.handleOf(names.user, kind, id)) |h| return h;
+                    try lost.append(arena, .{ .fact = fact, .item = id });
+                    return error.KeyLost;
+                },
+            },
+            .item => return error.BadKind,
+        },
+        .items => |items| switch (key) {
+            .item => |name| {
+                for (items, 0..) |item, i| if (std.mem.eql(u8, item, name)) return i;
+                try lost.append(arena, .{ .fact = fact, .item = name });
+                return error.KeyLost;
+            },
+            .ref => return error.BadKind,
+        },
+        .none => unreachable, // unreachable: only a fact kept per thing has keys
+    }
 }
 
 // A saved value in the terms of the fact's declaration now.
-fn matched(arena: std.mem.Allocator, d: schema_.Decl, s: Saved, lost: *std.ArrayList(Report.Lost), names: RefNames) Error!Value {
-    switch (s.value) {
+fn matched(arena: std.mem.Allocator, d: schema_.Decl, name: []const u8, saved: SavedValue, lost: *std.ArrayList(Report.Lost), names: RefNames) Error!Value {
+    switch (saved) {
         .ref => |r| switch (r) {
             .handle => |h| return .{ .ref = h },
             .id => |id| {
                 if (names.handleOf(names.user, d.ref_kind, id)) |h| return .{ .ref = h };
-                try lost.append(arena, .{ .fact = s.name, .item = id });
+                try lost.append(arena, .{ .fact = name, .item = id });
                 return .{ .ref = Value.no_ref };
             },
         },
@@ -236,13 +356,13 @@ fn matched(arena: std.mem.Allocator, d: schema_.Decl, s: Saved, lost: *std.Array
         .one_of => |x| {
             const item = x orelse return .{ .one_of = Value.none };
             if (d.itemNamed(item)) |i| return .{ .one_of = i };
-            try lost.append(arena, .{ .fact = s.name, .item = item });
+            try lost.append(arena, .{ .fact = name, .item = item });
             return .{ .one_of = Value.none };
         },
         .set_of => |items| {
             var set: value.Set = .empty;
             for (items) |item| {
-                if (d.itemNamed(item)) |i| set.set(i) else try lost.append(arena, .{ .fact = s.name, .item = item });
+                if (d.itemNamed(item)) |i| set.set(i) else try lost.append(arena, .{ .fact = name, .item = item });
             }
             return .{ .set_of = set };
         },
@@ -274,7 +394,33 @@ const Cursor = struct {
     fn fact(c: *Cursor, arena: std.mem.Allocator) Error!Saved {
         const name = try c.str(value.max_name, error.NameTooLong);
         const kind = std.enums.fromInt(Kind, try c.int(u8)) orelse return error.BadKind;
-        return .{ .name = name, .value = switch (kind) {
+        return .{ .name = name, .value = try c.savedValue(arena, kind) };
+    }
+
+    fn keyedFact(c: *Cursor, arena: std.mem.Allocator) Error!SavedKeyed {
+        const name = try c.str(value.max_name, error.NameTooLong);
+        const kind = std.enums.fromInt(Kind, try c.int(u8)) orelse return error.BadKind;
+        const n = try c.int(u32);
+        if (n > value.max_keys) return error.TooManyKeys;
+        // each key takes at least two bytes, so a count past what is left is refused before anything is allocated
+        if (n > (c.bytes.len - c.at) / 2) return error.Truncated;
+        const keys = try arena.alloc(@typeInfo(@FieldType(SavedKeyed, "keys")).pointer.child, n);
+        for (keys) |*k| k.* = .{ .key = try c.key(), .value = try c.savedValue(arena, kind) };
+        return .{ .name = name, .kind = kind, .keys = keys };
+    }
+
+    // A key as written: `0` and a handle, `1` and an id, or `2` and an item's name.
+    fn key(c: *Cursor) Error!SavedKey {
+        return switch (try c.int(u8)) {
+            0 => .{ .ref = .{ .handle = try c.int(u64) } },
+            1 => .{ .ref = .{ .id = try c.str(value.max_name, error.NameTooLong) } },
+            2 => .{ .item = try c.str(value.max_name, error.NameTooLong) },
+            else => error.BadKind,
+        };
+    }
+
+    fn savedValue(c: *Cursor, arena: std.mem.Allocator, kind: Kind) Error!SavedValue {
+        return switch (kind) {
             .boolean => .{ .boolean = switch (try c.int(u8)) {
                 0 => false,
                 1 => true,
@@ -298,7 +444,7 @@ const Cursor = struct {
                 1 => .{ .id = try c.str(value.max_name, error.NameTooLong) },
                 else => return error.BadKind,
             } },
-        } };
+        };
     }
 };
 
@@ -465,4 +611,40 @@ test "a moment is never saved: it is over before any save" {
     try std.testing.expectEqual(@as(usize, 0), report.added.len + report.dropped.len);
     try std.testing.expect(again.get(.fromRaw(0)).boolean);
     try std.testing.expectEqual(Value.none, again.get(.fromRaw(1)).one_of);
+}
+
+test "a fact kept per thing is saved key by key, each key named, and a key no longer known is lost" {
+    const gpa = std.testing.allocator;
+    const world: ScopeId = .fromRaw(0);
+    const per: schema_.Schema = .{ .scopes = &.{"world"}, .facts = &.{
+        .{ .name = "opinion", .scope = world, .kind = .int, .key = .{ .ref = "person" } },
+        .{ .name = "mood", .scope = world, .kind = .boolean, .key = .{ .items = &.{ "calm", "angry" } } },
+    } };
+    const Names = struct {
+        fn idOf(_: ?*anyopaque, _: []const u8, handle: u64) ?[]const u8 {
+            return if (handle == 7) "margaret" else if (handle == 8) "hank" else null;
+        }
+        fn handleOf(_: ?*anyopaque, _: []const u8, id: []const u8) ?u64 {
+            return if (std.mem.eql(u8, id, "margaret")) 70 else null;
+        }
+    };
+    const names: RefNames = .{ .idOf = Names.idOf, .handleOf = Names.handleOf };
+    var m: Memory = try .init(gpa, per);
+    defer m.deinit();
+    try m.setKey(.fromRaw(0), 7, .{ .int = -50 });
+    try m.setKey(.fromRaw(0), 8, .{ .int = 4 });
+    try m.setKey(.fromRaw(1), 1, .{ .boolean = true });
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    try writeNamed(&m, &out.writer, world, 1, names);
+    var again: Memory = try .init(gpa, per);
+    defer again.deinit();
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const report = try readNamed(&again, arena.allocator(), world, 1, out.written(), names);
+    // margaret is 70 now; hank is gone from this run, and lost
+    try std.testing.expectEqual(@as(i64, -50), again.getKey(.fromRaw(0), 70).int);
+    try std.testing.expectEqual(@as(usize, 1), report.lost.len);
+    try std.testing.expectEqualStrings("hank", report.lost[0].item);
+    try std.testing.expect(again.getKey(.fromRaw(1), 1).boolean);
 }

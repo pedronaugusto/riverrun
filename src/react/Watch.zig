@@ -2,7 +2,9 @@
 //! changed, never polled. This is the evaluator rules stand on, and a
 //! package's watched conditions too (cairn's quests).
 //!
-//! A condition is filed, when it is added, under every fact it reads, under
+//! A condition is filed, when it is added, under every fact it reads (a fact
+//! kept per thing under the key it reads, where the condition writes that
+//! key as a constant, else under the whole fact), under
 //! the stamp of every query it asks (by the query's keyed arguments where
 //! they are written in the condition, else by the stamp's whole family), and,
 //! where it compares a `(clock)` fact or a `since_changed` with a number,
@@ -71,6 +73,8 @@ const Threshold = struct {
     slot: u32,
 };
 
+const FactKey = struct { fact: u16, key: facts.Key };
+
 // A query's stamp as the host bumps it: its family, and the hash of its keyed arguments' values (0 for the family).
 const StampKey = struct { family: u32, key: u64 };
 
@@ -81,8 +85,12 @@ host: *const run.Host,
 options: Options,
 owners: *const [facts.max_scopes]u64,
 conds: std.ArrayList(Cond) = .empty,
-/// By fact: the conditions that read it as a plain value.
+/// By fact: the conditions that read it as a plain value, or read a fact kept per thing by a key not known now.
 by_fact: []std.ArrayList(u32),
+/// By a fact kept per thing and a key written as a constant: the conditions that read it.
+by_key: std.AutoHashMapUnmanaged(FactKey, std.ArrayList(u32)) = .empty,
+/// By fact: the keys conditions are filed under, which a change of the fact's stamp is checked against.
+keys_of: []std.ArrayList(facts.Key),
 /// By a query's stamp and keyed values, or by its family alone (key 0).
 by_stamp: std.AutoHashMapUnmanaged(StampKey, std.ArrayList(u32)) = .empty,
 /// By clock fact: the heap of the next instants its comparisons flip at.
@@ -110,6 +118,9 @@ pub fn init(gpa: std.mem.Allocator, s: *const story_.Story, store: facts.Store, 
     const by_fact = try gpa.alloc(std.ArrayList(u32), n);
     errdefer gpa.free(by_fact);
     @memset(by_fact, .empty);
+    const keys_of = try gpa.alloc(std.ArrayList(facts.Key), n);
+    errdefer gpa.free(keys_of);
+    @memset(keys_of, .empty);
     const heaps = try gpa.alloc(heap_.Heap, n);
     errdefer gpa.free(heaps);
     @memset(heaps, .{});
@@ -134,6 +145,7 @@ pub fn init(gpa: std.mem.Allocator, s: *const story_.Story, store: facts.Store, 
         .options = options,
         .owners = owners,
         .by_fact = by_fact,
+        .keys_of = keys_of,
         .heaps = heaps,
         .clock_was = clock_was,
         .changes_of = changes_of,
@@ -152,6 +164,11 @@ pub fn deinit(w: *Watch) void {
     var it = w.by_stamp.valueIterator();
     while (it.next()) |l| l.deinit(gpa);
     w.by_stamp.deinit(gpa);
+    var kt = w.by_key.valueIterator();
+    while (kt.next()) |l| l.deinit(gpa);
+    w.by_key.deinit(gpa);
+    for (w.keys_of) |*l| l.deinit(gpa);
+    gpa.free(w.keys_of);
     for (w.heaps) |*h| h.deinit(gpa);
     gpa.free(w.heaps);
     gpa.free(w.clock_was);
@@ -244,6 +261,7 @@ pub fn context(w: *Watch) run.eval.Context {
 
 fn markChanged(w: *Watch) Error!void {
     const changes = w.store.changes();
+    const before = w.watcher.seen;
     const changed = w.watcher.take(changes, w.changed) catch unreachable; // unreachable: `changed` holds the whole interest
     // a fact `since_changed` watches keeps the clock's value at its change, before anything reads it
     for (changed) |f| for (w.changes_of[f.raw()].items) |ci| {
@@ -252,6 +270,9 @@ fn markChanged(w: *Watch) Error!void {
     };
     for (changed) |f| {
         for (w.by_fact[f.raw()].items) |ci| w.marked.set(ci);
+        for (w.keys_of[f.raw()].items) |key| if (w.store.keyStamp(f, key) > before) {
+            if (w.by_key.get(.{ .fact = f.raw(), .key = key })) |l| for (l.items) |ci| w.marked.set(ci);
+        };
         if (w.story.fact(f).role == .clock) w.clockMoved(f);
     }
     for (w.bumped.items) |b| {
@@ -292,8 +313,8 @@ fn arm(w: *Watch, t: Threshold) void {
 
 fn refreshInterest(w: *Watch) Error!void {
     w.interest.clearRetainingCapacity();
-    for (w.by_fact, w.heaps, w.changes_of, 0..) |l, h, ch, i| {
-        if (l.items.len > 0 or h.slots() > 0 or ch.items.len > 0) try w.interest.append(w.gpa, .fromRaw(@intCast(i))); // safe: below max_facts
+    for (w.by_fact, w.heaps, w.changes_of, w.keys_of, 0..) |l, h, ch, ks, i| {
+        if (l.items.len > 0 or h.slots() > 0 or ch.items.len > 0 or ks.items.len > 0) try w.interest.append(w.gpa, .fromRaw(@intCast(i))); // safe: below max_facts
     }
     w.gpa.free(w.changed);
     w.changed = try w.gpa.alloc(FactId, w.interest.items.len);
@@ -326,6 +347,7 @@ fn file(w: *Watch, terms: Range, id: u32, also: []const FactId) Error![]const Th
                 try fileFact(w, c.clock, id);
             },
             .query => try w.fileQuery(t, starts[0..n], @intCast(k), terms.start, id), // safe: below a u32 length
+            .keyed => try w.fileKeyed(t, starts[0..n], @intCast(k), terms.start, id), // safe: below a u32 length
             else => {},
         };
         n = stackAfter(w.story, t, &starts, n, @intCast(k)); // safe: below a u32 length
@@ -404,6 +426,20 @@ fn fileQuery(w: *Watch, t: Term, starts: []const u32, k: u32, base: u32, id: u32
     try gop.value_ptr.append(w.gpa, id);
 }
 
+// A read of a fact kept per thing: by its key where the key is one constant term, else by the whole fact.
+fn fileKeyed(w: *Watch, t: Term, starts: []const u32, k: u32, base: u32, id: u32) Error!void {
+    const f: FactId = .fromRaw(@intCast(t.arg)); // safe: validated to a fact id
+    const from = starts[starts.len - 1];
+    const key = if (k - from == 1) (if (w.constantAt(base + from)) |v| run.eval.keyOf(v) else null) else null;
+    const exact = key orelse return fileFact(w, f, id);
+    const gop = try w.by_key.getOrPut(w.gpa, .{ .fact = f.raw(), .key = exact });
+    if (!gop.found_existing) {
+        gop.value_ptr.* = .empty;
+        try w.keys_of[f.raw()].append(w.gpa, exact);
+    }
+    try gop.value_ptr.append(w.gpa, id);
+}
+
 // The value a single constant term pushes, if it is one.
 fn constantAt(w: *const Watch, at: u32) ?facts.Value {
     const t = w.story.term(at);
@@ -420,7 +456,7 @@ fn constantAt(w: *const Watch, at: u32) ?facts.Value {
 // Where each value on the stack began, after term `t` at `k`: what a query's arguments are found by.
 fn stackAfter(s: *const story_.Story, t: Term, starts: *[story_.max_stack]u32, n: usize, k: u32) usize {
     switch (t.op) {
-        .not => return n,
+        .not, .keyed => return n,
         .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => return n - 1,
         .query => {
             const params = s.externFn(.fromRaw(@intCast(t.arg))).params.len; // safe: validated to an extern id

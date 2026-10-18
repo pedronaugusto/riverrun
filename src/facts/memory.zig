@@ -1,6 +1,7 @@
 //! The default store: every fact in memory, a value each, texts owned by the
 //! store's allocator. lantern keeps its facts here; a host with state of its
-//! own implements `Store` over it instead.
+//! own implements `Store` over it instead. A fact kept per thing holds a value
+//! only for the keys set, each with the stamp of its last change.
 
 const std = @import("std");
 const value = @import("value.zig");
@@ -11,6 +12,10 @@ const Changes = @import("changes.zig").Changes;
 const FactId = value.FactId;
 const ScopeId = value.ScopeId;
 const Value = value.Value;
+const Key = value.Key;
+
+/// A key's value, and the stamp of its last change.
+pub const Keyed = struct { value: Value, stamp: u64 };
 const Schema = schema_.Schema;
 const SetError = store_.SetError;
 
@@ -19,6 +24,9 @@ pub const Memory = struct {
     /// Borrowed: it outlives the store.
     schema: Schema,
     values: []Value,
+    /// By fact: a fact kept per thing's values, by key in the order first set, so a snapshot writes them
+    /// in one order; empty for the others.
+    keyed: []std.array_hash_map.Auto(Key, Keyed),
     changes: Changes,
 
     /// A store for `schema`'s facts, each at its initial value.
@@ -27,12 +35,17 @@ pub const Memory = struct {
         const values = try gpa.alloc(Value, schema.facts.len);
         errdefer gpa.free(values);
         for (values, schema.facts) |*v, d| v.* = .initial(d.kind);
-        return .{ .gpa = gpa, .schema = schema, .values = values, .changes = try .init(gpa, schema.facts.len) };
+        const keyed = try gpa.alloc(std.array_hash_map.Auto(Key, Keyed), schema.facts.len);
+        errdefer gpa.free(keyed);
+        @memset(keyed, .empty);
+        return .{ .gpa = gpa, .schema = schema, .values = values, .keyed = keyed, .changes = try .init(gpa, schema.facts.len) };
     }
 
     pub fn deinit(m: *Memory) void {
         for (m.values) |v| freeText(m.gpa, v);
         m.gpa.free(m.values);
+        for (m.keyed) |*k| k.deinit(m.gpa);
+        m.gpa.free(m.keyed);
         m.changes.deinit(m.gpa);
         m.* = undefined;
     }
@@ -60,6 +73,24 @@ pub const Memory = struct {
                 return &m.changes;
             }
         }.f,
+        .getKey = struct {
+            fn f(ptr: *anyopaque, fact: FactId, key: Key) Value {
+                const m: *Memory = @ptrCast(@alignCast(ptr)); // safe: made by `store` from a *Memory
+                return m.getKey(fact, key);
+            }
+        }.f,
+        .setKey = struct {
+            fn f(ptr: *anyopaque, fact: FactId, key: Key, v: Value) SetError!void {
+                const m: *Memory = @ptrCast(@alignCast(ptr)); // safe: made by `store` from a *Memory
+                return m.setKey(fact, key, v);
+            }
+        }.f,
+        .keyStamp = struct {
+            fn f(ptr: *anyopaque, fact: FactId, key: Key) u64 {
+                const m: *Memory = @ptrCast(@alignCast(ptr)); // safe: made by `store` from a *Memory
+                return if (m.keyed[fact.raw()].get(key)) |k| k.stamp else 0;
+            }
+        }.f,
     };
 
     pub fn get(m: *const Memory, fact: FactId) Value {
@@ -68,6 +99,7 @@ pub const Memory = struct {
 
     pub fn set(m: *Memory, fact: FactId, v: Value) SetError!void {
         const d = m.schema.decl(fact);
+        if (d.key != .none) return error.WrongKey;
         try check(d, v);
         const slot = &m.values[fact.raw()];
         if (slot.eql(v)) return;
@@ -77,11 +109,33 @@ pub const Memory = struct {
         m.changes.mark(fact);
     }
 
+    pub fn getKey(m: *const Memory, fact: FactId, key: Key) Value {
+        return if (m.keyed[fact.raw()].get(key)) |k| k.value else .initial(m.schema.decl(fact).kind);
+    }
+
+    pub fn setKey(m: *Memory, fact: FactId, key: Key, v: Value) SetError!void {
+        const d = m.schema.decl(fact);
+        if (d.key == .none) return error.WrongKey;
+        try check(d, v);
+        const map = &m.keyed[fact.raw()];
+        if (map.get(key)) |have| {
+            if (have.value.eql(v)) return;
+        } else if (v.eql(.initial(d.kind))) return;
+        if (!map.contains(key) and map.count() == value.max_keys) return error.TooManyKeys;
+        m.changes.mark(fact);
+        try map.put(m.gpa, key, .{ .value = v, .stamp = m.changes.now() });
+    }
+
     /// Every fact of `scope` back to its initial value: a new life, a new game.
     pub fn reset(m: *Memory, scope: ScopeId) void {
         for (m.schema.facts, 0..) |d, i| {
             if (!d.scope.eql(scope)) continue;
             const id: FactId = .fromRaw(@intCast(i)); // safe: validated to max_facts
+            if (d.key != .none) {
+                if (m.keyed[i].count() > 0) m.changes.mark(id);
+                m.keyed[i].clearRetainingCapacity();
+                continue;
+            }
             m.set(id, .initial(d.kind)) catch unreachable; // unreachable: an initial value fits its kind and allocates nothing
         }
     }
@@ -153,4 +207,30 @@ test "an int changes by an amount, and never past what it holds" {
     try s.set(testing.hour, .{ .int = std.math.maxInt(i64) });
     try std.testing.expectError(error.Overflow, store_.apply(s, .{ .change = .{ .fact = testing.hour, .by = 1 } }));
     try std.testing.expectError(error.WrongKind, store_.apply(s, .{ .change = .{ .fact = testing.met, .by = 1 } }));
+}
+
+test "a fact kept per thing holds a value only for the keys set, each with its own stamp" {
+    const gpa = std.testing.allocator;
+    const world: ScopeId = .fromRaw(0);
+    const per_person: Schema = .{ .scopes = &.{"world"}, .facts = &.{
+        .{ .name = "opinion", .scope = world, .kind = .int, .key = .{ .ref = "person" } },
+        .{ .name = "met", .scope = world, .kind = .boolean },
+    } };
+    var m: Memory = try .init(gpa, per_person);
+    defer m.deinit();
+    const s = m.store();
+    const opinion: FactId = .fromRaw(0);
+    try std.testing.expectEqual(@as(i64, 0), s.getKey(opinion, 7).int);
+    try s.setKey(opinion, 7, .{ .int = -50 });
+    const stamp = s.keyStamp(opinion, 7);
+    try s.setKey(opinion, 9, .{ .int = 3 });
+    try std.testing.expectEqual(stamp, s.keyStamp(opinion, 7));
+    try std.testing.expect(s.keyStamp(opinion, 9) > stamp);
+    try std.testing.expectEqual(@as(u64, 0), s.keyStamp(opinion, 11));
+    try std.testing.expectError(error.WrongKey, s.set(opinion, .{ .int = 1 }));
+    try std.testing.expectError(error.WrongKey, s.setKey(.fromRaw(1), 7, .{ .boolean = true }));
+    _ = try store_.apply(s, .{ .change = .{ .fact = opinion, .key = 7, .by = 10 } });
+    try std.testing.expectEqual(@as(i64, -40), s.getKey(opinion, 7).int);
+    m.reset(world);
+    try std.testing.expectEqual(@as(i64, 0), s.getKey(opinion, 7).int);
 }

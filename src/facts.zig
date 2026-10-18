@@ -15,6 +15,9 @@ pub const max_scopes = value.max_scopes;
 pub const max_items = value.max_items;
 pub const max_text = value.max_text;
 pub const max_name = value.max_name;
+pub const max_keys = value.max_keys;
+pub const Key = value.Key;
+pub const KeyDecl = schema.KeyDecl;
 
 pub const FactId = value.FactId;
 pub const ScopeId = value.ScopeId;

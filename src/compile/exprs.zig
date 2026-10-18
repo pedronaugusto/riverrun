@@ -31,6 +31,19 @@ pub fn value(c: *Compiler, e: *const ast.Expr) Error!story.Range {
     return c.b.expr(out.items);
 }
 
+/// A key's terms, then a value's: what writing a fact kept per thing takes.
+pub fn pair(c: *Compiler, key: *const ast.Expr, v: *const ast.Expr) Error!story.Range {
+    var out: Terms = .empty;
+    try val(c, &out, key);
+    try val(c, &out, v);
+    return c.b.expr(out.items);
+}
+
+/// A value's terms appended to `out`, for an effect that builds its own.
+pub fn into(c: *Compiler, out: *Terms, e: *const ast.Expr) Error!void {
+    try val(c, out, e);
+}
+
 /// A call's arguments, each a value, in order.
 pub fn arguments(c: *Compiler, args: []const ast.Expr) Error!story.Range {
     var out: Terms = .empty;
@@ -113,8 +126,12 @@ fn calls(c: *Compiler, out: *Terms, e: *const ast.Expr, call: *const ast.Call) E
         },
         .builtin => |b| try out.append(c.arena, .of(.builtin, try builtin(c, b))),
         .happened => |m| try out.append(c.arena, .of(.happened, c.fact(m).raw())),
+        .keyed => |f| {
+            try val(c, out, &call.args[0]);
+            try out.append(c.arena, .of(.keyed, c.fact(f).raw()));
+        },
         .since_changed => |w| try out.append(c.arena, .of(.since_changed, try c.b.sinceChanged(c.fact(w.fact), c.fact(w.clock)))),
-        else => unreachable, // unreachable: a call in an expression is `seen`, `since_changed`, `happened`, a query or a builtin
+        else => unreachable, // unreachable: a call in an expression is `seen`, `since_changed`, `happened`, a fact kept per thing, a query or a builtin
     }
 }
 

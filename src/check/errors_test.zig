@@ -593,3 +593,26 @@ test "a moment is seen only by rules and quests, and happened asks of moments al
     try o.has(.err, 5, 3, "`tick` is a clock or a moment: a clock lasts, and a moment is over at once");
     try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
 }
+
+test "a fact kept per thing is read and written for one key of its kind" {
+    var o = try checkOne(
+        \\facts:
+        \\  opinion(person):  int
+        \\  mood(one of calm, angry): bool
+        \\  rank:  int
+        \\  ticks(person): int   (clock)
+        \\== a
+        \\{ opinion > 3 } Liked.
+        \\{ mood(calm) and opinion(3) > 1 } Calm.
+        \\~ opinion -= 5
+        \\~ rank(margaret) = 2
+        \\~ mood(angry) = true
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 5, 3, "`ticks` is kept per thing, so it cannot be a clock, a moment or text");
+    try o.has(.err, 7, 3, "`opinion` is kept per person: read it for one, `opinion(…)`");
+    try o.has(.err, 8, 26, "this is a number, where a person is wanted");
+    try o.has(.err, 9, 3, "`opinion` is kept per person: write it for one, `opinion(…)`");
+    try o.has(.err, 10, 3, "`rank` is a fact with one value: it takes no key");
+}

@@ -73,6 +73,10 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
     const t = try typeOf(c, f.type, f.name.span);
     if (f.clock and t != .int) try c.err(f.name.span, "a clock counts, so `(clock)` is an int's: `{s}` is {s}", .{ f.name.text, try c.describe(t) });
     if (f.clock and f.moment) try c.err(f.name.span, "`{s}` is a clock or a moment: a clock lasts, and a moment is over at once", .{f.name.text});
+    const key: ?sym.Type = if (f.key) |k| try typeOf(c, k, f.name.span) else null;
+    if (key != null and (f.clock or f.moment or t == .text)) {
+        try c.err(f.name.span, "`{s}` is kept per thing, so it cannot be a clock, a moment or text", .{f.name.text});
+    }
     const id = sym.idOf(sym.FactId, c.facts.items.len);
     if (!try named(c, module, f.name, .{ .fact = id })) return;
     try c.facts.append(c.arena, .{
@@ -82,6 +86,7 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
         .game = f.game,
         .clock = f.clock,
         .moment = f.moment,
+        .key = key,
         .module = module,
         .span = f.name.span,
     });

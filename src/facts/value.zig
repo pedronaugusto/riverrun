@@ -18,6 +18,11 @@ pub const max_items = 256;
 pub const max_text = 1024;
 /// The longest name of a fact, a scope or an item, in bytes, its module included.
 pub const max_name = 256;
+/// The most keys a fact kept per thing holds a value for.
+pub const max_keys = 1 << 20;
+
+/// What a fact kept per thing is keyed by: a thing's handle, or an item's index.
+pub const Key = u64;
 
 /// A fact, by its place in the story's declarations.
 pub const FactId = aegis.id.Id(enum { fact }, u16);

@@ -41,6 +41,11 @@ fn fact(c: *Compiler, f: *const sym.Fact) Error!story.FactId {
         .enumeration = t.enumeration,
         .ref_kind = t.ref_kind,
         .role = if (f.clock) .clock else if (f.moment) .moment else if (f.game) .game else .story,
+        .key = if (f.key) |k| switch (k) {
+            .ref => |kind| .{ .ref = c.kinds[kind.raw()] },
+            .one_of => |e| .{ .items = c.enums[e.raw()] },
+            else => unreachable, // unreachable: the reader keys a fact by a kind of things or an enumeration
+        } else .none,
     });
 }
 

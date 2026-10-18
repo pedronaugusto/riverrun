@@ -101,6 +101,10 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
     }
     if (c.valueNamed(scope.module, n)) |named| switch (named) {
         .fact => |id| {
+            if (c.facts.items[id.raw()].key) |k| {
+                try c.err(e.span, "`{s}` is kept per {s}: read it for one, `{s}(…)`", .{ n, try keyWord(c, k), n });
+                return null;
+            }
             if (c.facts.items[id.raw()].moment and !reacts(c, scope)) {
                 try c.err(e.span, "`{s}` is a moment, over once rules and quests have seen it: `{s}` would never see it", .{ n, c.sections.items[scope.section.raw()].name });
                 return null;
@@ -124,6 +128,7 @@ fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) E
     if (std.mem.eql(u8, call.name.text, "seen")) return seen(c, scope, e, call);
     if (std.mem.eql(u8, call.name.text, "since_changed")) return sinceChanged(c, scope, e, call);
     if (std.mem.eql(u8, call.name.text, "happened")) return happened(c, scope, e, call);
+    if (c.valueNamed(scope.module, call.name.text)) |named| if (named == .fact) return keyedRead(c, scope, e, call, named.fact);
     if (c.kindOfSection(scope.section)) |kind| if (kind.builtin(call.name.text)) |b| return builtin(c, scope, e, call, kind, b);
     const id = try externOf(c, scope, call) orelse return null;
     const ext = c.externs.items[id.raw()];
@@ -183,6 +188,10 @@ fn sinceChanged(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.
     }
     const fact = try factArg(c, scope, &call.args[0]) orelse return null;
     const clock = try factArg(c, scope, &call.args[1]) orelse return null;
+    if (c.facts.items[fact.raw()].key != null) {
+        try c.err(call.args[0].span, "`{s}` is kept per thing: since_changed watches a fact with one value", .{call.args[0].kind.name});
+        return null;
+    }
     if (!c.facts.items[clock.raw()].clock) {
         try c.err(call.args[1].span, "`{s}` is not a clock: since_changed counts on a fact declared `(clock)`", .{call.args[1].kind.name});
         return null;
@@ -206,6 +215,45 @@ fn happened(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call
         return null;
     }
     return record(c, e, .boolean, .{ .happened = m });
+}
+
+// `opinion(margaret)`: a fact kept per thing, read for one key of its key's type.
+fn keyedRead(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call, id: sym.FactId) Error!?sym.Type {
+    const f = c.facts.items[id.raw()];
+    const key = f.key orelse {
+        try c.err(e.span, "`{s}` is a fact with one value: it takes no key", .{f.name});
+        return null;
+    };
+    if (call.args.len != 1) {
+        try c.err(e.span, "`{s}` is read for one {s}: `{s}(…)`", .{ f.name, try keyWord(c, key), f.name });
+        return null;
+    }
+    try value(c, scope, &call.args[0], key);
+    try c.names.put(c.arena, &call.name, .{ .fact = id });
+    return record(c, e, f.type, .{ .keyed = id });
+}
+
+// What a fact is kept per, as a writer says it: "person", "one of calm, angry".
+fn keyWord(c: *const Checker, t: sym.Type) Error![]const u8 {
+    return if (t == .ref) c.kinds.items[t.ref.raw()] else c.describe(t);
+}
+
+// The key an effect writes a fact kept per thing for, checked against the fact; false when the effect does not fit.
+fn keyFits(c: *Checker, scope: Scope, fact: *const ast.Name, key: ?*const ast.Expr, id: sym.FactId) Error!bool {
+    const f = c.facts.items[id.raw()];
+    if (f.key) |k| {
+        const given = key orelse {
+            try c.err(fact.span, "`{s}` is kept per {s}: write it for one, `{s}(…)`", .{ f.name, try keyWord(c, k), f.name });
+            return false;
+        };
+        try value(c, scope, given, k);
+        return true;
+    }
+    if (key != null) {
+        try c.err(fact.span, "`{s}` is a fact with one value: it takes no key", .{f.name});
+        return false;
+    }
+    return true;
 }
 
 fn factArg(c: *Checker, scope: Scope, arg: *const ast.Expr) Error!?sym.FactId {
@@ -361,7 +409,11 @@ pub fn effect(c: *Checker, scope: Scope, eff: *const ast.Effect) Error!void {
     switch (eff.*) {
         .set => |*s| {
             const id = try settable(c, scope, &s.fact) orelse return;
-            if (try outcome(c, scope, &s.value, id)) return;
+            if (!try keyFits(c, scope, &s.fact, s.key, id)) return;
+            if (try outcome(c, scope, &s.value, id)) {
+                if (s.key != null) try c.err(s.value.span, "an outcome is kept in a fact with one value", .{});
+                return;
+            }
             try value(c, scope, &s.value, c.facts.items[id.raw()].type);
         },
         .add => |*a| try change(c, scope, a, "+="),
@@ -395,6 +447,7 @@ fn outcome(c: *Checker, scope: Scope, v: *const ast.Expr, fact: sym.FactId) Erro
 // `+=` and `-=`: a set gains or loses an item; an int moves by a number or an int constant.
 fn change(c: *Checker, scope: Scope, ch: *const ast.Change, op: []const u8) Error!void {
     const id = try settable(c, scope, &ch.fact) orelse return;
+    if (!try keyFits(c, scope, &ch.fact, ch.key, id)) return;
     const t = c.facts.items[id.raw()].type;
     const amount = &ch.amount;
     switch (t) {

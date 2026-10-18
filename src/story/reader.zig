@@ -83,7 +83,16 @@ pub const Story = struct {
             .enumeration = if (kind == .ref) null else codec.optional(model.EnumId, f.enumeration),
             .ref_kind = if (kind == .ref) .fromRaw(f.enumeration) else null,
             .role = @fromBackingInt(f.role),
+            .key = if (f.key_kind == @backingInt(facts.Kind.one_of)) .{ .items = .fromRaw(f.key_type) } else if (f.key_kind == @backingInt(facts.Kind.ref)) .{ .ref = .fromRaw(f.key_type) } else .none,
         };
+    }
+
+    /// An enumeration's items' names, on `arena`.
+    pub fn itemNames(s: *const Story, arena: std.mem.Allocator, e: model.EnumId) error{OutOfMemory}![]const []const u8 {
+        const r = s.items(e);
+        const list = try arena.alloc([]const u8, r.len);
+        for (list, 0..) |*n, k| n.* = s.item(r.start + @as(u32, @intCast(k))); // safe: validated to max_items
+        return list;
     }
 
     pub fn factNamed(s: *const Story, name: []const u8) ?facts.FactId {
@@ -174,7 +183,11 @@ pub const Story = struct {
                 for (list, 0..) |*n, k| n.* = s.item(r.start + @as(u32, @intCast(k))); // safe: validated to max_items
                 names = list;
             }
-            d.* = .{ .name = f.name, .scope = f.scope, .kind = f.kind, .items = names, .ref_kind = if (f.ref_kind) |k| s.refKind(k) else "", .role = f.role };
+            d.* = .{ .name = f.name, .scope = f.scope, .kind = f.kind, .items = names, .ref_kind = if (f.ref_kind) |k| s.refKind(k) else "", .role = f.role, .key = switch (f.key) {
+                .none => .none,
+                .ref => |k| .{ .ref = s.refKind(k) },
+                .items => |e| .{ .items = try s.itemNames(arena, e) },
+            } };
         }
         return .{ .scopes = scopes, .facts = decls };
     }
