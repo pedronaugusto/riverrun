@@ -55,6 +55,9 @@ pub const Language = struct {
     }
 };
 
+/// A role an evaluation is given: the value a section's `(role)` fact reads as while it is evaluated.
+pub const Role = struct { fact: facts.FactId, value: Value };
+
 /// What evaluation reads: the story's terms, the facts, the host's queries
 /// and the context they are asked in, and where a query's text answer is
 /// copied so it outlives the next answer.
@@ -66,6 +69,17 @@ pub const Context = struct {
     arena: std.mem.Allocator,
     builtins: ?Builtins = null,
     language: Language = .{},
+    /// The roles the evaluation is given; a role not among them reads as its fact.
+    roles: []const Role = &.{},
+
+    /// What role `f` reads as: the value given for it, else its fact's, for the thing the evaluation is for where
+    /// the fact is kept per thing.
+    pub fn role(cx: Context, f: facts.FactId) Value {
+        for (cx.roles) |r| if (r.fact.eql(f)) return r.value;
+        if (cx.story.fact(f).key == .none) return cx.store.get(f);
+        if (cx.call.this == Value.no_ref) return .initial(cx.story.fact(f).kind);
+        return cx.store.getKey(f, cx.call.this);
+    }
 };
 
 pub fn condition(cx: Context, r: Range) Error!bool {
@@ -168,6 +182,8 @@ fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
                 const w = cx.story.change(t.arg);
                 push(stack, &n, .{ .int = cx.store.get(w.clock).int -| cx.store.get(w.at).int });
             },
+            .this => push(stack, &n, .{ .ref = cx.call.this }),
+            .role => push(stack, &n, cx.role(.fromRaw(@intCast(t.arg)))), // safe: validated to a fact id
             .true => push(stack, &n, .{ .boolean = true }),
             .false => push(stack, &n, .{ .boolean = false }),
             .not => stack[n - 1] = .{ .boolean = !stack[n - 1].boolean },

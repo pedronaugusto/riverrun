@@ -116,6 +116,12 @@ fn effect(c: *Compiler, e: *const ast.Effect) Error!story.Effect {
             };
             // a fact kept per thing: its key's terms, then the value's
             if (x.key) |key| return .{ .set = .{ .fact = fact, .value = try exprs.pair(c, key, &x.value) } };
+            if (own(c, &x.fact)) |id| {
+                var terms: exprs.Terms = .empty;
+                try terms.append(c.arena, exprs.this(c, id));
+                try exprs.into(c, &terms, &x.value);
+                return .{ .set = .{ .fact = fact, .value = try c.b.expr(terms.items) } };
+            }
             return .{ .set = .{ .fact = fact, .value = try exprs.value(c, &x.value) } };
         },
         .add, .remove => |*x| return change(c, x, e.* == .remove),
@@ -132,20 +138,26 @@ fn change(c: *Compiler, x: *const ast.Change, minus: bool) Error!story.Effect {
     const typed = c.checked.exprs.get(&x.amount) orelse unreachable; // unreachable: the checker typed the amount
     if (typed.type == .one_of) {
         const item: u8 = @intCast(typed.ref.?.value.index); // safe: an enumeration holds at most 256 values
-        const key: story.Range = if (x.key) |k| try exprs.value(c, k) else .empty;
+        const key: story.Range = if (x.key) |k| try exprs.value(c, k) else if (own(c, &x.fact)) |id| try c.b.expr(&.{exprs.this(c, id)}) else .empty;
         return if (minus) .{ .remove = .{ .fact = fact, .item = item, .key = key } } else .{ .add = .{ .fact = fact, .item = item, .key = key } };
     }
     const n: i64 = if (typed.ref) |r| c.checked.consts[r.constant.raw()].value.int else x.amount.kind.int;
     const by = if (minus) std.math.sub(i64, 0, n) catch return error.TooLarge else n;
     var terms: exprs.Terms = .empty;
-    if (x.key) |k| try exprs.into(c, &terms, k);
+    if (x.key) |k| try exprs.into(c, &terms, k) else if (own(c, &x.fact)) |id| try terms.append(c.arena, exprs.this(c, id));
     try terms.append(c.arena, .of(.int, try c.b.int(by)));
     return .{ .change = .{ .fact = fact, .by = try c.b.expr(terms.items) } };
 }
 
 fn factNamed(c: *const Compiler, n: *const ast.Name) story.FactId {
     const r = c.checked.names.get(n) orelse unreachable; // unreachable: the checker resolved every fact an effect writes
-    return c.fact(r.fact);
+    return c.fact(if (r == .own) r.own else r.fact);
+}
+
+// The section's own fact an effect writes for the thing the section is evaluated for, if it writes one so.
+fn own(c: *const Compiler, n: *const ast.Name) ?sym.FactId {
+    const r = c.checked.names.get(n) orelse return null;
+    return if (r == .own) r.own else null;
 }
 
 // Where a flow goes: a step that goes there, or the step itself for a label.

@@ -98,14 +98,22 @@ fn named(c: *Compiler, out: *Terms, e: *const ast.Expr) Error!void {
         std.debug.assert(e.kind == .int);
         return out.append(c.arena, .of(.int, try c.b.int(e.kind.int)));
     };
+    if (ref == .own) return out.appendSlice(c.arena, &.{ this(c, ref.own), .of(.keyed, c.fact(ref.own).raw()) });
     try out.append(c.arena, switch (ref) {
         .fact => |id| .of(.fact, c.fact(id).raw()),
         .constant => |id| return constant(c, out, c.checked.consts[id.raw()].value),
         .value => |v| Term.item(c.enums[v.enumeration.raw()].raw(), @intCast(v.index)), // safe: an enumeration holds at most 256 values
         .visits => |id| .of(.fact, c.visits[id.raw()].?.raw()), // a visit count read is kept
         .thing => |th| .of(.thing, try c.b.thing(c.kinds[th.kind.raw()], th.id)),
-        else => unreachable, // unreachable: a name in an expression is a fact, a constant, a value, a visit count or a thing
+        .role => |id| .of(.role, c.fact(id).raw()),
+        else => unreachable, // unreachable: a name in an expression is a fact, a constant, a value, a visit count, a thing or a role
     });
+}
+
+/// The term that pushes the thing a section kept per thing is evaluated for: the key of its own fact `id`.
+pub fn this(c: *const Compiler, id: sym.FactId) Term {
+    const key = c.checked.facts[id.raw()].key.?; // a section's own fact is kept per thing where the section is
+    return .of(.this, c.kinds[key.ref.raw()].raw());
 }
 
 pub fn constant(c: *Compiler, out: *Terms, k: sym.Constant) Error!void {

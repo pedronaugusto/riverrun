@@ -116,9 +116,12 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?[]const u8, f: *const ast.Fac
 // story's own.
 fn brought(c: *Checker, id: sym.SectionId) Error!void {
     const s = c.section(id);
+    const kind = c.kindOfSection(id);
+    if (kind) |k| if (k.per) |per| if (per(s.node)) |name| {
+        s.per = try c.kindOf(name.text, name.span);
+    };
     for (s.node.facts) |block| for (block.entries) |*e| try within(c, id, if (block.scope) |sc| sc.text else null, e.*);
-    const kind = c.kindOfSection(id) orelse return;
-    const declare = kind.declare orelse return;
+    const declare = (kind orelse return).declare orelse return;
     for (try declare(c.arena, s.node)) |d| {
         if (d.within) {
             try within(c, id, d.scope, d.fact);
@@ -126,12 +129,16 @@ fn brought(c: *Checker, id: sym.SectionId) Error!void {
     }
 }
 
-// A fact named within section `id`: `section.name` to the rest of the story, `name` inside it. A role is given to
-// the section, never set by the story.
+// A fact named within section `id`: `section.name` to the rest of the story, `name` inside it, and kept per thing
+// where the section is. A role is given to the section, never set by the story.
 fn within(c: *Checker, id: sym.SectionId, scope: ?[]const u8, declared: ast.Fact) Error!void {
     const s = c.section(id);
     if (try shadowed(c, s, declared.name)) return;
     var f = declared;
+    if (s.per) |per| {
+        if (f.key != null) return c.err(f.name.span, "`{s}` is in `{s}`, which keeps it per {s}: it takes no key of its own", .{ f.name.text, s.name, c.kinds.items[per.raw()] });
+        f.key = .{ .ref = .{ .text = c.kinds.items[per.raw()], .span = f.name.span } };
+    }
     f.name.text = try c.arena.print("{s}.{s}", .{ s.name, f.name.text });
     f.game = f.game or f.role;
     s.declares = true;

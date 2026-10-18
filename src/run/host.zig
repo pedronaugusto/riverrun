@@ -39,6 +39,9 @@ pub const Context = struct {
     flow: u8,
     /// The host's handle for whose facts each scope holds (a player, a region), by scope; 0 if the host gave none.
     owners: *const [facts.max_scopes]u64,
+    /// The thing the evaluation is for, where a section kept per thing is evaluated for one (a quest's instance);
+    /// `facts.Value.no_ref` where none is.
+    this: u64 = facts.Value.no_ref,
 
     pub fn owner(cx: Context, scope: facts.ScopeId) u64 {
         return cx.owners[scope.raw()];

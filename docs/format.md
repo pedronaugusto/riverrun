@@ -179,9 +179,16 @@ its argument in the high 24 bits.
 | 20 since_changed | how far a clock moved since a fact last changed | index into changes | → int |
 | 21 happened | a moment holds something other than its initial value | fact id, of role moment | → bool |
 | 22 keyed | a fact kept per thing's value for a key | fact id, of a fact kept per thing | key → its kind |
+| 23 this | the thing the evaluation is for, `no thing` where none is | index into kinds | → ref of that kind |
+| 24 role | a section's role: the value the evaluation was given for it, else the fact's own, for `this` where it is kept per thing | fact id | → its kind |
 
 `eq` and `ne` compare refs of one kind by handle; a ref that holds no thing equals
 nothing, as a `one of` that holds no value does.
+
+A section kept per thing (a quest that runs many times, each instance a thing) keeps
+every fact it declares within it per that kind of thing, and is evaluated for one: its
+own facts are read `this keyed` and written with `this` as their key. A fact kept per
+thing read for no thing reads as its initial value.
 
 `seen(name)` is the visits fact of what it names; as a condition, `visits 0 gt`.
 There are no jumps: `and` and `or` evaluate both sides, which is sound because

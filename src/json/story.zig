@@ -294,6 +294,8 @@ pub fn exprText(story: *const Story, arena: Allocator, r: Range) !?[]const u8 {
         const t = story.term(r.start + @as(u32, @intCast(k))); // safe: below a u32 length
         switch (t.op) {
             .fact => try out.writer.writeAll(story.fact(.fromRaw(@intCast(t.arg))).name), // safe: validated to max_facts
+            .role => try out.writer.print("role:{s}", .{story.fact(.fromRaw(@intCast(t.arg))).name}), // safe: validated to max_facts
+            .this => try out.writer.print("this:{s}", .{story.refKind(.fromRaw(@intCast(t.arg)))}), // safe: validated below the kinds' count
             .int => try out.writer.print("{d}", .{story.int(t.arg)}),
             .item => {
                 const items = story.items(.fromRaw(t.itemEnum()));

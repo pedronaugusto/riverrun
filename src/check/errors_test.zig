@@ -663,6 +663,43 @@ test "a section's own facts are named within it, and its roles never set by the 
     try std.testing.expect(o.checked.?.facts[o.checked.?.fact("stranger.who").?.raw()].role);
 }
 
+/// A quest's kind that keeps a quest tagged `repeat` per thing of its own name: one instance a thing.
+pub const repeat_kind: check.Kind = .{ .name = "quest", .declare = Quest.declare, .per = Repeat.per };
+
+const Repeat = struct {
+    fn per(s: *const syntax.ast.Section) ?syntax.ast.Name {
+        for (s.tags) |t| if (std.mem.eql(u8, t.key.text, "repeat")) return s.name;
+        return null;
+    }
+};
+
+test "a section kept per thing reads and writes its own for the one it is evaluated for" {
+    var o = try checkOne(
+        \\facts:
+        \\  lead: ref of bounty   (game)
+        \\== bounty (quest)   # repeat
+        \\facts:
+        \\  target: ref of person   (role)
+        \\  asked: set of tom, danny
+        \\  kills(person): int
+        \\= ask   when { asked has tom and target = tom and kills(tom) > 0 }
+        \\  ~ asked += danny
+        \\  ~ asked(lead) -= tom
+        \\== a
+        \\{ bounty.asked has tom } No.
+        \\{ bounty.asked(lead) has tom and bounty.ask(lead) } Yes.
+        \\-> end
+    , .{ .kinds = &.{repeat_kind} });
+    defer o.deinit();
+    try o.has(.err, 7, 3, "`kills` is in `bounty`, which keeps it per bounty: it takes no key of its own");
+    try o.has(.err, 12, 3, "`bounty.asked` is kept per bounty: read it for one, `bounty.asked(…)`");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
+    const c = o.checked.?;
+    const asked = c.facts[c.fact("bounty.asked").?.raw()];
+    try std.testing.expectEqualStrings("bounty", c.kinds[asked.key.?.ref.raw()]);
+    try std.testing.expect(c.facts[c.fact("bounty.ask").?.raw()].key != null);
+}
+
 test "a name a section declares within it never hides the story's own there" {
     var o = try checkOne(
         \\facts:

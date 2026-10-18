@@ -440,6 +440,12 @@ pub const Term = packed struct(u32) {
         happened = 21,
         /// Push a fact kept per thing's value for the key off the stack: `arg` is its fact id.
         keyed = 22,
+        /// Push the thing the evaluation is for, where a section kept per thing is evaluated for one: a ref of the
+        /// kind `arg` indexes.
+        this = 23,
+        /// Push a role of the section it is in: the value the evaluation was given for it, else the fact's own (for
+        /// the thing the evaluation is for, where it is kept per thing). `arg` is its fact id.
+        role = 24,
     };
 
     pub fn of(op: Op, arg: u24) Term {

@@ -235,6 +235,58 @@ test "the facts a registered kind declares are compiled and saved as the story's
     try std.testing.expect(t.story.section(t.section("a")).visits != null);
 }
 
+test "a section kept per thing is evaluated for one, its roles given or read as facts" {
+    const Pass = struct {
+        var when: story.Range = .empty;
+        // the quest's package compiles its stages' conditions, as cairn's pass does
+        fn conditions(_: ?*anyopaque, c: *compile.Compiler) compile.Compiler.Error!void {
+            for (c.checked.sections) |s| for (s.parts) |p| if (p.node.when) |*w| {
+                when = try compile.condition(c, w);
+            };
+        }
+    };
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var out = try testing.compiled(gpa, arena.allocator(), &.{
+        \\== bounty (quest)   # repeat
+        \\facts:
+        \\  target: ref of person   (role)
+        \\  asked: set of tom, danny
+        \\= ask   when { asked has tom and target = danny }
+        \\  ~ asked += danny
+    }, .{ .kinds = &.{@import("../check/errors_test.zig").repeat_kind} }, &.{.{ .name = "cairn", .run = Pass.conditions }});
+    defer out.deinit(gpa);
+    const s: story.Story = try .init(out.graph, .{});
+    var memory: facts.Memory = try .init(gpa, try s.schema(arena.allocator()));
+    defer memory.deinit();
+    const People = struct {
+        fn resolve(_: ?*anyopaque, _: []const u8, id: []const u8) ?u64 {
+            return if (std.mem.eql(u8, id, "danny")) 41 else 42;
+        }
+    };
+    var host: run.Host = .none;
+    defer host.deinit();
+    try host.resolveStory(gpa, &s, .{ .user = null, .resolve = People.resolve }, null);
+    const owners: [facts.max_scopes]u64 = @splat(0);
+    const asked = s.factNamed("bounty.asked").?;
+    const target = s.factNamed("bounty.target").?;
+    var cx: run.eval.Context = .{ .story = &s, .store = memory.store(), .host = &host, .call = .{ .flow = run.no_flow, .owners = &owners, .this = 7 }, .arena = arena.allocator() };
+    // the stage's effect writes the instance's own set
+    const entry = s.node(s.section(s.sectionNamed("bounty.ask").?).entry.?).step.effects.effects;
+    _ = try facts.apply(memory.store(), try run.eval.effect(cx, s.effect(entry.start)));
+    try std.testing.expect(memory.getKey(asked, 7).set_of.isSet(1));
+    try std.testing.expectEqual(@as(usize, 0), memory.getKey(asked, 8).set_of.count());
+    var both = memory.getKey(asked, 7).set_of;
+    both.set(0);
+    try memory.setKey(asked, 7, .{ .set_of = both });
+    // the role read as its fact, for this instance, then as what the evaluation is given
+    try std.testing.expect(!try run.eval.condition(cx, Pass.when));
+    try memory.setKey(target, 7, .{ .ref = 41 });
+    try std.testing.expect(try run.eval.condition(cx, Pass.when));
+    cx.roles = &.{.{ .fact = target, .value = .{ .ref = 42 } }};
+    try std.testing.expect(!try run.eval.condition(cx, Pass.when));
+}
+
 test "rules from the text: a slight lowers honor, and time alone brings it back" {
     const t = try Told.init(gpa, &.{
         \\facts (world):

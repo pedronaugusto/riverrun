@@ -49,6 +49,10 @@ pub const Kind = struct {
     /// from the section's own text before any name is resolved. What that text gets wrong is the package's to
     /// report, in its pass or its tags' judges.
     declare: ?*const fn (arena: Allocator, section: *const ast.Section) Error![]const Declared = null,
+    /// The kind of thing a section of this kind is kept per, if it is (a quest that runs many times, one instance
+    /// a thing): every fact the section declares within it is kept per such a thing, and read and written inside it
+    /// for the one it is evaluated for.
+    per: ?*const fn (section: *const ast.Section) ?ast.Name = null,
 
     pub fn builtin(k: Kind, name: []const u8) ?u16 {
         for (k.builtins, 0..) |b, i| if (std.mem.eql(u8, b.name, name)) return @intCast(i); // safe: a kind has few builtins

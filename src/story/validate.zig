@@ -473,6 +473,16 @@ fn expr(g: *const Graph, r: Range, want: Want) Error!void {
                 if (!keyed(f) or n < 1 or !stack[n - 1].eql(keyTy(f))) return error.BadExpression;
                 stack[n - 1] = tyOfFact(f);
             },
+            .this => {
+                try index(g, .kinds, arg);
+                stack[n] = .{ .kind = @backingInt(facts.Kind.ref), .enumeration = @intCast(arg) }; // safe: below the kinds' count, a u16
+                n += 1;
+            },
+            .role => {
+                try index(g, .facts, arg);
+                stack[n] = tyOfFact(g.get(.facts, arg));
+                n += 1;
+            },
             .int => {
                 try index(g, .ints, arg);
                 stack[n] = .int;

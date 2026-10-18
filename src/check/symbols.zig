@@ -169,6 +169,9 @@ pub const Section = struct {
     called: bool = false,
     /// It declares facts within it, its own or its kind's, which its own conditions name without the section's name.
     declares: bool = false,
+    /// Kept per thing of this kind (a quest that runs many times): every fact it declares within it is kept per
+    /// such a thing, and read and written inside it for the one it is evaluated for.
+    per: ?KindId = null,
 
     pub const Kind = union(enum) {
         scene,
@@ -260,6 +263,10 @@ pub const Ref = union(enum) {
     happened: FactId,
     /// `opinion(margaret)`: a fact kept per thing, read for one key.
     keyed: FactId,
+    /// A fact of the section kept per thing it is read or written in, for the thing the section is evaluated for.
+    own: FactId,
+    /// A role of the section it is read in: what the section was given.
+    role: FactId,
     /// A builtin of the section's registered kind: which kind of `check.Options.kinds`, which builtin.
     builtin: BuiltinRef,
 };

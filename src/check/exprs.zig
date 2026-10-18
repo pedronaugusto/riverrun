@@ -58,6 +58,12 @@ fn lookup(c: *const Checker, scope: Scope, n: []const u8) ?sym.Named {
     return c.valueNamed(scope.module, n);
 }
 
+// Whether `id` is a fact the section `scope` is in declares within it.
+fn isOwn(c: *const Checker, scope: Scope, id: sym.FactId) bool {
+    const by = c.facts.items[id.raw()].by orelse return false;
+    return by.eql(scope.section) and c.sections.items[scope.section.raw()].declares;
+}
+
 fn isVisits(c: *const Checker, e: *const ast.Expr) bool {
     const typed = c.exprs.get(e) orelse return false;
     const ref = typed.ref orelse return false;
@@ -115,7 +121,10 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
     }
     if (lookup(c, scope, n)) |named| switch (named) {
         .fact => |id| {
-            if (c.facts.items[id.raw()].key) |k| {
+            const f = c.facts.items[id.raw()];
+            if (f.role and isOwn(c, scope, id)) return record(c, e, f.type, .{ .role = id });
+            if (f.key) |k| {
+                if (isOwn(c, scope, id) and c.sections.items[scope.section.raw()].per != null) return record(c, e, f.type, .{ .own = id });
                 try c.err(e.span, "`{s}` is kept per {s}: read it for one, `{s}(…)`", .{ n, try keyWord(c, k), n });
                 return null;
             }
@@ -257,6 +266,11 @@ fn keyFits(c: *Checker, scope: Scope, fact: *const ast.Name, key: ?*const ast.Ex
     const f = c.facts.items[id.raw()];
     if (f.key) |k| {
         const given = key orelse {
+            // a fact of the section kept per thing, written for the thing the section is evaluated for
+            if (isOwn(c, scope, id) and c.sections.items[scope.section.raw()].per != null) {
+                try c.names.put(c.arena, fact, .{ .own = id });
+                return true;
+            }
             try c.err(fact.span, "`{s}` is kept per {s}: write it for one, `{s}(…)`", .{ f.name, try keyWord(c, k), f.name });
             return false;
         };

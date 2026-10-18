@@ -444,14 +444,14 @@ pub const Builder = struct {
                 .not => 1,
                 .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => 2,
                 .query => if (t.arg < b.externs.items.len) b.externs.items[t.arg].params.len else return 0,
-                .builtin, .since_changed, .happened => 0,
+                .builtin, .since_changed, .happened, .this, .role => 0,
                 .keyed => 1,
             };
             if (n < pops or n - pops == stack.len) return 0;
             const top = n - pops;
             stack[top] = switch (t.op) {
-                .fact => 1,
-                .int, .item, .text, .true, .false, .thing => 0,
+                .fact, .role => 1,
+                .int, .item, .text, .true, .false, .thing, .this => 0,
                 .not => stack[top],
                 .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .query, .builtin, .since_changed, .happened => 1,
                 .keyed => 1,

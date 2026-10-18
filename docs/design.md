@@ -70,7 +70,10 @@ DAD: Go.
   package registers with the compiler, such as a quest package's `(quest)`. Under its heading a section may declare
   facts of its own, `facts:` or `facts (scope):`, named within it: `asked` inside, `the_stranger.asked` to the rest
   of the story. Among them `(role)` marks one of the things the section is about, given to it when it starts (a
-  quest's stranger), which the story reads and never sets.
+  quest's stranger), which the story reads and never sets. A registered kind may keep its sections per thing
+  (`Kind.per`: a quest that runs many times, one instance a thing): every fact such a section declares within it is
+  kept per that kind of thing, and read and written inside it for the one it is evaluated for, so `asked` there is
+  this instance's, and `bounty.asked(lead)` names another's.
 - **Lines:** `SPEAKER: text`, or narration with no speaker. The text is the whole line, never assembled from pieces at
   run time; it holds:
   - `{fact}`, a value;
@@ -287,8 +290,9 @@ saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapsho
   of functions, reflected by field name into a table indexed by extern id, and a host in another language binds a
   function pointer and its data per name through `Binder`. Every extern must be bound with its signature, or the
   bind fails naming what is unbound or mismatched; at run time a call is an array index.
-- **Calls carry their context:** the flow that asked, and whose facts each scope holds (`setOwner`: a player, a
-  region), so a query on a server knows whose inventory it counts. An emitted action carries the same context.
+- **Calls carry their context:** the flow that asked, whose facts each scope holds (`setOwner`: a player, a
+  region), so a query on a server knows whose inventory it counts, and the thing a section kept per thing is
+  evaluated for (a quest's instance). An evaluation may be given its section's roles, which its terms then read. An emitted action carries the same context.
 - **Things the host owns are resolved once.** A story names them by stable text ids of a kind (`wolf_pelt`, a
   `ref of item_kind`); the host resolves each to its own 64-bit handle at load, refusing an id it does not know, and
   the evaluator only ever sees handles.
