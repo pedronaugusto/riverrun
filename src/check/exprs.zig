@@ -21,6 +21,9 @@ pub const Scope = struct {
     module: sym.ModuleId,
     section: sym.SectionId,
     part: ?u16,
+    /// A condition watched as facts change, a rule's or a registered kind's part's `when`: what it asks it asks of
+    /// queries that declare what they read.
+    watched: bool = false,
 };
 
 /// A condition: true or false, or a visit count.
@@ -155,8 +158,9 @@ fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) E
     if (c.kindOfSection(scope.section)) |kind| if (kind.builtin(call.name.text)) |b| return builtin(c, scope, e, call, kind, b);
     const id = try externOf(c, scope, call) orelse return null;
     const ext = c.externs.items[id.raw()];
-    if (reacts(c, scope) and ext.asks() and ext.reads == null) {
-        try c.err(call.name.span, "`{s}` is asked by a rule, which wakes only when what it reads changes: declare what it reads, `(reads …)`", .{ext.name});
+    if (scope.watched and ext.asks() and ext.reads == null) {
+        const by = if (c.sections.items[scope.section.raw()].kind == .rules) "a rule" else "a watched condition";
+        try c.err(call.name.span, "`{s}` is asked by {s}, which wakes only when what it reads changes: declare what it reads, `(reads …)`", .{ ext.name, by });
         return null;
     }
     if (ext.action) {

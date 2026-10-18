@@ -46,9 +46,9 @@ pub const Kind = struct {
     /// Functions its sections' conditions may call, which the package evaluates: `since(stage, fact)`.
     builtins: []const Builtin = &.{},
     /// The facts a section of this kind brings into the story (a calendar's `weekday`, a quest's stages), read
-    /// from the section's own text before any name is resolved. What that text gets wrong is the package's to
-    /// report, in its pass or its tags' judges.
-    declare: ?*const fn (arena: Allocator, section: *const ast.Section) Error![]const Declared = null,
+    /// from the section's own text, and the story's (`files`: what other sections a quest inherits from), before
+    /// any name is resolved. What that text gets wrong is the package's to report, in its pass or its tags' judges.
+    declare: ?*const fn (arena: Allocator, section: *const ast.Section, files: []const ast.File) Error![]const Declared = null,
     /// The kind of thing a section of this kind is kept per, if it is (a quest that runs many times, one instance
     /// a thing): every fact the section declares within it is kept per such a thing, and read and written inside it
     /// for the one it is evaluated for.

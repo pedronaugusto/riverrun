@@ -25,7 +25,7 @@ fn isStock(s: check.symbols.Section) bool {
 }
 
 // Each ware is an int fact the game keeps.
-fn declare(arena: std.mem.Allocator, s: *const ast.Section) error{OutOfMemory}![]const check.Declared {
+fn declare(arena: std.mem.Allocator, s: *const ast.Section, _: []const ast.File) error{OutOfMemory}![]const check.Declared {
     const out = try arena.alloc(check.Declared, s.subsections.len);
     for (out, s.subsections) |*d, p| d.* = .{ .scope = "world", .fact = .{ .name = p.name, .type = .int, .game = true } };
     return out;

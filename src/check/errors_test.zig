@@ -567,7 +567,7 @@ test "a package's pass reports inside the check, where the story is written" {
 pub const calendar_kind: check.Kind = .{ .name = "calendar", .declare = Calendar.declare };
 
 const Calendar = struct {
-    fn declare(arena: std.mem.Allocator, s: *const syntax.ast.Section) error{OutOfMemory}![]const check.Declared {
+    fn declare(arena: std.mem.Allocator, s: *const syntax.ast.Section, _: []const syntax.ast.File) error{OutOfMemory}![]const check.Declared {
         var out: std.ArrayList(check.Declared) = .empty;
         for (s.subsections) |p| {
             const place = tagOf(p.tags, "place") orelse continue;
@@ -589,7 +589,7 @@ const Calendar = struct {
 pub const quest_kind: check.Kind = .{ .name = "quest", .declare = Quest.declare };
 
 const Quest = struct {
-    fn declare(arena: std.mem.Allocator, s: *const syntax.ast.Section) error{OutOfMemory}![]const check.Declared {
+    fn declare(arena: std.mem.Allocator, s: *const syntax.ast.Section, _: []const syntax.ast.File) error{OutOfMemory}![]const check.Declared {
         const out = try arena.alloc(check.Declared, s.subsections.len);
         for (out, s.subsections) |*d, p| d.* = .{ .scope = "quests", .fact = .{ .name = p.name, .type = .boolean, .game = true }, .within = true };
         return out;
@@ -770,6 +770,22 @@ test "rules: each a condition and its effects, reached by nothing, their queries
     try o.has(.err, 13, 19, "`gold` is asked by a rule, which wakes only when what it reads changes: declare what it reads, `(reads …)`");
     try o.has(.err, 15, 3, "the rule `loose` needs its condition: `= loose when { … }`, its effects under it");
     try o.has(.err, 18, 3, "a rule's body is its effects, `~ …`: a rule says nothing and goes nowhere");
+}
+
+test "only a watched condition asks queries that must declare what they read" {
+    var o = try checkOne(
+        \\extern:
+        \\  name(who: int) -> text
+        \\  gold() -> int
+        \\facts:
+        \\  rich: bool
+        \\== pelts (quest)
+        \\= asked   when { gold() > 3 }
+        \\  Pelts for {name(1)}.
+        \\  ~ rich = gold() > 10
+    , .{ .kinds = &.{.{ .name = "quest" }} });
+    defer o.deinit();
+    try o.only(.err, 7, 18, "`gold` is asked by a watched condition, which wakes only when what it reads changes: declare what it reads, `(reads …)`");
 }
 
 test "a moment is seen only by rules and quests, and happened asks of moments alone" {

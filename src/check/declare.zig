@@ -122,7 +122,7 @@ fn brought(c: *Checker, id: sym.SectionId) Error!void {
     };
     for (s.node.facts) |block| for (block.entries) |*e| try within(c, id, if (block.scope) |sc| sc.text else null, e.*);
     const declare = (kind orelse return).declare orelse return;
-    for (try declare(c.arena, s.node)) |d| {
+    for (try declare(c.arena, s.node, c.files)) |d| {
         if (d.within) {
             try within(c, id, d.scope, d.fact);
         } else try fact(c, s.module, d.scope, &d.fact, id);

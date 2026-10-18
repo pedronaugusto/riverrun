@@ -118,8 +118,9 @@ DAD: Go.
   rescaled); it needs no condition, and is never watched.
   `since_changed(fact, clock)` reads how far a `(clock)` fact has moved since `fact` last changed, and
   `happened(moment)` whether a moment happened, in rules and in what a package watches; a condition reading a fact
-  kept per thing by a key written as a constant is filed under that key alone; a query a rule asks must
-  declare its stamp, so the rule wakes when its answer may change.
+  kept per thing by a key written as a constant is filed under that key alone; a query a watched condition asks
+  (a rule's, a quest's stage's) must declare its stamp, so the condition wakes when its answer may change, while
+  one asked in words or effects is asked when they are said.
 - **Tags:** `# key value · key value` at the end of a line, a choice or a heading. `id` is riverrun's: a line's
   stable id; so is `gender` on a cast entry. Every other key is the host's or a package's, typed by its schema; a
   key the schema marks `leads` carries the flow on into the host's mechanic, a value it types as text (a quest's
@@ -227,8 +228,8 @@ values. The compiled story carries each builtin call for the package to answer, 
 named, versioned **block** the package owns beside the graph. A query's stamp and a `(clock)` fact are carried too,
 so a package can wake a condition only when what it reads moves.
 
-A kind's sections may bring facts into the story (`Kind.declare`): read from the section's own text before any
-name is resolved, each is a `facts (scope):` entry as the reader would have made it (`check.Declared`), entered in
+A kind's sections may bring facts into the story (`Kind.declare`): read from the section's own text, and the
+story's where a section draws on others (a quest on the shared rules it inherits), before any name is resolved, each is a `facts (scope):` entry as the reader would have made it (`check.Declared`), entered in
 the index after the story's own declarations, so it is typed, scoped, read by conditions, compiled and saved in
 snapshots like any other, and a name declared twice is reported with both places. A calendar keeps `weekday` and
 `slot`, which the story then reads and never declares; a quest's stages are declared within it, `the_stranger.named`

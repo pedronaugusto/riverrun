@@ -35,6 +35,8 @@ pub const Language = @import("run/eval.zig").Language;
 pub const Role = @import("run/eval.zig").Role;
 /// The evaluator, for what watches conditions outside a session (riverrun's rules, a package's).
 pub const eval = @import("run/eval.zig");
+/// A line's words filled in a context of one's own: a package's lines (a quest's journal) said for its instance.
+pub const text = @import("run/text.zig");
 pub const EvalError = eval.Error;
 /// The flow a call's context names when no flow made it: a rule's, a watched condition's.
 pub const no_flow = host.no_flow;

@@ -46,7 +46,10 @@ fn section(c: *Checker, id: sym.SectionId) Error!void {
         };
         try tags.check(c, s.module, id, unit.scope.part, p.node.tags, .part);
         if (p.node.when) |*w| {
-            try exprs.condition(c, unit.scope, w);
+            // a rule's and a registered kind's conditions are watched; a pool's candidates are asked when called
+            var watched = unit.scope;
+            watched.watched = s.kind == .rules or s.kind == .other;
+            try exprs.condition(c, watched, w);
             if (never(c, w)) {
                 if (s.kind == .rules) {
                     try c.warn(exprs.start(w), "the rule `{s}` can never fire: its condition can never hold", .{p.name});
