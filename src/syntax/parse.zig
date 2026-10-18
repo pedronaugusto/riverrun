@@ -392,6 +392,7 @@ const Reader = struct {
         };
         const inner = std.mem.trim(u8, t[1..close], " ");
         if (std.mem.eql(u8, inner, "pool")) return .{ .pool = 1 };
+        if (std.mem.eql(u8, inner, "rules")) return .rules;
         if (std.mem.startsWith(u8, inner, "pool ")) {
             const n = std.fmt.parseInt(u16, std.mem.trim(u8, inner[5..], " "), 10) catch {
                 try r.report(l, "a pool gives a number of lines: `(pool 2)`", .{});

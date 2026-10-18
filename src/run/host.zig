@@ -31,8 +31,11 @@ pub const QueryError = error{
 };
 
 /// Whose facts a call is about, and where it was asked.
+/// The flow a context names when no flow made the call: a rule's, a watched condition's.
+pub const no_flow: u8 = std.math.maxInt(u8);
+
 pub const Context = struct {
-    /// The flow the call came from, by its place in the session.
+    /// The flow the call came from, by its place in the session, or `no_flow`.
     flow: u8,
     /// The host's handle for whose facts each scope holds (a player, a region), by scope; 0 if the host gave none.
     owners: *const [facts.max_scopes]u64,

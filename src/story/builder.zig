@@ -102,6 +102,7 @@ pub const Builder = struct {
     builtin_args: std.ArrayList(u32) = .empty,
     blocks: std.ArrayList(format.Block) = .empty,
     block_bytes: std.ArrayList(u8) = .empty,
+    changes: std.ArrayList(format.Change) = .empty,
     lines: std.ArrayList(strings.Line) = .empty,
     reserved: ScopeId = .fromRaw(0),
     seed: FactId = .fromRaw(0),
@@ -121,7 +122,7 @@ pub const Builder = struct {
         const gpa = b.gpa;
         b.interned.deinit(gpa);
         b.fact_names.deinit(gpa);
-        inline for (.{ "names", "scopes", "enums", "items", "facts", "cast", "externs", "params", "literals", "ints", "terms", "sections", "candidates", "nodes", "defined", "choices", "texts", "slots", "effects", "tags", "tag_values", "kinds", "things", "builtins", "builtin_args", "blocks", "block_bytes", "lines" }) |field| {
+        inline for (.{ "names", "scopes", "enums", "items", "facts", "cast", "externs", "params", "literals", "ints", "terms", "sections", "candidates", "nodes", "defined", "choices", "texts", "slots", "effects", "tags", "tag_values", "kinds", "things", "builtins", "builtin_args", "blocks", "block_bytes", "changes", "lines" }) |field| {
             @field(b, field).deinit(gpa);
         }
         b.arena.deinit();
@@ -283,6 +284,20 @@ pub const Builder = struct {
         return arg(b.builtins.items.len - 1);
     }
 
+    /// What `since_changed(fact, clock)` reads, for `Term.of(.since_changed, i)`: one per fact and clock, with
+    /// the state that keeps the clock's value at the fact's last change, `state:changed.<fact>@<clock>`.
+    pub fn sinceChanged(b: *Builder, fact_id: FactId, clock: FactId) Error!u24 {
+        for (b.changes.items, 0..) |c, i| if (c.fact == fact_id.raw() and c.clock == clock.raw()) return arg(i);
+        const names = b.names.items;
+        const f = b.facts.items[fact_id.raw()].name;
+        const k = b.facts.items[clock.raw()].name;
+        var buf: [facts.max_name]u8 = undefined;
+        const what = std.mem.print(&buf, "changed.{s}@{s}", .{ names[f.offset..][0..f.len], names[k.offset..][0..k.len] }) catch return error.NameTooLong;
+        const at = try b.state(what);
+        try b.changes.append(b.gpa, .{ .fact = fact_id.raw(), .clock = clock.raw(), .at = at.raw() });
+        return arg(b.changes.items.len - 1);
+    }
+
     /// A block a package owns, carried beside the graph. One name, one block.
     pub fn block(b: *Builder, name: []const u8, version: u32, data: []const u8) Error!void {
         const n = try b.declName(name);
@@ -368,10 +383,11 @@ pub const Builder = struct {
         b.sections.items[s.raw()].entry = n.raw();
     }
 
-    /// A pool's candidate. A pool's candidates are added one after another, with no other pool's between.
+    /// A pool's candidate, or a rule of a rules section, whose `seen` is then the state that keeps whether its
+    /// condition held when last evaluated. A section's candidates are added one after another, with no other's between.
     pub fn candidate(b: *Builder, pool: model.SectionId, c: CandidateIn) Error!void {
         const s = &b.sections.items[pool.raw()];
-        if (s.kind != @backingInt(model.Section.Kind.pool)) return error.NotAPool;
+        if (s.kind != @backingInt(model.Section.Kind.pool) and s.kind != @backingInt(model.Section.Kind.rules)) return error.NotAPool;
         if (s.candidates.len == 0) s.candidates.start = try count(b.candidates.items.len);
         if (s.candidates.end() != b.candidates.items.len) return error.CandidatesNotContiguous;
         if (c.when.end() > b.terms.items.len) return error.OutOfRange;
@@ -401,7 +417,7 @@ pub const Builder = struct {
                 .not => 1,
                 .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => 2,
                 .query => if (t.arg < b.externs.items.len) b.externs.items[t.arg].params.len else return 0,
-                .builtin => 0,
+                .builtin, .since_changed => 0,
             };
             if (n < pops or n - pops == stack.len) return 0;
             const top = n - pops;
@@ -409,7 +425,7 @@ pub const Builder = struct {
                 .fact => 1,
                 .int, .item, .text, .true, .false, .thing => 0,
                 .not => stack[top],
-                .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .query, .builtin => 1,
+                .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .query, .builtin, .since_changed => 1,
                 .@"and" => stack[top] +| stack[top + 1],
                 .@"or" => @min(stack[top], stack[top + 1]),
             };
@@ -465,7 +481,8 @@ pub const Builder = struct {
     pub fn bytes(b: *const Builder, gpa: std.mem.Allocator) Error![]u8 {
         for (b.defined.items) |d| if (!d) return error.UndefinedNode;
         for (b.sections.items) |s| {
-            if (s.kind != @backingInt(model.Section.Kind.pool) and s.entry == format.none) return error.UndefinedNode;
+            const listed = s.kind == @backingInt(model.Section.Kind.pool) or s.kind == @backingInt(model.Section.Kind.rules);
+            if (!listed and s.entry == format.none) return error.UndefinedNode;
         }
         const meta = [_]format.Meta{.{ .seed = b.seed.raw(), .turn = b.turn.raw(), .reserved_scope = b.reserved.raw() }};
         var parts: [format.table_count]tables.Part = undefined;

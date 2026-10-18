@@ -542,3 +542,33 @@ test "a registered kind adds its tags and builtins to its own sections, and nowh
     try o.has(.err, 10, 3, "nothing is called `since`: no query or action");
     try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
 }
+
+test "rules: each a condition and its effects, reached by nothing, their queries stamped" {
+    var o = try checkOne(
+        \\facts:
+        \\  honor:   int
+        \\  seconds: int    (clock)
+        \\  day:     int    (game)
+        \\extern:
+        \\  gold() -> int
+        \\== a
+        \\{ since_changed(honor, seconds) > 3 } -> drift
+        \\-> honor_rules
+        \\== honor_rules (rules)
+        \\= drift    when { since_changed(honor, day) > 10 }
+        \\  ~ honor += 1
+        \\= rich     when { gold() > 100 }
+        \\  ~ honor += 1
+        \\= loose
+        \\  ~ honor -= 1
+        \\= loud     when { honor < 0 }
+        \\  Honor is low.
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 8, 3, "`since_changed` is kept by what watches conditions: a rule or a quest, not `a`");
+    try o.has(.err, 9, 4, "`honor_rules` holds rules: they fire when their conditions become true, and nothing goes to them");
+    try o.has(.err, 11, 40, "`day` is not a clock: since_changed counts on a fact declared `(clock)`");
+    try o.has(.err, 13, 19, "`gold` is asked by a rule, which wakes only when what it reads changes: declare what it reads, `(reads …)`");
+    try o.has(.err, 15, 3, "the rule `loose` needs its condition: `= loose when { … }`, its effects under it");
+    try o.has(.err, 18, 3, "a rule's body is its effects, `~ …`: a rule says nothing and goes nowhere");
+}

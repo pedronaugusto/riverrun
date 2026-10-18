@@ -92,6 +92,7 @@ Directory entries are in the fixed order of the tables below.
 | 24 | builtin_args | u32 | 4 |
 | 25 | blocks | Block | 24 |
 | 26 | block_bytes | u8 | 1 |
+| 27 | changes | Change | 8 |
 
 ### Declarations
 
@@ -168,6 +169,7 @@ its argument in the high 24 bits.
 | 14 lt, 15 le, 16 gt, 17 ge | ints compared | 0 | int int → bool |
 | 18 thing | push a thing's handle | index into things | → ref of its kind |
 | 19 builtin | push a builtin's answer | index into builtins | → its kind |
+| 20 since_changed | how far a clock moved since a fact last changed | index into changes | → int |
 
 `eq` and `ne` compare refs of one kind by handle; a ref that holds no thing equals
 nothing, as a `one of` that holds no value does.
@@ -190,6 +192,11 @@ u32 naming something of the story: a section by its index, a part by the index o
 section it compiles to (a registered kind's parts are sections, `section.part`), or a
 fact by its id; which, the builtin's declaration says, and its package reads them so.
 
+**Change**: `fact: u16`, `clock: u16` (a fact of role `clock`), `at: u16` (an int of role `state` in the reserved
+scope, `state:changed.<fact>@<clock>`), 2 bytes padding. What `since_changed(fact, clock)` reads: the clock's value
+less `at`, which whatever evaluates rules writes with the clock's value each time `fact` changes. Before the fact
+first changes, `at` is 0.
+
 **Block**: `name: Str`, `version: u32`, 4 bytes padding, `bytes: Range` into
 block_bytes. A package's own data beside the graph (cairn's stages and dependency
 index), one block per name. riverrun checks only that the bytes lie in the table; the
@@ -208,7 +215,7 @@ package owns their layout, validates them before use, and versions them itself.
 | entry | u32 | first node; `none` only for a pool |
 | pick | u16 | a pool gives this many candidates at once, at least 1 |
 | visits | u16 | int fact |
-| kind | u8 | 0 scene, 1 pool, 2 other |
+| kind | u8 | 0 scene, 1 pool, 2 other, 3 rules |
 | padding | 3 bytes | |
 
 **Candidate**: `name: Str`, `when: Range` (a condition; empty matches always), `tags:
@@ -216,6 +223,11 @@ Range`, `entry: u32`, `specificity: u16`, `visits: u16`, `seen: u16`, 2 bytes pa
 `specificity` counts the condition's criteria: each comparison, fact or query
 counts one, `and` adds, `or` takes the lesser. Of the candidates that match, the most
 specific win, then the least recently seen (`seen` holds the turn each was last given).
+
+A **rules** section's candidates are its rules: `entry` is an effects step (or an end, for a rule with no
+effects), `pick` is 1, the section's `entry` is `none`, and `seen` is the int of role `state` that keeps whether the
+rule's condition held when last evaluated (`state:rule.<section>.<rule>`, 0 or 1). A rule fires when that turns
+from 0 to 1; `visits` counts its firings.
 
 ### Nodes: the steps
 
@@ -361,7 +373,8 @@ Before it trusts a graph, a reader checks:
    is named `story`.
 7. Every term range typed for its place, as in *Terms*, the stack never past 64.
 8. Every node's, effect's and slot's fields as their kind says, unused ones zero.
-9. A scene's entry present; a pool's pick at least one.
+9. A scene's entry present; a pool's pick at least one; a rules section's pick one and its entry `none`.
+10. Every change's clock a fact of role `clock`, and its `at` an int of role `state` in the reserved scope.
 
 A string table is checked for its header, sorted unique nonzero ids, entries
 parallel to them, names in its bytes, and every template's syntax; whether it serves

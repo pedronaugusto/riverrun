@@ -73,7 +73,8 @@ DAD: Go.
 - **Conditions:** `{ condition } line` for one line; `{ condition }` above an indented block, with `{ else }` after
   it. Inline conditions are for words, blocks for whole lines.
 - **Expressions:** `=`, `!=`, `<`, `<=`, `>`, `>=` on ints, `has` and `hasnt` on sets, `and`, `or`, `not`, queries,
-  and `seen(name)`, the visits of a section, part or label (an int; true when above zero). No arithmetic and nothing
+  `seen(name)`, the visits of a section, part or label (an int; true when above zero), and in rules
+  `since_changed(fact, clock)`. No arithmetic and nothing
   that loops: the host computes, through its queries.
 - **Effects:** `~ fact = value`, `~ set += item`, `~ set -= item`, `~ int += n` and `~ int -= n` (a number or an int
   constant, never an expression: approval, bonds, reputation), `~ action(args)` and `~ fact = action(args)`.
@@ -82,6 +83,15 @@ DAD: Go.
 - **Pools:** a `(pool)` section's candidates are parts with `when { condition }`. riverrun picks the most specific
   candidate that holds (the most comparisons joined by `and`), the least recently seen among equals, with a seed
   that lives in the facts. `(pool N)` gives up to N.
+- **Rules:** a `(rules)` section's parts are rules, each `= name when { condition }` with effects under it and
+  nothing else. A rule fires when its condition becomes true: false when last evaluated, true now; it does not fire
+  again until its condition has been false and become true again. Each time a rules section is evaluated it fires
+  at most one rule, the first in the order written whose condition just became true; the others that became true
+  with it wait to become true again. Nothing goes to a rules section and nothing reaches it by flow: what its rules
+  read reaches it. A puzzle with an order, honor that drifts back, a reaction to a crime, a threshold a faction
+  acts on: rules over facts, and a state machine is an enumeration fact and the rules that move it.
+  `since_changed(fact, clock)` reads how far a `(clock)` fact has moved since `fact` last changed, in rules and in
+  what a package watches; a query a rule asks must declare its stamp, so the rule wakes when its answer may change.
 - **Tags:** `# key value · key value` at the end of a line, a choice or a heading. `id` is riverrun's: a line's
   stable id. Every other key is the host's, typed by its schema; a key the schema marks `leads` carries the flow on
   into the host's mechanic.
@@ -240,6 +250,36 @@ Built.
   proves every section and choice reachable, no dead end and no line that can never be said) and `compile`. Hosts
   reload `.river` files live through lookout.
 
+## Reacting to facts
+
+What happens when facts change, rather than when a flow is told, is the `react` layer's.
+
+- **`Watch` evaluates a condition only when what it reads may have changed.** A condition is filed under every
+  fact it reads, under the stamp of every query it asks (by the query's keyed arguments where they are constants in
+  the condition, else by the stamp's family), and, where it compares a `(clock)` fact or a `since_changed` with a
+  number, under the clock's value where that comparison can next flip, in a heap per clock. A step takes what
+  changed (the store's stamps, the stamps the host bumped, the clocks' moves) and evaluates what was filed there,
+  in the order the conditions were added, each once: a clock ticking wakes only the comparisons whose moment came,
+  and one moving back, a restored moment, wakes every comparison with it.
+- **A step reports what it evaluated and what each holds now;** a client keeps what each held before, as rules keep
+  it in the facts, so the report survives a save. Nothing allocates in a step once the conditions are added; a
+  budget evaluates that many and leaves the rest first in line, so it changes when, never what.
+- **`Rules` fires a story's rules sections over a `Watch`.** What each rule last held is kept in the reserved scope
+  (`rule.<section>.<rule>`), so a restored save fires nothing twice; a rule true when the story first starts fires
+  at the first step. A step is one round and returns the rules that fired with their effects, emitted; the host
+  applies them and steps again, and `settle` does the rounds for a host that applies at once, bounded by a named
+  error, `NoFixedPoint`, after 64.
+- **A package's own conditions** (cairn's quests) are added to a `Watch` with the facts its builtins read, and given
+  the package's meaning on top: one evaluator for every reaction.
+
+```
+Watch.init(gpa, story, store, host, owners, options) · add(terms, user, also) → cond · bump(family, keyed)
+step() → evaluated · holds(cond) · markAll()
+Rules.init(gpa, story, store, host, owners, options) · step() → fired · settle(user, apply) → rounds
+```
+
+Built.
+
 ## The code, by layer
 
 Each layer is a folder beside its root file, and imports only those before it:
@@ -251,11 +291,12 @@ check     resolve and check the tree against a host's schema → a checked story
 story     the compiled format: builder, writer, validated reader               facts · built
 compile   a checked story → the format, file by file, then linked              check, story · built
 run       the executor over the format and a store                             story, facts · built
+react     conditions watched as facts change, and rules fired over them        run, story, facts · built
 ffi       the C ABI over run                                                   run
 tools     the program, on ensign                                               all
 ```
 
-The layers are two modules. `riverrun`, the runtime, is `facts`, `story` and `run` on std and aegis alone;
+The layers are two modules. `riverrun`, the runtime, is `facts`, `story`, `run` and `react` on std and aegis alone;
 `riverrun-compiler` is `syntax`, `check`, `compile` and the JSON forms, standing on the runtime and adding
 xenoglyph (for widths) and strand (for JSON), both lazy dependencies. A game that only tells stories imports
 `riverrun` and never fetches the compiler's dependencies; its build runs the compiler through `addStory`, and a tool

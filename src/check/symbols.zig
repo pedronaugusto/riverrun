@@ -138,6 +138,8 @@ pub const Extern = struct {
 /// A query's stamp: its family, and the parameters that key it.
 pub const Stamp = struct { family: []const u8, keys: []const u16 };
 
+pub const SinceChanged = struct { fact: FactId, clock: FactId };
+
 /// One of the host's things, named in the story by its stable id: `wolf_pelt`.
 pub const Thing = struct { kind: KindId, id: []const u8 };
 
@@ -160,6 +162,8 @@ pub const Section = struct {
         scene,
         /// Picks this many of its candidates.
         pool: u16,
+        /// Rules: each part fires its effects when its condition becomes true.
+        rules,
         /// A kind the host registers: `quest`.
         other: []const u8,
     };
@@ -215,6 +219,8 @@ pub const Ref = union(enum) {
     visits: VisitId,
     target: Target,
     thing: Thing,
+    /// `since_changed(fact, clock)`: how far the clock has moved since the fact last changed.
+    since_changed: SinceChanged,
     /// A builtin of the section's registered kind: which kind of `check.Options.kinds`, which builtin.
     builtin: BuiltinRef,
 };

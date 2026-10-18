@@ -148,6 +148,12 @@ pub const Story = struct {
         return s.str(s.g.get(.kinds, id.raw()));
     }
 
+    /// What the `i`th `since_changed` reads.
+    pub fn change(s: *const Story, i: u32) model.Change {
+        const c = s.g.get(.changes, i);
+        return .{ .fact = .fromRaw(c.fact), .clock = .fromRaw(c.clock), .at = .fromRaw(c.at) };
+    }
+
     /// The `i`th thing the story names: what a host resolves to its handle at load.
     pub fn thing(s: *const Story, i: u32) model.Thing {
         const t = s.g.get(.things, i);

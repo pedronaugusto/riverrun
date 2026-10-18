@@ -30,6 +30,11 @@ pub const RefName = host.RefName;
 pub const Resolver = host.Resolver;
 pub const RefLookup = host.RefLookup;
 pub const Builtins = @import("run/eval.zig").Builtins;
+/// The evaluator, for what watches conditions outside a session (riverrun's rules, a package's).
+pub const eval = @import("run/eval.zig");
+pub const EvalError = eval.Error;
+/// The flow a call's context names when no flow made it: a rule's, a watched condition's.
+pub const no_flow = host.no_flow;
 
 pub const max_flows = Session_.max_flows;
 pub const max_call_depth = Session_.max_call_depth;

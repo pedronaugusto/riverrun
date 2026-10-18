@@ -70,6 +70,18 @@ pub fn own(arena: std.mem.Allocator, v: Value) error{OutOfMemory}!Value {
     return if (v == .text) .{ .text = try arena.dupe(u8, v.text) } else v;
 }
 
+/// A compiled effect as the host receives it, its values worked out now; an action's arguments are copied into
+/// `cx.arena`.
+pub fn effect(cx: Context, e: story.Effect) Error!facts.Effect {
+    return switch (e) {
+        .set => |x| .{ .set = .{ .fact = x.fact, .value = try own(cx.arena, try value(cx, x.value)) } },
+        .add => |x| .{ .add = .{ .fact = x.fact, .item = x.item } },
+        .change => |x| .{ .change = .{ .fact = x.fact, .by = (try value(cx, x.by)).int } },
+        .remove => |x| .{ .remove = .{ .fact = x.fact, .item = x.item } },
+        .call => |x| .{ .call = .{ .action = x.action, .args = try arguments(cx, x.args), .result = x.result } },
+    };
+}
+
 /// The enumeration of the value `r` leaves, for writing a `one of` or a set by name.
 pub fn enumeration(s: *const story.Story, r: Range) ?story.EnumId {
     if (r.len == 0) return null;
@@ -97,6 +109,10 @@ fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
                 const v = try b.call(b.user, cx.story, t.arg, cx.call);
                 if (@as(facts.Kind, v) != cx.story.builtin(t.arg).returns) return error.BuiltinFailed;
                 push(stack, &n, v);
+            },
+            .since_changed => {
+                const w = cx.story.change(t.arg);
+                push(stack, &n, .{ .int = cx.store.get(w.clock).int -| cx.store.get(w.at).int });
             },
             .true => push(stack, &n, .{ .boolean = true }),
             .false => push(stack, &n, .{ .boolean = false }),

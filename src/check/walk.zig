@@ -47,8 +47,15 @@ fn section(c: *Checker, id: sym.SectionId) Error!void {
         try tags.check(c, s.module, id, p.node.tags, .part);
         if (p.node.when) |*w| {
             try exprs.condition(c, unit.scope, w);
-            if (never(c, w)) try c.warn(exprs.start(w), "the candidate `{s}` can never be picked: its condition can never hold", .{p.name});
+            if (never(c, w)) {
+                if (s.kind == .rules) {
+                    try c.warn(exprs.start(w), "the rule `{s}` can never fire: its condition can never hold", .{p.name});
+                } else try c.warn(exprs.start(w), "the candidate `{s}` can never be picked: its condition can never hold", .{p.name});
+            }
         }
+        if (s.kind == .rules) for (p.node.body) |st| if (st.kind != .effect) {
+            try c.err(st.span, "a rule's body is its effects, `~ …`: a rule says nothing and goes nowhere", .{});
+        };
         try body(c, &unit, p.node.body);
     }
 }

@@ -78,6 +78,9 @@ pub const BuiltinCall = struct {
     returns: facts.Kind,
 };
 
+/// What `since_changed(fact, clock)` reads, and the state that keeps the clock's value at the fact's last change.
+pub const Change = struct { fact: FactId, clock: FactId, at: FactId };
+
 /// A block a package owns, as it wrote it.
 pub const Block = struct { version: u32, bytes: []const u8 };
 

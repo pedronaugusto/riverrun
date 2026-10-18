@@ -27,6 +27,22 @@ pub fn all(g: *const Graph) Error!void {
     try effects(g);
     try tagTables(g);
     try extensions(g);
+    try watches(g);
+}
+
+// What `since_changed` reads: a fact, a clock, and an int of the reserved scope that keeps the clock's value.
+fn watches(g: *const Graph) Error!void {
+    const reserved_scope = g.get(.meta, 0).reserved_scope;
+    for (0..g.len(.changes)) |i| {
+        const c = g.get(.changes, @intCast(i)); // safe: below a u32 count
+        if (c.pad != 0) return error.BadNode;
+        try index(g, .facts, c.fact);
+        try intFact(g, c.clock);
+        if (g.get(.facts, c.clock).role != @backingInt(facts.Role.clock)) return error.BadKind;
+        try intFact(g, c.at);
+        const at = g.get(.facts, c.at);
+        if (at.scope != reserved_scope or at.role != @backingInt(facts.Role.state)) return error.BadReserved;
+    }
 }
 
 fn extensions(g: *const Graph) Error!void {
@@ -194,6 +210,11 @@ fn sections(g: *const Graph) Error!void {
         switch (std.enums.fromInt(format.SectionKind, s.kind) orelse return error.BadKind) {
             .pool => {
                 if (s.pick == 0) return error.BadNode;
+                try range(g, .candidates, s.candidates);
+            },
+            // a rules section's candidates are its rules, each fired on its own; it gives none at once
+            .rules => {
+                if (s.pick != 1 or s.entry != none) return error.BadNode;
                 try range(g, .candidates, s.candidates);
             },
             .scene, .other => if (s.candidates.len != 0 or s.entry == none) return error.BadNode,
@@ -421,6 +442,11 @@ fn expr(g: *const Graph, r: Range, want: Want) Error!void {
             .builtin => {
                 try index(g, .builtins, arg);
                 stack[n] = .{ .kind = g.get(.builtins, arg).returns, .enumeration = none16 };
+                n += 1;
+            },
+            .since_changed => {
+                try index(g, .changes, arg);
+                stack[n] = .int;
                 n += 1;
             },
             .thing => {

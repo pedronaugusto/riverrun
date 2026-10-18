@@ -14,6 +14,9 @@ const ast = syntax.ast;
 const Span = syntax.Span;
 const Error = Checker.Error;
 
+/// The functions riverrun itself answers in a condition: no query may take their names.
+pub const riverrun_builtins = [_][]const u8{ "seen", "since_changed" };
+
 pub fn run(c: *Checker) Error!void {
     for (c.files, 0..) |*file, i| {
         const module = c.moduleOf(@intCast(i)); // safe: a FileId numbers the files
@@ -96,9 +99,9 @@ fn constant(c: *Checker, module: sym.ModuleId, k: *const ast.Const) Error!void {
 }
 
 fn external(c: *Checker, module: sym.ModuleId, e: *const ast.Extern) Error!void {
-    if (std.mem.eql(u8, e.name.text, "seen")) {
-        return c.err(e.name.span, "`seen` is riverrun's own: it reads a visit count. Name the query something else", .{});
-    }
+    for (riverrun_builtins) |own| if (std.mem.eql(u8, e.name.text, own)) {
+        return c.err(e.name.span, "`{s}` is riverrun's own. Name the query something else", .{own});
+    };
     const params = try c.arena.alloc(sym.Type, e.params.len);
     const names = try c.arena.alloc(?[]const u8, e.params.len);
     for (e.params, params, names) |p, *out, *n| {
@@ -229,6 +232,7 @@ fn kindOf(c: *Checker, s: *const ast.Section) Error!sym.Section.Kind {
     return switch (s.kind) {
         .scene => .scene,
         .pool => |n| .{ .pool = n },
+        .rules => .rules,
         .other => |name| {
             for (c.options.kinds) |k| if (std.mem.eql(u8, k.name, name.text)) return .{ .other = name.text };
             try c.err(name.span, "`({s})` is not a kind of section: a scene, `(pool)`, or a kind the host registers", .{name.text});
@@ -245,8 +249,14 @@ fn shape(c: *Checker, s: *const ast.Section) Error!void {
             if (n == 0) try c.err(s.name.span, "a pool gives at least one line", .{});
             if (s.subsections.len < n) try c.err(s.name.span, "the pool `{s}` gives {d}, but has {d} candidates", .{ s.name.text, n, s.subsections.len });
         },
+        .rules => {
+            if (s.body.len > 0) try c.err(s.body[0].span, "a rules section holds only its rules, each `= name when {{ … }}`", .{});
+            for (s.subsections) |sub| if (sub.when == null) {
+                try c.err(sub.name.span, "the rule `{s}` needs its condition: `= {s} when {{ … }}`, its effects under it", .{ sub.name.text, sub.name.text });
+            };
+        },
         .scene => for (s.subsections) |sub| if (sub.when) |w| {
-            try c.err(w.span, "`when` belongs to a pool's candidates: `{s}` is a scene", .{s.name.text});
+            try c.err(w.span, "`when` belongs to a pool's candidates and to rules: `{s}` is a scene", .{s.name.text});
         },
         .other => {},
     }

@@ -87,6 +87,9 @@ pub const Table = enum(u32) {
     /// Named, versioned blocks a package owns (`cairn`), beside the graph, which its own reader validates.
     blocks,
     block_bytes,
+    /// What `since_changed(fact, clock)` reads: a fact, a clock, and the state that keeps the clock's value at the
+    /// fact's last change, which the rules evaluator writes.
+    changes,
 };
 
 pub const table_count = @typeInfo(Table).@"enum".field_names.len;
@@ -167,7 +170,7 @@ pub const Param = extern struct {
     pad: u8 = 0,
 };
 
-pub const SectionKind = enum(u8) { scene = 0, pool = 1, other = 2 };
+pub const SectionKind = enum(u8) { scene = 0, pool = 1, other = 2, rules = 3 };
 
 pub const Section = extern struct {
     name: Str,
@@ -309,6 +312,16 @@ pub const Block = extern struct {
     bytes: Range,
 };
 
+/// What `since_changed(fact, clock)` reads.
+pub const Change = extern struct {
+    fact: u16,
+    /// A `(clock)` fact.
+    clock: u16,
+    /// An int of the reserved scope: the clock's value when `fact` last changed.
+    at: u16,
+    pad: u16 = 0,
+};
+
 /// One of the host's things a story names: its kind and its text id, resolved to a handle at load.
 pub const Thing = extern struct {
     id: Str,
@@ -344,6 +357,7 @@ pub fn Record(comptime t: Table) type {
         .builtin_args => u32,
         .blocks => Block,
         .block_bytes => u8,
+        .changes => Change,
     };
 }
 
@@ -391,6 +405,8 @@ pub const Term = packed struct(u32) {
         thing = 18,
         /// Push a builtin's answer, which its package gives: `arg` indexes `builtins`.
         builtin = 19,
+        /// Push how far a clock has moved since a fact last changed: `arg` indexes `changes`.
+        since_changed = 20,
     };
 
     pub fn of(op: Op, arg: u24) Term {
@@ -412,7 +428,7 @@ pub const Term = packed struct(u32) {
 
 comptime {
     // The sizes docs/format.md gives.
-    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 12 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 } };
+    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 12 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 }, .{ Change, 8 } };
     for (sizes) |s| if (@sizeOf(s[0]) != s[1]) @compileError("a record's size is not the specification's");
     for (@typeInfo(Table).@"enum".field_names) |field| {
         const R = Record(@field(Table, field));

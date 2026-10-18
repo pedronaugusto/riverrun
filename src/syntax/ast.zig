@@ -91,6 +91,8 @@ pub const Section = struct {
         scene,
         /// Candidates chosen by specificity; `n` of them at once.
         pool: u16,
+        /// Rules, each `= name when { condition }` with effects under it: what fires when a condition becomes true.
+        rules,
         /// Any other kind a host registers with the compiler: `(quest)`.
         other: Name,
     };

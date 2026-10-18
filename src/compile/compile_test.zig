@@ -6,6 +6,7 @@ const check = @import("../check.zig");
 const story = @import("riverrun").story;
 const facts = @import("riverrun").facts;
 const run = @import("riverrun").run;
+const react = @import("riverrun").react;
 const compile = @import("../compile.zig");
 const testing = @import("testing.zig");
 
@@ -171,4 +172,34 @@ test "a registered kind's builtin is compiled for its package, and its pass adds
     try std.testing.expectEqualStrings("pelts.asked", s.section(.fromRaw(s.builtinArg(call.args.start))).name);
     try std.testing.expectEqual(facts.Role.clock, s.fact(.fromRaw(@intCast(s.builtinArg(call.args.start + 1)))).role);
     try std.testing.expectEqual(story.Section.Kind.other, s.section(s.sectionNamed("pelts.late").?).kind);
+}
+
+test "rules from the text: a slight lowers honor, and time alone brings it back" {
+    const t = try Told.init(gpa, &.{
+        \\facts (world):
+        \\  seconds:  int    (clock)
+        \\  honor:    int
+        \\  insulted: bool   (game)
+        \\== honor (rules)
+        \\= slight   when { insulted }
+        \\  ~ honor -= 5
+        \\= drift    when { since_changed(honor, seconds) >= 10 and honor < 0 }
+        \\  ~ honor += 1
+    }, .{}, &.{}, testing.NoHost{});
+    defer t.deinit();
+    var owners: [facts.max_scopes]u64 = @splat(0);
+    var rules: react.Rules = try .init(gpa, &t.story, t.memory.store(), &t.host, &owners, .{});
+    defer rules.deinit();
+    try t.memory.set(t.fact("insulted"), .{ .boolean = true });
+    var second: i64 = 0;
+    var lowest: i64 = 0;
+    while (second <= 60) : (second += 1) {
+        try t.memory.set(t.fact("seconds"), .{ .int = second });
+        for (try rules.step()) |fired| for (fired.effects) |e| {
+            _ = try facts.apply(t.memory.store(), e);
+        };
+        lowest = @min(lowest, t.memory.get(t.fact("honor")).int);
+    }
+    try std.testing.expectEqual(@as(i64, -5), lowest);
+    try std.testing.expectEqual(@as(i64, 0), t.memory.get(t.fact("honor")).int);
 }

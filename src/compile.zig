@@ -103,6 +103,21 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
             c.b.enter(to, entry);
             for (s.parts, c.parts[id.raw()]) |p, ps| c.b.enter(ps.?, try body.chain(c, p.node.body, null) orelse try c.back());
         },
+        .rules => {
+            const base = try c.qualified(s.module, s.name);
+            for (s.parts) |p| {
+                // a rule's body is its effects, fired as one step; one with none fires nothing
+                const entry = try body.chain(c, p.node.body, null) orelse try c.b.node(.{ .step = .end });
+                try c.b.candidate(to, .{
+                    .name = p.name,
+                    .when = if (p.node.when) |*w| try exprs.condition(c, w) else .empty,
+                    .tags = try c.tags(p.node.tags),
+                    .entry = entry,
+                    .visits = c.visits[p.visit.raw()],
+                    .seen = try c.b.state(try c.arena.print("rule.{s}.{s}", .{ base, p.name })),
+                });
+            }
+        },
         .pool => {
             const base = try c.qualified(s.module, s.name);
             for (s.parts) |p| {

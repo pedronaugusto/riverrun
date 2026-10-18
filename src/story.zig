@@ -52,6 +52,7 @@ pub const TagValue = model.TagValue;
 pub const FactId = model.FactId;
 pub const RefKindId = model.RefKindId;
 pub const Thing = model.Thing;
+pub const Change = model.Change;
 pub const Stamp = model.Stamp;
 pub const BuiltinCall = model.BuiltinCall;
 pub const Block = model.Block;

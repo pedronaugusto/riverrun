@@ -12,7 +12,8 @@
 //! - A choice point goes on past its choices if any choice's body does; when
 //!   every open choice has been taken, that is the runtime's to report.
 //! - Every section is reached from where the story starts: the host's
-//!   entries, or else every section nothing else leads to. Tags typed as
+//!   entries, or else every section nothing else leads to. A rules section
+//!   is reached by what its rules react to, and nothing goes to it. Tags typed as
 //!   sections are edges, so a section only a mechanic leads to is reached.
 
 const std = @import("std");
@@ -46,11 +47,13 @@ fn go(c: *Checker, scope: exprs.Scope, n: *const ast.Name, how: enum { jump, cal
         .part => |p| {
             const s = c.section(p.section);
             if (s.kind == .pool) return c.err(n.span, "`{s}` is a candidate of the pool `{s}`, which picks it", .{ n.text, s.name });
+            if (s.kind == .rules) return c.err(n.span, "`{s}` is a rule of `{s}`: it fires when its condition becomes true, and nothing goes to it", .{ n.text, s.name });
             s.parts[p.index].reached = true;
         },
         .section => |id| {
             const s = c.section(id);
             if (how == .jump and s.kind == .pool) return c.err(n.span, "`{s}` is a pool: call it, `->> {s}`, and it gives its lines and comes back", .{ n.text, n.text });
+            if (s.kind == .rules) return c.err(n.span, "`{s}` holds rules: they fire when their conditions become true, and nothing goes to them", .{n.text});
             if (how == .call) s.called = true;
             try c.edge(scope.section, id, if (how == .call) .call else .jump);
         },
@@ -100,7 +103,7 @@ fn ends(c: *Checker, id: sym.SectionId) Error!void {
                 try c.err(p.node.name.span, "the part `{s}` can run off its end: end it with `-> end`, `<-` or a flow elsewhere", .{p.name});
             };
         },
-        .pool, .other => {
+        .pool, .rules, .other => {
             _ = try gone(c, node.body);
             for (s.parts) |p| _ = try gone(c, p.node.body);
         },
@@ -168,8 +171,13 @@ fn reach(c: *Checker) Error!void {
     } else {
         var led = try std.DynamicBitSetUnmanaged.initEmpty(c.arena, n);
         for (c.edges.items) |e| if (!e.from.eql(e.to)) led.set(e.to.raw());
-        for (0..n) |i| if (!led.isSet(i)) try c.entries.append(c.arena, sym.idOf(sym.SectionId, i));
+        for (0..n) |i| if (!led.isSet(i) and c.sections.items[i].kind != .rules) try c.entries.append(c.arena, sym.idOf(sym.SectionId, i));
     }
+    // rules are reached by what they react to, never by a flow
+    for (c.sections.items, 0..) |s, i| if (s.kind == .rules) {
+        reached.set(i);
+        try queue.append(c.arena, sym.idOf(sym.SectionId, i));
+    };
     for (c.entries.items) |id| if (!reached.isSet(id.raw())) {
         reached.set(id.raw());
         try queue.append(c.arena, id);

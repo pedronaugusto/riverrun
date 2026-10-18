@@ -116,9 +116,14 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
 
 fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) Error!?sym.Type {
     if (std.mem.eql(u8, call.name.text, "seen")) return seen(c, scope, e, call);
+    if (std.mem.eql(u8, call.name.text, "since_changed")) return sinceChanged(c, scope, e, call);
     if (c.kindOfSection(scope.section)) |kind| if (kind.builtin(call.name.text)) |b| return builtin(c, scope, e, call, kind, b);
     const id = try externOf(c, scope, call) orelse return null;
     const ext = c.externs.items[id.raw()];
+    if (reacts(c, scope) and ext.asks() and ext.reads == null) {
+        try c.err(call.name.span, "`{s}` is asked by a rule, which wakes only when what it reads changes: declare what it reads, `(reads …)`", .{ext.name});
+        return null;
+    }
     if (ext.action) {
         try c.err(e.span, "`{s}` is an action with an outcome: it runs as an effect whose outcome a fact keeps, `~ fact = {s}(…)`", .{ ext.name, ext.name });
         return null;
@@ -148,6 +153,46 @@ pub fn externOf(c: *Checker, scope: Scope, call: *const ast.Call) Error!?sym.Ext
     }
     for (call.args, ext.params) |*arg, p| try value(c, scope, arg, p);
     return named.external;
+}
+
+// Whether conditions here are watched rather than asked: a rule's, or a registered kind's (a quest's).
+fn reacts(c: *const Checker, scope: Scope) bool {
+    return switch (c.sections.items[scope.section.raw()].kind) {
+        .rules, .other => true,
+        .scene, .pool => false,
+    };
+}
+
+// `since_changed(fact, clock)`: how far a clock has moved since the fact last changed, which only what watches
+// conditions keeps.
+fn sinceChanged(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) Error!?sym.Type {
+    if (!reacts(c, scope)) {
+        try c.err(e.span, "`since_changed` is kept by what watches conditions: a rule or a quest, not `{s}`", .{c.sections.items[scope.section.raw()].name});
+        return null;
+    }
+    if (call.args.len != 2 or call.args[0].kind != .name or call.args[1].kind != .name) {
+        try c.err(e.span, "`since_changed` takes a fact and a clock: `since_changed(levers, seconds)`", .{});
+        return null;
+    }
+    const fact = try factArg(c, scope, &call.args[0]) orelse return null;
+    const clock = try factArg(c, scope, &call.args[1]) orelse return null;
+    if (!c.facts.items[clock.raw()].clock) {
+        try c.err(call.args[1].span, "`{s}` is not a clock: since_changed counts on a fact declared `(clock)`", .{call.args[1].kind.name});
+        return null;
+    }
+    return record(c, e, .int, .{ .since_changed = .{ .fact = fact, .clock = clock } });
+}
+
+fn factArg(c: *Checker, scope: Scope, arg: *const ast.Expr) Error!?sym.FactId {
+    const named = c.valueNamed(scope.module, arg.kind.name) orelse {
+        try c.err(arg.span, "nothing is called `{s}`: no fact", .{arg.kind.name});
+        return null;
+    };
+    if (named != .fact) {
+        try c.err(arg.span, "`{s}` is not a fact", .{arg.kind.name});
+        return null;
+    }
+    return named.fact;
 }
 
 fn seen(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) Error!?sym.Type {
