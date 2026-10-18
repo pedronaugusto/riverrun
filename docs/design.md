@@ -160,13 +160,14 @@ A conversation with several speakers needs no construct of its own:
 ## The compiler
 
 It runs at build time. A game's build calls `riverrun.addStory(b, dep, .{ .files, .vocabulary, .packages,
-.release })`, `dep` being riverrun asked by `riverrun.building(b)` (below), and imports the module it returns, which embeds the graph and the string table. The vocabulary is a Zig file of the
-host's: `pub const options` (its tag schema, its widths and things), `pub const packages`, each package's
-`riverrun.Package` (its kinds, the tags it adds anywhere, its check and its compile pass), and `pub const passes`
-for the host's own. `riverrun.join` joins each package in after the host's, and two kinds of one name or one key
-twice where both may stand fail to compile, so nothing a package adds shadows another silently. It is Zig, not
-data, because a registered kind carries functions; the compiler is built for the machine doing the building, with
-the vocabulary compiled in, and prints every diagnostic as `file:line:col: severity: message`.
+.release })`, `dep` being riverrun asked by `riverrun.building(b)` (below), and imports the module it returns,
+which embeds the graph and the string table. The vocabulary is a Zig file of the host's: `pub const options` (its
+tag schema, its widths and things), `pub const packages`, each package's `riverrun.Package` (its kinds, the tags it
+adds anywhere, its check and its compile pass), and `pub const passes` for the host's own. `riverrun.join` joins
+each package in after the host's, and two kinds of one name or one key twice where both may stand fail to compile,
+so nothing a package adds shadows another silently. It is Zig, not data, because a registered kind carries
+functions; the compiler is built for the machine doing the building, with the vocabulary compiled in, and prints
+every diagnostic as `file:line:col: severity: message`.
 
 1. **Read** each file: a hand-written recursive-descent parser with positions, and a fuzz target for each parser.
 2. **Resolve** against one index of every file's declarations: speakers, facts, constants, externs, sections, labels
@@ -212,9 +213,11 @@ run time, and procedural text comes from the host's queries.
 
 ### What packages add
 
-A package registers a kind of section (`(quest)`) with `check.Options.kinds`: a tag schema its sections are held
-to before the host's, and builtins their conditions may call (`since(stage, fact) -> int`), whose arguments name
-things of the story, never values. The compiled story carries each builtin call for the package to answer, and a
+A package is one `riverrun.Package` in a vocabulary's `packages`, and one mechanism: functions of its own that
+riverrun calls at fixed points of its work, with its own state, each reporting through riverrun's diagnostics. It
+registers kinds of section (`(quest)`), each with a tag schema its sections are held to before the host's, and
+builtins their conditions may call (`since(stage, fact) -> int`), whose arguments name things of the story, never
+values. The compiled story carries each builtin call for the package to answer, and a
 named, versioned **block** the package owns beside the graph. A query's stamp and a `(clock)` fact are carried too,
 so a package can wake a condition only when what it reads moves.
 
@@ -226,11 +229,11 @@ snapshots like any other, and a name declared twice is reported with both places
 to the rest of the story and `named` inside the quest, so two quests' stages never meet, and a stage that would hide
 a name the story declares is refused.
 
-A key's value may be judged rather than typed (`Schema.Value.judge`): the package that defines the key is handed
-each such tag where it stands (its section and part, its place and the tags beside it) with the checker, and reports what is
-wrong at the tag, as `.values_of` and `.section` are riverrun's own judgements. An instant of a calendar, a
-schedule's unit, a reference to a quest's stage: what a word or a fixed list cannot say. A tag whose count is wrong
-is reported for that and never judged.
+A key's value may be judged rather than typed (`Schema.Value.judge`), the key a kind's or one a package adds
+anywhere: the package is handed each such tag where it stands (its section and part, its place and the tags beside
+it) with the checker, and reports what is wrong at the tag, as `.values_of` and `.section` are riverrun's own
+judgements. An instant of a calendar, a schedule's unit, a reference to a quest's stage: what a word or a fixed
+list cannot say. A tag whose count is wrong is reported for that and never judged.
 
 A package reports through riverrun's diagnostics, never beside them. Its checks are a pass of the checker's
 (`check.Options.passes`), run inside `check.run` once riverrun's are done, over the checked story: what no schema can
