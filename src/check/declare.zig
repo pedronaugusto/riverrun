@@ -1,6 +1,7 @@
 //! The first pass: every name a story declares, in every file, entered in
 //! its namespace before anything is resolved, so a file may use what a
-//! later one declares. Speakers, the expression namespace (facts, constants,
+//! later one declares. A section's own facts, and those its registered
+//! kind declares, are named within it, after the story's own. Speakers, the expression namespace (facts, constants,
 //! queries and actions) and sections are three namespaces; a part is named
 //! within its section and a label within its section or part. A name
 //! declared twice is reported where both are.
@@ -79,11 +80,12 @@ fn speaker(c: *Checker, s: sym.Speaker) Error!void {
 
 // ---------------------------------------------------------------- the expression namespace
 
-// `by` is the section of a registered kind that brings it, for a fact the story does not declare itself.
+// `by` is the section that brings it, for a fact a section declares rather than the story.
 fn fact(c: *Checker, module: sym.ModuleId, scope: ?[]const u8, f: *const ast.Fact, by: ?sym.SectionId) Error!void {
     if (c.facts.items.len == sym.limits.facts) {
         return c.err(f.name.span, "the story declares more than {d} facts", .{sym.limits.facts});
     }
+    if (f.role and by == null) return c.err(f.name.span, "`(role)` is a thing a section is given: declare `{s}` in the section's own `facts:`", .{f.name.text});
     const t = try typeOf(c, f.type, f.name.span);
     if (f.clock and t != .int) try c.err(f.name.span, "a clock counts, so `(clock)` is an int's: `{s}` is {s}", .{ f.name.text, try c.describe(t) });
     if (f.clock and f.moment) try c.err(f.name.span, "`{s}` is a clock or a moment: a clock lasts, and a moment is over at once", .{f.name.text});
@@ -106,23 +108,34 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?[]const u8, f: *const ast.Fac
         .module = module,
         .span = f.name.span,
         .by = by,
+        .role = f.role,
     });
 }
 
-// The facts a section of a registered kind brings, entered as the story's own.
+// What a section brings into the story: its own facts, then those its registered kind declares, entered as the
+// story's own.
 fn brought(c: *Checker, id: sym.SectionId) Error!void {
+    const s = c.section(id);
+    for (s.node.facts) |block| for (block.entries) |*e| try within(c, id, if (block.scope) |sc| sc.text else null, e.*);
     const kind = c.kindOfSection(id) orelse return;
     const declare = kind.declare orelse return;
-    const s = c.section(id);
     for (try declare(c.arena, s.node)) |d| {
-        var f = d.fact;
         if (d.within) {
-            if (try shadowed(c, s, f.name)) continue;
-            f.name.text = try c.arena.print("{s}.{s}", .{ s.name, f.name.text });
-            s.declares = true;
-        }
-        try fact(c, s.module, d.scope, &f, id);
+            try within(c, id, d.scope, d.fact);
+        } else try fact(c, s.module, d.scope, &d.fact, id);
     }
+}
+
+// A fact named within section `id`: `section.name` to the rest of the story, `name` inside it. A role is given to
+// the section, never set by the story.
+fn within(c: *Checker, id: sym.SectionId, scope: ?[]const u8, declared: ast.Fact) Error!void {
+    const s = c.section(id);
+    if (try shadowed(c, s, declared.name)) return;
+    var f = declared;
+    f.name.text = try c.arena.print("{s}.{s}", .{ s.name, f.name.text });
+    f.game = f.game or f.role;
+    s.declares = true;
+    try fact(c, s.module, scope, &f, id);
 }
 
 // A name declared within section `s` is `s.name` outside it and `name` inside, so it must neither be read as a
@@ -216,7 +229,8 @@ fn named(c: *Checker, module: sym.ModuleId, name: ast.Name, what: sym.Named, by:
     };
     if (by) |s| {
         const owner = c.section(s);
-        try c.err(name.span, "`{s}` is declared twice: first at {f}, then by the {s} `{s}`", .{ name.text, c.place(first), owner.kind.other, owner.name });
+        const kind = if (owner.kind == .other) owner.kind.other else "section";
+        try c.err(name.span, "`{s}` is declared twice: first at {f}, then by the {s} `{s}`", .{ name.text, c.place(first), kind, owner.name });
     } else try c.err(name.span, "`{s}` is declared twice: first at {f}", .{ name.text, c.place(first) });
     return false;
 }

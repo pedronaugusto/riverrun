@@ -56,6 +56,9 @@ pub const Fact = struct {
     clock: bool = false,
     /// `(moment)`: what happened, held only until what watches conditions has seen it, and never saved.
     moment: bool = false,
+    /// `(role)`: in a section's own facts, one of the things the section is about, given to it when it starts
+    /// (a quest's stranger): never set by the story.
+    role: bool = false,
 };
 
 pub const Type = union(enum) {
@@ -93,6 +96,8 @@ pub const Section = struct {
     name: Name,
     kind: Kind,
     tags: []const Tag,
+    /// `facts:` blocks under its heading: facts of its own, `section.name` to the rest of the story.
+    facts: []const Facts = &.{},
     body: []const Stmt,
     /// `= name` inside it: the parts of a scene, or the candidates of a pool.
     subsections: []const Subsection,

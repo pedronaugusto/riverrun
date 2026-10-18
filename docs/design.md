@@ -67,7 +67,10 @@ DAD: Go.
   section's own come before both. *Protects:* hundreds of files and many writers without clashes.
 - **A story's version,** `version: 3`, which migration rules count from.
 - **Sections:** `== name`, with nested `= name`. A section may have a kind: `(pool)`, `(pool N)`, or a kind a
-  package registers with the compiler, such as a quest package's `(quest)`.
+  package registers with the compiler, such as a quest package's `(quest)`. Under its heading a section may declare
+  facts of its own, `facts:` or `facts (scope):`, named within it: `asked` inside, `the_stranger.asked` to the rest
+  of the story. Among them `(role)` marks one of the things the section is about, given to it when it starts (a
+  quest's stranger), which the story reads and never sets.
 - **Lines:** `SPEAKER: text`, or narration with no speaker. The text is the whole line, never assembled from pieces at
   run time; it holds:
   - `{fact}`, a value;

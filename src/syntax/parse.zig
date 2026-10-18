@@ -2,8 +2,9 @@
 //!
 //! At indentation zero a line is a declaration (`cast:`, `extras:`,
 //! `facts:`, `const:`, `extern:`), a section (`== name`), a part of one
-//! (`= name`) or a statement of the section it is in. Inside, a statement's
-//! body is the lines indented further than it.
+//! (`= name`) or a statement of the section it is in. A `facts:` block
+//! straight under a section's heading is the section's own. Inside, a
+//! statement's body is the lines indented further than it.
 
 const std = @import("std");
 const ast = @import("ast.zig");
@@ -101,7 +102,7 @@ const Reader = struct {
         } else if (std.mem.startsWith(u8, l.text, "extras:")) {
             r.i += 1;
             try decls.append(r.arena, .{ .extras = try r.list(l, l.text["extras:".len..], "extras:".len) });
-        } else if (std.mem.eql(u8, l.text, "facts:") or std.mem.startsWith(u8, l.text, "facts (")) {
+        } else if (isFacts(l.text)) {
             const scope = try r.scopeOf(l);
             try decls.append(r.arena, .{ .facts = .{ .scope = scope, .entries = try r.factEntries(r.block()) } });
         } else if (std.mem.eql(u8, l.text, "const:")) {
@@ -198,8 +199,9 @@ const Reader = struct {
             var game = false;
             var clock = false;
             var moment = false;
+            var role = false;
             while (true) {
-                if (takeMark(&t, "(game)")) game = true else if (takeMark(&t, "(clock)")) clock = true else if (takeMark(&t, "(moment)")) moment = true else break;
+                if (takeMark(&t, "(game)")) game = true else if (takeMark(&t, "(clock)")) clock = true else if (takeMark(&t, "(moment)")) moment = true else if (takeMark(&t, "(role)")) role = true else break;
             }
             const head = std.mem.trim(u8, l.text[0..colon], " ");
             const name = if (std.mem.findScalar(u8, head, '(')) |p| std.mem.trim(u8, head[0..p], " ") else head;
@@ -219,7 +221,7 @@ const Reader = struct {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Invalid => continue,
             };
-            try out.append(r.arena, .{ .name = .{ .text = name, .span = r.at(l, 0) }, .key = key, .type = parsed, .bounds = bounds, .game = game or clock, .clock = clock, .moment = moment });
+            try out.append(r.arena, .{ .name = .{ .text = name, .span = r.at(l, 0) }, .key = key, .type = parsed, .bounds = bounds, .game = game or clock, .clock = clock, .moment = moment, .role = role });
         }
         return out.toOwnedSlice(r.arena);
     }
@@ -428,6 +430,12 @@ const Reader = struct {
         }
         var kind: ast.Section.Kind = .scene;
         if (paren) |p| kind = try r.kindOf(l, head[p..], p);
+        // the section's own facts come first, under its heading
+        var own: std.ArrayList(ast.Facts) = .empty;
+        while (r.i < r.lines.len and r.lines[r.i].indent == 0 and isFacts(r.lines[r.i].text)) {
+            const scope = try r.scopeOf(r.lines[r.i]);
+            try own.append(r.arena, .{ .scope = scope, .entries = try r.factEntries(r.block()) });
+        }
         var body: std.ArrayList(ast.Stmt) = .empty;
         var subs: std.ArrayList(ast.Subsection) = .empty;
         while (r.i < r.lines.len) {
@@ -444,7 +452,14 @@ const Reader = struct {
             }
             try r.into(&body, s.indent, 0);
         }
-        return .{ .name = .{ .text = name, .span = r.at(l, 3) }, .kind = kind, .tags = try r.tags(l), .body = try body.toOwnedSlice(r.arena), .subsections = try subs.toOwnedSlice(r.arena) };
+        return .{
+            .name = .{ .text = name, .span = r.at(l, 3) },
+            .kind = kind,
+            .tags = try r.tags(l),
+            .facts = try own.toOwnedSlice(r.arena),
+            .body = try body.toOwnedSlice(r.arena),
+            .subsections = try subs.toOwnedSlice(r.arena),
+        };
     }
 
     fn kindOf(r: *Reader, l: Line, t: []const u8, col: usize) Error!ast.Section.Kind {
@@ -820,6 +835,10 @@ fn isName(s: []const u8) bool {
     return true;
 }
 
+fn isFacts(t: []const u8) bool {
+    return std.mem.eql(u8, t, "facts:") or std.mem.startsWith(u8, t, "facts (");
+}
+
 fn isDecl(t: []const u8) bool {
     return std.mem.eql(u8, t, "cast:") or std.mem.startsWith(u8, t, "extras:") or std.mem.eql(u8, t, "facts:") or
         std.mem.startsWith(u8, t, "facts (") or std.mem.eql(u8, t, "const:") or std.mem.eql(u8, t, "extern:") or
@@ -975,6 +994,32 @@ test "a tag's values are placed where they are written, inside their quotes" {
     try std.testing.expectEqual(@as(u32, 24), tags[0].at(1).col);
     try std.testing.expectEqualStrings("Who · was he?", tags[1].values[0]);
     try std.testing.expectEqual(@as(u32, 39), tags[1].at(0).col);
+}
+
+test "a section's own facts come straight under its heading, its roles marked" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(gpa);
+    const story =
+        \\== the_stranger (quest)
+        \\facts:
+        \\  stranger: ref of person   (role)
+        \\facts (player):
+        \\  asked: set of margaret, tom
+        \\= noticed
+        \\facts:
+        \\  later: bool
+    ;
+    const f = try parseFile(arena.allocator(), gpa, &diags, 0, "a.river", story);
+    try std.testing.expectEqual(@as(usize, 0), diags.list.items.len);
+    const s = f.sections[0];
+    try std.testing.expectEqual(@as(usize, 2), s.facts.len);
+    try std.testing.expect(s.facts[0].entries[0].role and !s.facts[0].entries[0].game);
+    try std.testing.expectEqualStrings("player", s.facts[1].scope.?.text);
+    // after a part, a facts block is the story's own again
+    try std.testing.expectEqual(@as(usize, 1), f.decls.len);
 }
 
 test "an int changes by a number or a constant, never by an expression" {

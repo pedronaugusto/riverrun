@@ -522,6 +522,10 @@ fn settable(c: *Checker, scope: Scope, n: *const ast.Name) Error!?sym.FactId {
         },
     };
     const f = &c.facts.items[id.raw()];
+    if (f.role) {
+        try c.err(n.span, "`{s}` is a role, given when its section starts: the story reads it and never sets it", .{n.text});
+        return null;
+    }
     if (f.game) {
         try c.err(n.span, "`{s}` is the game's, declared `(game)`: the story reads it and never sets it", .{n.text});
         return null;

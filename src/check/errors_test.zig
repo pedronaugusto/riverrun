@@ -636,6 +636,33 @@ test "what a section declares within it is `section.name` outside it, and `name`
     try std.testing.expect(o.checked.?.fact("pelts.asked") != null);
 }
 
+test "a section's own facts are named within it, and its roles never set by the story" {
+    var o = try checkOne(
+        \\facts:
+        \\  met: bool   (game)
+        \\  lost: ref of person   (role)
+        \\== stranger (quest)
+        \\facts (player):
+        \\  asked: set of tom, danny
+        \\  who: ref of person   (role)
+        \\  met: bool
+        \\= named   when { asked has tom and who = tom }
+        \\== a
+        \\{ stranger.asked has danny } Danny.
+        \\~ stranger.asked += tom
+        \\~ stranger.who = tom
+        \\-> end
+    , .{ .kinds = &.{quest_kind} });
+    defer o.deinit();
+    try o.has(.err, 3, 3, "`(role)` is a thing a section is given: declare `lost` in the section's own `facts:`");
+    try o.has(.err, 8, 3, "`met` in `stranger` would hide `met`, declared at a.river:2:3, inside it: name one otherwise");
+    try o.has(.err, 13, 3, "`stranger.who` is a role, given when its section starts: the story reads it and never sets it");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
+    const asked = o.checked.?.facts[o.checked.?.fact("stranger.asked").?.raw()];
+    try std.testing.expectEqualStrings("player", asked.scope.?);
+    try std.testing.expect(o.checked.?.facts[o.checked.?.fact("stranger.who").?.raw()].role);
+}
+
 test "a name a section declares within it never hides the story's own there" {
     var o = try checkOne(
         \\facts:
