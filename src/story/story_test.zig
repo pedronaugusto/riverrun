@@ -224,4 +224,8 @@ test "a story carries stamps, builtins and the blocks its packages own" {
     try std.testing.expectEqual(@as(u32, 1), block.version);
     try std.testing.expectEqualStrings("stages", block.bytes);
     try std.testing.expect(story.block("delta") == null);
+    // a range a package's block names is checked as a condition before it is used
+    try story.condition(when);
+    try std.testing.expectError(error.BadExpression, story.condition(.{ .start = when.start, .len = 2 }));
+    try std.testing.expectError(error.OutOfRange, story.condition(.{ .start = when.start, .len = 99 }));
 }

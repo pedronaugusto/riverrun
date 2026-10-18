@@ -275,6 +275,12 @@ pub const Story = struct {
         return codec.decodeEffect(s.g.get(.effects, i));
     }
 
+    /// That `r` is a range of the terms typed as a condition, as every condition the graph names is: a package's
+    /// block names conditions riverrun's reader never saw, and is never trusted.
+    pub fn condition(s: *const Story, r: Range) Error!void {
+        return validate.condition(&s.g, r);
+    }
+
     /// Term `i`: an op and its argument, as `format.Term` documents.
     pub fn term(s: *const Story, i: u32) model.Term {
         return @bitCast(s.g.get(.terms, i));

@@ -15,6 +15,11 @@ const Term = format.Term;
 const none = format.none;
 const none16 = format.none16;
 
+/// That `r` is a range of terms typed as a condition: what a package checks of the conditions its block names.
+pub fn condition(g: *const Graph, r: Range) Error!void {
+    try expr(g, r, .condition);
+}
+
 pub fn all(g: *const Graph) Error!void {
     if (!std.unicode.utf8ValidateSlice(g.raw(.names))) return error.BadName;
     try declarations(g);

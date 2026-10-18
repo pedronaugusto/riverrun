@@ -222,7 +222,9 @@ first changes, `at` is 0.
 **Block**: `name: Str`, `version: u32`, 4 bytes padding, `bytes: Range` into
 block_bytes. A package's own data beside the graph (cairn's stages and dependency
 index), one block per name. riverrun checks only that the bytes lie in the table; the
-package owns their layout, validates them before use, and versions them itself.
+package owns their layout, validates them before use, and versions them itself; a range
+of terms a block names is checked as a condition is (`Story.condition`), since nothing
+else in the graph points at it.
 
 ### Sections and pools
 
