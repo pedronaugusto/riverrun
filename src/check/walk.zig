@@ -68,6 +68,7 @@ fn stmt(c: *Checker, u: *Unit, s: *const ast.Stmt, tagged: []const ast.Tag) Erro
             if (k.body.len == 1 and k.body[0].span.line == s.span.line) return stmt(c, u, &k.body[0], tagged);
             try tags.check(c, u.scope.module, u.scope.section, tagged, .other);
             try body(c, u, k.body);
+            try body(c, u, k.otherwise);
         },
         .gather => |g| {
             if (g.then) |then| return stmt(c, u, then, tagged);

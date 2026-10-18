@@ -23,6 +23,7 @@ pub const EnumId = aegis.id.Id(enum { enumeration }, u16);
 pub const SectionId = aegis.id.Id(enum { section }, u16);
 pub const LabelId = aegis.id.Id(enum { label }, u16);
 pub const VisitId = aegis.id.Id(enum { visit }, u16);
+pub const KindId = aegis.id.Id(enum { kind }, u16);
 
 /// The module every name falls back to, and today the only one.
 pub const root: ModuleId = .fromRaw(0);
@@ -45,6 +46,8 @@ pub const Type = union(enum) {
     text,
     one_of: EnumId,
     set_of: EnumId,
+    /// A handle to one of the host's things of a kind: `ref of person`.
+    ref: KindId,
 
     pub fn eql(a: Type, b: Type) bool {
         return switch (a) {
@@ -53,6 +56,7 @@ pub const Type = union(enum) {
             .text => b == .text,
             .one_of => |e| b == .one_of and b.one_of.eql(e),
             .set_of => |e| b == .set_of and b.set_of.eql(e),
+            .ref => |k| b == .ref and b.ref.eql(k),
         };
     }
 };
@@ -92,6 +96,8 @@ pub const Fact = struct {
     type: Type,
     /// Written by the game's mechanics, never by the story.
     game: bool,
+    /// An int the game only advances.
+    clock: bool = false,
     module: ModuleId,
     span: Span,
     /// Whether any effect of the story sets it.
@@ -111,11 +117,29 @@ pub const Const = struct {
 pub const Extern = struct {
     name: []const u8,
     params: []const Type,
-    /// Null for an action, which runs as an effect; a type for a query, which an expression asks.
+    /// Each parameter's name, where it has one.
+    param_names: []const ?[]const u8 = &.{},
+    /// Null for an action, which runs as an effect; a type for a query, which an expression asks,
+    /// or for an action's outcome.
     returns: ?Type,
+    /// An action with an outcome the host decides: `~ fact = name(…)`.
+    action: bool = false,
+    /// The stamp the host bumps when what the query reads changes.
+    reads: ?Stamp = null,
     module: ModuleId,
     span: Span,
+
+    /// Whether an expression may ask it: a query, not an action of either kind.
+    pub fn asks(e: Extern) bool {
+        return e.returns != null and !e.action;
+    }
 };
+
+/// A query's stamp: its family, and the parameters that key it.
+pub const Stamp = struct { family: []const u8, keys: []const u16 };
+
+/// One of the host's things, named in the story by its stable id: `wolf_pelt`.
+pub const Thing = struct { kind: KindId, id: []const u8 };
 
 pub const Section = struct {
     name: []const u8,
@@ -190,6 +214,7 @@ pub const Ref = union(enum) {
     value: Value,
     visits: VisitId,
     target: Target,
+    thing: Thing,
 };
 
 /// An expression's type, and what it names when it is a name or a call.

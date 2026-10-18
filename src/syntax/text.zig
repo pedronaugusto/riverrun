@@ -1,6 +1,7 @@
 //! Text: what a line or a choice says. Literal runs, `{fact}` for a value,
-//! and `{ condition: these words | those words }` for words chosen by a
-//! condition. `\{` and `\}` are braces themselves.
+//! `{ condition: these words | those words }` for words chosen by a
+//! condition, and `{seq: a | b | c}`, `{cycle: …}`, `{once: …}` and
+//! `{shuffle: …}` for alternatives. `\{` and `\}` are braces themselves.
 
 const std = @import("std");
 const ast = @import("ast.zig");
@@ -43,9 +44,25 @@ pub fn parse(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Di
     return pieces.toOwnedSlice(arena);
 }
 
-// What is between braces: `cond: a | b`, or a value.
+// What is between braces: alternatives, `cond: a | b`, or a value.
 fn braced(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagnostics, inner: []const u8, at: source.Span) Error!ast.Piece {
     if (std.mem.findScalar(u8, inner, ':')) |colon| {
+        if (alternativesOf(std.mem.trim(u8, inner[0..colon], " "))) |kind| {
+            var options: std.ArrayList(ast.Text) = .empty;
+            var start = colon + 1;
+            var depth: usize = 0;
+            for (inner[colon + 1 ..], colon + 1..) |c, i| switch (c) {
+                '{' => depth += 1,
+                '}' => depth -|= 1,
+                '|' => if (depth == 0) {
+                    try options.append(arena, try parse(arena, gpa, diags, std.mem.trim(u8, inner[start..i], " "), shift(at, start)));
+                    start = i + 1;
+                },
+                else => {},
+            };
+            try options.append(arena, try parse(arena, gpa, diags, std.mem.trim(u8, inner[start..], " "), shift(at, start)));
+            return .{ .alternatives = .{ .kind = kind, .options = try options.toOwnedSlice(arena) } };
+        }
         const cond = try expr.parse(arena, gpa, diags, std.mem.trim(u8, inner[0..colon], " "), at);
         const rest = inner[colon + 1 ..];
         const bar = std.mem.findScalar(u8, rest, '|');
@@ -58,6 +75,14 @@ fn braced(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagn
         } };
     }
     return .{ .value = (try expr.parse(arena, gpa, diags, std.mem.trim(u8, inner, " "), at)).* };
+}
+
+/// The alternatives a word before `:` names, if it names one: these four words are the language's.
+pub fn alternativesOf(word: []const u8) ?ast.Alternatives {
+    inline for (.{ "seq", "cycle", "once", "shuffle" }, .{ ast.Alternatives.seq, .cycle, .once, .shuffle }) |w, k| {
+        if (std.mem.eql(u8, word, w)) return k;
+    }
+    return null;
 }
 
 /// The index of the `}` that closes the `{` at `open`, braces nesting.
@@ -99,6 +124,20 @@ test "text holds literals, values and words chosen by a condition" {
     try std.testing.expectEqualStrings("dies_at", t[1].value.kind.name);
     try std.testing.expectEqualStrings("You came all this way.", t[3].choose.then[0].literal);
     try std.testing.expectEqualStrings("You came.", t[3].choose.otherwise[0].literal);
+}
+
+test "alternatives hold their options, braces nesting inside them" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(std.testing.allocator);
+    const t = try parse(arena.allocator(), std.testing.allocator, &diags, "Margaret {cycle: counts | hums | counts {hour}} again.", .{ .file = 0, .line = 1, .col = 1 });
+    try std.testing.expectEqual(@as(usize, 0), diags.list.items.len);
+    const alt = t[1].alternatives;
+    try std.testing.expectEqual(ast.Alternatives.cycle, alt.kind);
+    try std.testing.expectEqual(@as(usize, 3), alt.options.len);
+    try std.testing.expectEqualStrings("hums", alt.options[1][0].literal);
+    try std.testing.expectEqualStrings("hour", alt.options[2][1].value.kind.name);
 }
 
 test "an unclosed brace is reported" {

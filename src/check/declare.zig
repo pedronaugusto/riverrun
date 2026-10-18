@@ -68,6 +68,7 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
         return c.err(f.name.span, "the story declares more than {d} facts", .{sym.limits.facts});
     }
     const t = try typeOf(c, f.type, f.name.span);
+    if (f.clock and t != .int) try c.err(f.name.span, "a clock counts, so `(clock)` is an int's: `{s}` is {s}", .{ f.name.text, try c.describe(t) });
     const id = sym.idOf(sym.FactId, c.facts.items.len);
     if (!try named(c, module, f.name, .{ .fact = id })) return;
     try c.facts.append(c.arena, .{
@@ -75,6 +76,7 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
         .scope = if (scope) |s| s.text else null,
         .type = t,
         .game = f.game,
+        .clock = f.clock,
         .module = module,
         .span = f.name.span,
     });
@@ -98,12 +100,46 @@ fn external(c: *Checker, module: sym.ModuleId, e: *const ast.Extern) Error!void 
         return c.err(e.name.span, "`seen` is riverrun's own: it reads a visit count. Name the query something else", .{});
     }
     const params = try c.arena.alloc(sym.Type, e.params.len);
-    for (e.params, params) |p, *out| out.* = try typeOf(c, p, e.name.span);
+    const names = try c.arena.alloc(?[]const u8, e.params.len);
+    for (e.params, params, names) |p, *out, *n| {
+        out.* = try typeOf(c, p.type, e.name.span);
+        n.* = if (p.name) |pn| pn.text else null;
+    }
     const returns: ?sym.Type = if (e.returns) |r| try typeOf(c, r, e.name.span) else null;
+    const reads: ?sym.Stamp = if (e.reads) |st| try stamp(c, e, st, names) else null;
+    if (reads != null and (returns == null or e.action)) try c.err(e.name.span, "`(reads …)` stamps a query: `{s}` is an action", .{e.name.text});
     if (c.externs.items.len == sym.limits.ids) return c.err(e.name.span, "the story has more queries and actions than {d}", .{sym.limits.ids});
     const id = sym.idOf(sym.ExternId, c.externs.items.len);
     if (!try named(c, module, e.name, .{ .external = id })) return;
-    try c.externs.append(c.arena, .{ .name = e.name.text, .params = params, .returns = returns, .module = module, .span = e.name.span });
+    try c.externs.append(c.arena, .{
+        .name = e.name.text,
+        .params = params,
+        .param_names = names,
+        .returns = returns,
+        .action = e.action,
+        .reads = reads,
+        .module = module,
+        .span = e.name.span,
+    });
+}
+
+fn paramIndex(names: []const ?[]const u8, name: []const u8) ?u16 {
+    for (names, 0..) |n, i| {
+        if (n != null and std.mem.eql(u8, n.?, name)) return @intCast(i); // safe: a query has few parameters
+    }
+    return null;
+}
+
+// A stamp's keys, each the name of one of the query's parameters.
+fn stamp(c: *Checker, e: *const ast.Extern, st: ast.Stamp, names: []const ?[]const u8) Error!sym.Stamp {
+    const keys = try c.arena.alloc(u16, st.keys.len);
+    for (st.keys, keys) |k, *out| {
+        out.* = paramIndex(names, k.text) orelse blk: {
+            try c.err(k.span, "`{s}` keys the stamp of `{s}`, and it has no parameter of that name", .{ k.text, e.name.text });
+            break :blk 0;
+        };
+    }
+    return .{ .family = st.family.text, .keys = keys };
 }
 
 // Enters a name in the expression namespace; false when it is already there.
@@ -130,6 +166,7 @@ pub fn typeOf(c: *Checker, t: ast.Type, span: Span) Error!sym.Type {
         .text => .text,
         .one_of => |values| .{ .one_of = try enumeration(c, values, span) },
         .set_of => |values| .{ .set_of = try enumeration(c, values, span) },
+        .ref => |kind| .{ .ref = try c.kindOf(kind.text, kind.span) },
     };
 }
 
@@ -234,7 +271,10 @@ fn collect(c: *Checker, s: sym.SectionId, part: ?u16, body: []const ast.Stmt, ou
             try out.append(c.arena, label_id);
         },
         .choice => |ch| try collect(c, s, part, ch.body, out),
-        .cond => |k| try collect(c, s, part, k.body, out),
+        .cond => |k| {
+            try collect(c, s, part, k.body, out);
+            try collect(c, s, part, k.otherwise, out);
+        },
         else => {},
     };
 }

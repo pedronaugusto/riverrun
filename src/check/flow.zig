@@ -66,7 +66,7 @@ fn find(c: *const Checker, scope: exprs.Scope, name: []const u8) ?sym.Target {
     for (s.parts, 0..) |p, i| if (std.mem.eql(u8, p.name, name)) {
         return .{ .part = .{ .section = scope.section, .index = @intCast(i) } }; // safe: parts were numbered in u16
     };
-    const other = c.section_names.find(scope.module, name) orelse return null;
+    const other = c.sectionNamed(scope.module, name) orelse return null;
     return .{ .section = other };
 }
 
@@ -140,8 +140,10 @@ fn stmtGone(c: *Checker, s: *const ast.Stmt) Error!bool {
     return switch (s.kind) {
         .line, .effect => false,
         .cond => |k| {
-            _ = try gone(c, k.body);
-            return false;
+            // gated, the block may not run; with `{ else }`, one of the two always does
+            const then = try gone(c, k.body);
+            if (k.otherwise.len == 0) return false;
+            return try gone(c, k.otherwise) and then;
         },
         .gather => |g| if (g.then) |then| stmtGone(c, then) else false,
         .flow => |f| f != .call,
@@ -157,7 +159,7 @@ fn reach(c: *Checker) Error!void {
     var queue: std.ArrayList(sym.SectionId) = .empty;
     if (c.options.entries.len > 0) {
         for (c.options.entries) |name| {
-            const id = c.section_names.find(sym.root, name) orelse {
+            const id = c.sectionNamed(sym.root, name) orelse {
                 try c.err(.none, "the host starts the story at `{s}`, and the story has no such section", .{name});
                 continue;
             };

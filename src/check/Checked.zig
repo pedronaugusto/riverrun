@@ -19,6 +19,10 @@ facts: []const sym.Fact,
 consts: []const sym.Const,
 externs: []const sym.Extern,
 enums: []const sym.Enum,
+/// The kinds of the host's things, by `KindId`.
+kinds: []const []const u8,
+/// Each module's name, by `ModuleId`; the root's is empty.
+modules: []const []const u8,
 sections: []const sym.Section,
 labels: []const sym.Label,
 visits: []const sym.Visit,

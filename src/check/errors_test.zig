@@ -83,7 +83,7 @@ test "a comparison is of like with like" {
         \\-> end
     , .{});
     defer o.deinit();
-    try o.only(.err, 4, 7, "`=` compares like with like: true or false and a number");
+    try o.only(.err, 4, 3, "`=` compares like with like: true or false and a number");
 }
 
 test "an effect's value is of its fact's type, and an item of its set" {
@@ -233,10 +233,10 @@ test "a tag is one the host knows, where it may stand, with values of its type" 
         \\-> end
     , .{ .schema = &schema });
     defer o.deinit();
-    try o.has(.err, 7, 1, "`heard` takes one of stairs, piano: `door` is not one");
-    try o.has(.err, 8, 1, "`at` takes a number: `soon` is not one");
-    try o.has(.err, 9, 1, "`pause` is not a tag the host knows");
-    try o.has(.err, 10, 1, "`at` is not a tag of a section");
+    try o.has(.err, 7, 34, "`heard` takes one of stairs, piano: `door` is not one");
+    try o.has(.err, 8, 24, "`at` takes a number: `soon` is not one");
+    try o.has(.err, 9, 26, "`pause` is not a tag the host knows");
+    try o.has(.err, 10, 14, "`at` is not a tag of a section");
     try std.testing.expectEqual(@as(usize, 4), o.diags.list.items.len);
 }
 
@@ -356,4 +356,121 @@ test "any story is checked or refused, never crashes" {
             checked.deinit();
         }
     }.one, .{});
+}
+
+test "ints are ordered, and nothing else is" {
+    var o = try checkOne(
+        \\facts:
+        \\  hour: int   (game)
+        \\  met:  bool
+        \\== a
+        \\{ hour >= 6 and met < 2 } Dawn.
+        \\~ met = true
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 5, 17, "this is true or false, where a number is wanted");
+}
+
+test "an action with an outcome keeps it in a fact, and is never asked" {
+    var o = try checkOne(
+        \\facts:
+        \\  persuaded: one of yes, no
+        \\  rolled:    int
+        \\extern:
+        \\  persuade(who: int, against: int) -> one of yes, no   (action)
+        \\== a
+        \\~ persuaded = persuade(1, 12)
+        \\~ rolled = persuade(1, 12)
+        \\~ persuade(1, 12)
+        \\{ persuade(1, 12) = yes } Fine.
+        \\{ persuaded = yes } Fine.
+        \\~ rolled = 3
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 8, 12, "`persuade`'s outcome is one of yes, no, and the fact keeping it is a number");
+    try o.has(.err, 9, 3, "`persuade` has an outcome, which a fact keeps: `~ fact = persuade(…)`");
+    try o.has(.err, 10, 3, "`persuade` is an action with an outcome: it runs as an effect whose outcome a fact keeps, `~ fact = persuade(…)`");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
+}
+
+test "a stamp is keyed by the query's own parameters" {
+    var o = try checkOne(
+        \\extern:
+        \\  count(kind: ref of item_kind) -> int   (reads stock(kind))
+        \\  gold() -> int   (reads purse(owner))
+        \\== a
+        \\{ count(wolf_pelt) >= 10 and gold() > 0 } Ten.
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 3, 32, "`owner` keys the stamp of `gold`, and it has no parameter of that name");
+}
+
+test "the host's things are named by their ids, checked against its manifest" {
+    var o = try checkOne(
+        \\facts:
+        \\  target: ref of person   (game)
+        \\extern:
+        \\  count(kind: ref of item_kind) -> int
+        \\== a
+        \\{ count(wolf_pelt) > 0 and count(wolf_pelf) > 0 and target = margaret } Pelts.
+        \\-> end
+    , .{ .things = &.{.{ .kind = "item_kind", .ids = &.{"wolf_pelt"} }} });
+    defer o.deinit();
+    try o.only(.err, 6, 34, "the host has no item_kind called `wolf_pelf`");
+}
+
+test "a clock is an int" {
+    var o = try checkOne(
+        \\facts:
+        \\  day:  int    (clock)
+        \\  dawn: bool   (clock)
+        \\== a
+        \\{ day > 3 and dawn } Morning.
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 3, 3, "a clock counts, so `(clock)` is an int's: `dawn` is true or false");
+}
+
+test "an else block ends a scene when both branches do" {
+    var o = try checkOne(
+        \\facts:
+        \\  met: bool   (game)
+        \\== a
+        \\{ met }
+        \\  He looks up.
+        \\  -> end
+        \\{ else }
+        \\  {once: He doesn't. | Still nothing.}
+        \\  -> end
+    , .{});
+    defer o.deinit();
+    try std.testing.expectEqual(@as(usize, 0), o.diags.list.items.len);
+}
+
+test "another module's names are reached qualified" {
+    var o: Outcome = .{ .arena = .init(std.testing.allocator), .diags = .{} };
+    defer o.deinit();
+    const a = o.arena.allocator();
+    const files = try a.alloc(syntax.ast.File, 2);
+    files[0] = try syntax.parse(a, std.testing.allocator, &o.diags, 0, "harbour.river",
+        \\module harbour
+        \\facts:
+        \\  met: bool
+        \\== letter
+        \\~ met = true
+        \\-> end
+    );
+    files[1] = try syntax.parse(a, std.testing.allocator, &o.diags, 1, "main.river",
+        \\== start
+        \\{ harbour.met } -> end
+        \\{ met } -> end
+        \\-> harbour.letter
+    );
+    try std.testing.expectEqual(@as(usize, 0), o.diags.list.items.len);
+    o.checked = try check.run(std.testing.allocator, &o.diags, files, .{});
+    try o.only(.err, 3, 3, "nothing is called `met`: no fact or constant");
 }

@@ -73,7 +73,7 @@ fn values(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tag: *const a
         },
         .values_of => |fact| try valueOf(c, module, tag, key, fact, v),
         .section => {
-            const to = c.section_names.find(module, v) orelse {
+            const to = c.sectionNamed(module, v) orelse {
                 try c.err(tag.key.span, "`{s}` names a section: nothing is called `{s}`", .{ key.name, v });
                 continue;
             };
@@ -95,7 +95,7 @@ fn valueOf(c: *Checker, module: sym.ModuleId, tag: *const ast.Tag, key: *const S
 }
 
 fn enumNamed(c: *const Checker, module: sym.ModuleId, fact: []const u8) ?sym.EnumId {
-    const named = c.value_names.find(module, fact) orelse return null;
+    const named = c.valueNamed(module, fact) orelse return null;
     if (named != .fact) return null;
     return switch (c.facts.items[named.fact.raw()].type) {
         .one_of, .set_of => |e| e,

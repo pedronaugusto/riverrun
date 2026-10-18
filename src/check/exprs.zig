@@ -90,11 +90,20 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
     if (enumOf(hint)) |en| if (c.valueOf(en, n)) |ix| {
         return record(c, e, .{ .one_of = en }, .{ .value = .{ .enumeration = en, .index = ix } });
     };
-    if (c.value_names.find(scope.module, n)) |named| switch (named) {
+    // where a thing of a kind is wanted, a name the story does not declare is one of the host's, by its id
+    if (hint != null and hint.? == .ref and c.valueNamed(scope.module, n) == null) {
+        const kind = hint.?.ref;
+        if (!c.knowsThing(kind, n)) {
+            try c.err(e.span, "the host has no {s} called `{s}`", .{ c.kinds.items[kind.raw()], n });
+            return null;
+        }
+        return record(c, e, hint.?, .{ .thing = .{ .kind = kind, .id = n } });
+    }
+    if (c.valueNamed(scope.module, n)) |named| switch (named) {
         .fact => |id| return record(c, e, c.facts.items[id.raw()].type, .{ .fact = id }),
         .constant => |id| return record(c, e, c.consts.items[id.raw()].type, .{ .constant = id }),
         .external => |id| {
-            const what = if (c.externs.items[id.raw()].returns == null) "an action: it runs as an effect, `~ " else "a query: ask it as `";
+            const what = if (!c.externs.items[id.raw()].asks()) "an action: it runs as an effect, `~ " else "a query: ask it as `";
             try c.err(e.span, "`{s}` is {s}{s}(…)`", .{ n, what, n });
             return null;
         },
@@ -109,6 +118,10 @@ fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) E
     if (std.mem.eql(u8, call.name.text, "seen")) return seen(c, scope, e, call);
     const id = try externOf(c, scope, call) orelse return null;
     const ext = c.externs.items[id.raw()];
+    if (ext.action) {
+        try c.err(e.span, "`{s}` is an action with an outcome: it runs as an effect whose outcome a fact keeps, `~ fact = {s}(…)`", .{ ext.name, ext.name });
+        return null;
+    }
     const returns = ext.returns orelse {
         try c.err(e.span, "`{s}` is an action: it runs as an effect, `~ {s}(…)`, and gives no value", .{ ext.name, ext.name });
         return null;
@@ -119,7 +132,7 @@ fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) E
 
 /// The query or action a call names, its arguments checked against its parameters.
 pub fn externOf(c: *Checker, scope: Scope, call: *const ast.Call) Error!?sym.ExternId {
-    const named = c.value_names.find(scope.module, call.name.text) orelse {
+    const named = c.valueNamed(scope.module, call.name.text) orelse {
         try c.err(call.name.span, "nothing is called `{s}`: no query or action", .{call.name.text});
         return null;
     };
@@ -157,7 +170,7 @@ fn visitOf(c: *const Checker, scope: Scope, n: []const u8) ?sym.VisitId {
     const here = if (scope.part) |p| s.parts[p].labels else s.labels;
     for (here) |l| if (std.mem.eql(u8, c.labels.items[l.raw()].name, n)) return c.labels.items[l.raw()].visit;
     for (s.parts) |p| if (std.mem.eql(u8, p.name, n)) return p.visit;
-    const other = c.section_names.find(scope.module, n) orelse return null;
+    const other = c.sectionNamed(scope.module, n) orelse return null;
     return c.sections.items[other.raw()].visit;
 }
 
@@ -182,6 +195,10 @@ fn binary(c: *Checker, scope: Scope, e: *const ast.Expr, op: ast.Expr.Op, lhs: *
                 return null;
             }
         },
+        .lt, .le, .gt, .ge => {
+            try value(c, scope, lhs, .int);
+            try value(c, scope, rhs, .int);
+        },
         .has, .hasnt => {
             const a = try infer(c, scope, lhs, null) orelse return null;
             if (a != .set_of) {
@@ -198,7 +215,7 @@ fn binary(c: *Checker, scope: Scope, e: *const ast.Expr, op: ast.Expr.Op, lhs: *
 fn bare(c: *const Checker, scope: Scope, e: *const ast.Expr) bool {
     return switch (e.kind) {
         .int => true,
-        .name => |n| c.value_names.find(scope.module, n) == null,
+        .name => |n| c.valueNamed(scope.module, n) == null,
         else => false,
     };
 }
@@ -209,6 +226,7 @@ pub fn effect(c: *Checker, scope: Scope, eff: *const ast.Effect) Error!void {
     switch (eff.*) {
         .set => |*s| {
             const id = try settable(c, scope, &s.fact) orelse return;
+            if (try outcome(c, scope, &s.value, id)) return;
             try value(c, scope, &s.value, c.facts.items[id.raw()].type);
         },
         .add => |*a| try item(c, scope, &a.fact, &a.item, "+="),
@@ -216,10 +234,27 @@ pub fn effect(c: *Checker, scope: Scope, eff: *const ast.Effect) Error!void {
         .call => |*call| {
             const id = try externOf(c, scope, call) orelse return;
             const ext = c.externs.items[id.raw()];
+            if (ext.action) return c.err(call.name.span, "`{s}` has an outcome, which a fact keeps: `~ fact = {s}(…)`", .{ ext.name, ext.name });
             if (ext.returns != null) return c.err(call.name.span, "`{s}` is a query: it answers in a condition, and an effect runs an action", .{ext.name});
             try c.names.put(c.arena, &call.name, .{ .action = id });
         },
     }
+}
+
+// `~ fact = action(…)`: an action whose outcome the host decides, kept in `fact`. False when the value is no such call.
+fn outcome(c: *Checker, scope: Scope, v: *const ast.Expr, fact: sym.FactId) Error!bool {
+    if (v.kind != .call) return false;
+    const named = c.valueNamed(scope.module, v.kind.call.name.text) orelse return false;
+    if (named != .external or !c.externs.items[named.external.raw()].action) return false;
+    const id = try externOf(c, scope, &v.kind.call) orelse return true;
+    const ext = c.externs.items[id.raw()];
+    const want = c.facts.items[fact.raw()].type;
+    if (!ext.returns.?.eql(want)) {
+        try c.err(v.span, "`{s}`'s outcome is {s}, and the fact keeping it is {s}", .{ ext.name, try c.describe(ext.returns.?), try c.describe(want) });
+    }
+    try c.names.put(c.arena, &v.kind.call.name, .{ .action = id });
+    _ = try record(c, v, ext.returns.?, .{ .action = id });
+    return true;
 }
 
 fn item(c: *Checker, scope: Scope, fact: *const ast.Name, it: *const ast.Name, op: []const u8) Error!void {
@@ -232,7 +267,7 @@ fn item(c: *Checker, scope: Scope, fact: *const ast.Name, it: *const ast.Name, o
 
 // The fact an effect writes, if the story may write it.
 fn settable(c: *Checker, scope: Scope, n: *const ast.Name) Error!?sym.FactId {
-    const named = c.value_names.find(scope.module, n.text) orelse {
+    const named = c.valueNamed(scope.module, n.text) orelse {
         try c.err(n.span, "nothing is called `{s}`: no fact", .{n.text});
         return null;
     };
@@ -257,19 +292,21 @@ fn settable(c: *Checker, scope: Scope, n: *const ast.Name) Error!?sym.FactId {
     return id;
 }
 
-/// Text: what `{…}` says must be a fact or a constant that can be said, and words chosen by a condition are checked as both.
+/// Text: what `{…}` says must be a fact, a constant or a query's answer that can be said; words chosen by a
+/// condition are checked as both, and every option of alternatives.
 pub fn text(c: *Checker, scope: Scope, t: ast.Text) Error!void {
     for (t) |*piece| switch (piece.*) {
         .literal => {},
         .value => |*e| {
-            if (e.kind != .name) return c.err(e.span, "`{{…}}` says a fact or a constant, by its name", .{});
+            if (e.kind != .name and e.kind != .call) return c.err(e.span, "`{{…}}` says a fact, a constant or a query's answer", .{});
             const typ = try infer(c, scope, e, null) orelse continue;
-            if (typ == .set_of) try c.err(e.span, "`{s}` is a set, which cannot be said", .{e.kind.name});
+            if (typ == .set_of) try c.err(e.span, "a set cannot be said", .{});
         },
         .choose => |*ch| {
             try condition(c, scope, &ch.cond);
             try text(c, scope, ch.then);
             try text(c, scope, ch.otherwise);
         },
+        .alternatives => |alt| for (alt.options) |o| try text(c, scope, o),
     };
 }

@@ -87,6 +87,10 @@ fn words(h: *std.hash.Wyhash, text: ast.Text) void {
             h.update("|");
             words(h, ch.otherwise);
         },
+        .alternatives => |alt| for (alt.options) |o| {
+            words(h, o);
+            h.update("|");
+        },
     };
 }
 

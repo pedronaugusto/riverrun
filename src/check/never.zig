@@ -44,7 +44,7 @@ fn fold(c: *const Checker, e: *const ast.Expr) Truth {
                 const same = equal(c, b.lhs, b.rhs) orelse return .unknown;
                 return if (same == (b.op == .eq)) .yes else .no;
             },
-            .has, .hasnt => .unknown,
+            .has, .hasnt, .lt, .le, .gt, .ge => .unknown,
         },
         else => .unknown,
     };
@@ -126,7 +126,7 @@ const Atoms = struct {
                 const set = b.op == .has or b.op == .hasnt;
                 if (asks(c, b.lhs, b.rhs) orelse asks(c, b.rhs, b.lhs)) |pair| a.add(.{ .fact = pair.fact, .value = pair.value, .is = is, .set = set });
             },
-            .@"or" => {},
+            .@"or", .lt, .le, .gt, .ge => {},
         }
     }
 

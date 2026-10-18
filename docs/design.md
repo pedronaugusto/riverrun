@@ -45,13 +45,18 @@ DAD: Go.
 - **Declarations**, seen by every file of the story:
   - `cast:` ids with a display name, a note after `—` and tags; `extras:` people who speak once and need no name. A
     speaker that is neither is an error.
-  - `facts (scope):` typed facts in a scope the host names; `(game)` marks a fact only the host writes.
+  - `facts (scope):` typed facts in a scope the host names; `(game)` marks a fact only the host writes, and
+    `(clock)` an int it only advances.
+  - `ref of kind` is a type for one of the host's things (a person, an item kind, a place), named in the story by
+    its stable id (`wolf_pelt`) and checked against the host's manifest.
   - `const:` fixed points every run shares (`dies_at = "ten past nine"`).
   - `extern:` the host's vocabulary. `name(params) -> type` is a **query**, pure and callable anywhere; `name(params)`
     is an **action**, run when its line is reached; `name(params) -> type (action)` is an action with an **outcome**
-    the host decides (a roll, a check, a fight).
-- **Modules.** A file may begin `module name`; what it declares is `name.x` to other modules, and a name resolves in
-  its own module first, then the root. *Protects:* hundreds of files and many writers without clashes.
+    the host decides (a roll, a check, a fight). Parameters may be named (`kind: ref of item_kind, n: int`); a
+    query declares the stamp of what it reads, keyed by its parameters, `(reads stock(kind))`, so whatever
+    evaluates it can be woken when that changes.
+- **Modules.** A file may begin `module name`; what it declares is `name.x` to other modules, and an unqualified
+  name resolves in its own module first, then the root. *Protects:* hundreds of files and many writers without clashes.
 - **Sections:** `== name`, with nested `= name`. A section may have a kind: `(pool)`, `(pool N)`, or a kind a
   package registers with the compiler, such as a quest package's `(quest)`.
 - **Lines:** `SPEAKER: text`, or narration with no speaker. The text is the whole line, never assembled from pieces at
@@ -81,7 +86,7 @@ DAD: Go.
   into the host's mechanic.
 - **Comments:** `//`.
 
-Built: the reader, except modules, alternatives, `{ else }`, ordering and outcomes; an extern takes one parameter.
+Built: the reader and the checker, all of the above.
 
 ## Conversations
 

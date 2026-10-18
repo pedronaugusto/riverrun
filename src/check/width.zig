@@ -10,13 +10,18 @@ const Checker = @import("Checker.zig");
 const ast = syntax.ast;
 
 /// The columns `text` takes at its widest. A `{value}` counts `value` columns
-/// (none when null), and words chosen by a condition count as the wider.
+/// (none when null), and words chosen by a condition or alternatives count as the widest.
 pub fn measure(text: ast.Text, value: ?u32) usize {
     var n: usize = 0;
     for (text) |piece| n += switch (piece) {
         .literal => |s| xenoglyph.width.string(s, .{}).raw(),
         .value => value orelse 0,
         .choose => |ch| @max(measure(ch.then, value), measure(ch.otherwise, value)),
+        .alternatives => |alt| blk: {
+            var most: usize = 0;
+            for (alt.options) |o| most = @max(most, measure(o, value));
+            break :blk most;
+        },
     };
     return n;
 }

@@ -19,6 +19,8 @@ pub const Line = struct {
     tags: []const u8,
     /// The column `text` starts at.
     col: u32,
+    /// The column `tags` starts at.
+    tags_col: u32 = 0,
 };
 
 pub fn split(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagnostics, file: source.FileId, bytes: []const u8) error{ OutOfMemory, Invalid }![]const Line {
@@ -51,12 +53,12 @@ pub fn split(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Di
         const text = std.mem.trimEnd(u8, body[0..cut.text_end], " ");
         if (text.len == 0 and cut.tags.len == 0) continue;
         std.debug.assert(text.len <= body.len);
-        try out.append(arena, .{ .number = number, .indent = indent, .text = text, .tags = cut.tags, .col = indent + 1 });
+        try out.append(arena, .{ .number = number, .indent = indent, .text = text, .tags = cut.tags, .col = indent + 1, .tags_col = indent + 1 + @as(u32, @intCast(cut.tags_at)) });
     }
     return out.toOwnedSlice(arena);
 }
 
-const Cut = struct { text_end: usize, tags: []const u8 };
+const Cut = struct { text_end: usize, tags: []const u8, tags_at: usize = 0 };
 
 // Where the line's words end, and its tags, outside quotes.
 fn strip(s: []const u8) Cut {
@@ -69,12 +71,19 @@ fn strip(s: []const u8) Cut {
         if (quoted) continue;
         if (c == '/' and i + 1 < s.len and s[i + 1] == '/' and (i == 0 or s[i - 1] == ' ')) {
             const end = tag_start orelse i;
-            return .{ .text_end = end, .tags = if (tag_start) |t| std.mem.trim(u8, s[t + 1 .. i], " ") else "" };
+            return if (tag_start) |t| tagsOf(s, t, i) else .{ .text_end = end, .tags = "" };
         }
         if (tag_start == null and c == '#' and (i == 0 or s[i - 1] == ' ') and (i + 1 == s.len or s[i + 1] == ' ')) tag_start = i;
     }
-    if (tag_start) |t| return .{ .text_end = t, .tags = std.mem.trim(u8, s[t + 1 ..], " ") };
+    if (tag_start) |t| return tagsOf(s, t, s.len);
     return .{ .text_end = s.len, .tags = "" };
+}
+
+// The tags between the `#` at `hash` and `end`, and where they start.
+fn tagsOf(s: []const u8, hash: usize, end: usize) Cut {
+    var a = hash + 1;
+    while (a < end and s[a] == ' ') a += 1;
+    return .{ .text_end = hash, .tags = std.mem.trimEnd(u8, s[a..end], " "), .tags_at = a };
 }
 
 test "a line loses its comment and keeps its tags apart" {
@@ -94,6 +103,7 @@ test "a line loses its comment and keeps its tags apart" {
     try std.testing.expectEqual(@as(usize, 4), lines.len);
     try std.testing.expectEqualStrings("== hide_1969", lines[0].text);
     try std.testing.expectEqualStrings("listen · count 20", lines[0].tags);
+    try std.testing.expectEqual(@as(u32, 25), lines[0].tags_col);
     try std.testing.expectEqualStrings("MUM: You could still play, Frank.", lines[1].text);
     try std.testing.expectEqual(@as(u32, 2), lines[2].indent);
     try std.testing.expectEqualStrings("~ carried += play", lines[2].text);

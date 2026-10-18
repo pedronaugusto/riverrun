@@ -8,6 +8,8 @@ const Span = @import("source.zig").Span;
 /// One file: its declarations and its sections, in the order written.
 pub const File = struct {
     path: []const u8,
+    /// `module name` at the top: what the file declares is `name.x` to other modules. Null is the root module.
+    module: ?Name = null,
     decls: []const Decl,
     sections: []const Section,
 };
@@ -44,6 +46,8 @@ pub const Fact = struct {
     type: Type,
     /// Written by the game's mechanics, never by the story.
     game: bool,
+    /// `(clock)`: an int the game only advances, so a comparison with it can be woken by its value.
+    clock: bool = false,
 };
 
 pub const Type = union(enum) {
@@ -52,16 +56,26 @@ pub const Type = union(enum) {
     text,
     one_of: []const Name,
     set_of: []const Name,
+    /// `ref of kind`: an opaque handle to one of the host's things, named in the story by stable text ids.
+    ref: Name,
 };
 
 pub const Const = struct { name: Name, value: Expr };
 
 pub const Extern = struct {
     name: Name,
-    params: []const Type,
-    /// Null for an action; a type for a query.
+    params: []const Param,
+    /// Null for an action; a type for a query, or for an action's outcome.
     returns: ?Type,
+    /// `(action)` after a return type: an action whose outcome the host decides. Without it a return makes a query.
+    action: bool = false,
+    /// `(reads stock(kind))`: the stamp the host bumps when what the query reads changes, keyed by its parameters.
+    reads: ?Stamp = null,
 };
+
+pub const Param = struct { name: ?Name, type: Type };
+
+pub const Stamp = struct { family: Name, keys: []const Name };
 
 // ---------------------------------------------------------------- sections
 
@@ -132,9 +146,23 @@ pub const Piece = union(enum) {
     value: Expr,
     /// `{ condition: these words | those words }`
     choose: struct { cond: Expr, then: Text, otherwise: Text },
+    /// `{seq: a | b | c}`, `{cycle: …}`, `{once: …}`, `{shuffle: …}`
+    alternatives: struct { kind: Alternatives, options: []const Text },
 };
 
-pub const Cond = struct { cond: Expr, body: []const Stmt };
+pub const Alternatives = enum {
+    /// Each in turn, then the last for ever.
+    seq,
+    /// Each in turn, round again.
+    cycle,
+    /// Each once, then nothing.
+    once,
+    /// In an order the seed decides.
+    shuffle,
+};
+
+/// `{ condition }` with what it gates, and what `{ else }` gates after it.
+pub const Cond = struct { cond: Expr, body: []const Stmt, otherwise: []const Stmt = &.{} };
 
 pub const Choice = struct {
     sticky: bool,
@@ -181,7 +209,7 @@ pub const Expr = struct {
         binary: struct { op: Op, lhs: *const Expr, rhs: *const Expr },
     },
 
-    pub const Op = enum { eq, ne, has, hasnt, @"and", @"or" };
+    pub const Op = enum { eq, ne, lt, le, gt, ge, has, hasnt, @"and", @"or" };
 };
 
 pub const Call = struct { name: Name, args: []const Expr };

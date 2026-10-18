@@ -4,7 +4,7 @@
 //!     or     = and { "or" and }
 //!     and    = not { "and" not }
 //!     not    = "not" not | rel
-//!     rel    = atom [ ( "=" | "!=" | "has" | "hasnt" ) atom ]
+//!     rel    = atom [ ( "=" | "!=" | "<" | "<=" | ">" | ">=" | "has" | "hasnt" ) atom ]
 //!     atom   = name [ "(" [ expr { "," expr } ] ")" ] | int | string | "true" | "false" | "(" expr ")"
 //!
 //! There is no arithmetic and nothing that loops: a story asks and the host
@@ -56,10 +56,11 @@ const Parser = struct {
     }
 
     // A word if one starts here, without consuming it.
+    // A name, `module.name` qualified, without consuming it.
     fn peekWord(p: *Parser) []const u8 {
         p.space();
         var j = p.i;
-        while (j < p.text.len and isWord(p.text[j])) j += 1;
+        while (j < p.text.len and (isWord(p.text[j]) or (p.text[j] == '.' and j > p.i and j + 1 < p.text.len and isWord(p.text[j + 1])))) j += 1;
         return p.text[p.i..j];
     }
 
@@ -74,18 +75,16 @@ const Parser = struct {
         if (depth > max_depth) return p.fail("the expression nests deeper than {d}", .{max_depth});
         var lhs = try p.andExpr(depth + 1);
         while (true) {
-            const at = p.span();
             if (!p.keyword("or")) return lhs;
-            lhs = try p.node(at, .{ .binary = .{ .op = .@"or", .lhs = lhs, .rhs = try p.andExpr(depth + 1) } });
+            lhs = try p.node(lhs.span, .{ .binary = .{ .op = .@"or", .lhs = lhs, .rhs = try p.andExpr(depth + 1) } });
         }
     }
 
     fn andExpr(p: *Parser, depth: usize) Error!*const ast.Expr {
         var lhs = try p.notExpr(depth + 1);
         while (true) {
-            const at = p.span();
             if (!p.keyword("and")) return lhs;
-            lhs = try p.node(at, .{ .binary = .{ .op = .@"and", .lhs = lhs, .rhs = try p.notExpr(depth + 1) } });
+            lhs = try p.node(lhs.span, .{ .binary = .{ .op = .@"and", .lhs = lhs, .rhs = try p.notExpr(depth + 1) } });
         }
     }
 
@@ -99,10 +98,10 @@ const Parser = struct {
     fn relExpr(p: *Parser, depth: usize) Error!*const ast.Expr {
         const lhs = try p.atom(depth + 1);
         p.space();
-        const at = p.span();
-        const op: ?ast.Expr.Op = if (p.eat("!=")) .ne else if (p.eat("=")) .eq else if (p.keyword("hasnt")) .hasnt else if (p.keyword("has")) .has else null;
+        const op: ?ast.Expr.Op = if (p.eat("!=")) .ne else if (p.eat("<=")) .le else if (p.eat(">=")) .ge else if (p.eat("<")) .lt else if (p.eat(">")) .gt else if (p.eat("=")) .eq else if (p.keyword("hasnt")) .hasnt else if (p.keyword("has")) .has else null;
         const o = op orelse return lhs;
-        return p.node(at, .{ .binary = .{ .op = o, .lhs = lhs, .rhs = try p.atom(depth + 1) } });
+        // an expression is placed where it starts, so a diagnostic about it points at its first word
+        return p.node(lhs.span, .{ .binary = .{ .op = o, .lhs = lhs, .rhs = try p.atom(depth + 1) } });
     }
 
     fn eat(p: *Parser, s: []const u8) bool {
@@ -193,6 +192,26 @@ test "a broken expression is reported where it breaks" {
     defer r.diags.deinit(std.testing.allocator);
     try std.testing.expect(r.expr == null);
     try std.testing.expectEqual(@as(usize, 1), r.diags.errors());
+}
+
+test "ints are ordered, and an expression is placed where it starts" {
+    var r = try testParse("since(asked, day) >= 3 and hour < 6");
+    defer r.arena.deinit();
+    defer r.diags.deinit(std.testing.allocator);
+    const e = r.expr.?;
+    try std.testing.expectEqual(ast.Expr.Op.@"and", e.kind.binary.op);
+    try std.testing.expectEqual(ast.Expr.Op.ge, e.kind.binary.lhs.kind.binary.op);
+    try std.testing.expectEqual(ast.Expr.Op.lt, e.kind.binary.rhs.kind.binary.op);
+    try std.testing.expectEqual(@as(u32, 1), e.span.col);
+    try std.testing.expectEqual(@as(u32, 28), e.kind.binary.rhs.span.col);
+}
+
+test "a name may be qualified by its module" {
+    var r = try testParse("harbour.met and not harbour.seen_by(tom)");
+    defer r.arena.deinit();
+    defer r.diags.deinit(std.testing.allocator);
+    try std.testing.expectEqualStrings("harbour.met", r.expr.?.kind.binary.lhs.kind.name);
+    try std.testing.expectEqualStrings("harbour.seen_by", r.expr.?.kind.binary.rhs.kind.not.kind.call.name.text);
 }
 
 test "hasnt is not has followed by nt" {

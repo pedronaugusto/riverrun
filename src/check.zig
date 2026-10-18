@@ -36,6 +36,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
         gpa.destroy(arena);
     }
     var c: Checker = .{ .gpa = gpa, .arena = arena.allocator(), .diags = diags, .files = files, .options = options };
+    try c.numberModules();
     try declare.run(&c);
     try walk.run(&c);
     try flow.run(&c);
@@ -50,6 +51,8 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
         .consts = c.consts.items,
         .externs = c.externs.items,
         .enums = c.enums.items,
+        .kinds = c.kinds.items,
+        .modules = c.module_names.items,
         .sections = c.sections.items,
         .labels = c.labels.items,
         .visits = c.visits.items,
