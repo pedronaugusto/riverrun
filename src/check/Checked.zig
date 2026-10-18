@@ -25,8 +25,8 @@ kinds: []const []const u8,
 modules: []const []const u8,
 /// The story's version, which migration rules count from; 0 when none is declared.
 version: u32 = 0,
-/// The kinds packages registered, as the options gave them: a builtin names one by its place here.
-registered: []const @import("Checker.zig").Kind,
+/// The kinds packages registered, in the options' order: a builtin names one by its place here.
+registered: []const sym.Registered,
 sections: []const sym.Section,
 labels: []const sym.Label,
 visits: []const sym.Visit,

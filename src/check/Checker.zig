@@ -8,6 +8,7 @@ const sym = @import("symbols.zig");
 const Schema = @import("schema.zig").Schema;
 
 const Checker = @This();
+const Checked = @import("Checked.zig");
 const ast = syntax.ast;
 const Span = syntax.Span;
 const Allocator = std.mem.Allocator;
@@ -26,6 +27,8 @@ pub const Options = struct {
     schema: ?*const Schema = null,
     /// Kinds of section besides scenes and pools that a package registers: `quest`.
     kinds: []const Kind = &.{},
+    /// The packages' checks of the whole story, each run once riverrun's are done.
+    passes: []const Pass = &.{},
     width: Width = .{},
     /// The host's things by kind, the ids a story may name: `item_kind` holds `wolf_pelt`. A kind not listed is
     /// carried unchecked, so a host without a manifest still compiles.
@@ -48,24 +51,15 @@ pub const Kind = struct {
     }
 };
 
-pub const Builtin = struct {
-    name: []const u8,
-    params: []const Arg,
-    returns: Returns,
-
-    /// What a builtin's argument names: never a value, always something of the story.
-    pub const Arg = enum {
-        /// A part of the section the call is in: a quest's stage.
-        part,
-        section,
-        /// A fact, which must be an int.
-        int_fact,
-        /// Any fact.
-        fact,
-    };
-
-    pub const Returns = enum { boolean, int };
+/// What a package checks of the whole story once riverrun has: what no schema can type (a calendar that does not
+/// hold together, a quest that can get stuck), reported in the story's diagnostics where it is written, as
+/// riverrun's own are (`c.err`). It reads the story and declares nothing.
+pub const Pass = struct {
+    user: ?*anyopaque = null,
+    run: *const fn (user: ?*anyopaque, c: *Checker, story: *const Checked) Error!void,
 };
+
+pub const Builtin = sym.Builtin;
 
 /// The kind a package registered for `section`, if it is one.
 pub fn kindOfSection(c: *const Checker, id: sym.SectionId) ?*const Kind {

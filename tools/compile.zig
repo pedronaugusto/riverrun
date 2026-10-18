@@ -44,7 +44,23 @@ pub fn main(init: std.process.Init) !u8 {
     }
     var checked = try riverrun.check.run(gpa, &diags, trees, options);
     defer checked.deinit();
+    if (diags.errors() > 0) return report(io, &diags, trees);
 
+    const passes: []const riverrun.compile.Pass = if (@hasDecl(vocabulary, "passes")) vocabulary.passes else &.{};
+    var out = riverrun.compile.run(gpa, &diags, &checked, .{ .passes = passes }) catch |e| switch (e) {
+        // a package's pass refused the story, and said where
+        error.PassFailed => return report(io, &diags, trees),
+        else => return e,
+    };
+    defer out.deinit(gpa);
+    try cwd.writeFile(io, .{ .sub_path = graph_path, .data = out.graph });
+    try cwd.writeFile(io, .{ .sub_path = words_path, .data = out.words });
+    _ = try report(io, &diags, trees);
+    return 0;
+}
+
+// Every diagnostic, `file:line:col: severity: message`; 1 when one is an error.
+fn report(io: std.Io, diags: *const syntax.Diagnostics, trees: []const syntax.ast.File) !u8 {
     var buf: [4096]u8 = undefined;
     var err = std.Io.File.stderr().writer(io, &buf);
     for (diags.list.items) |d| {
@@ -55,14 +71,7 @@ pub fn main(init: std.process.Init) !u8 {
         try err.interface.print("{s}:{d}:{d}: {s}: {s}\n", .{ trees[d.span.file].path, d.span.line, d.span.col, severity, d.message });
     }
     try err.interface.flush();
-    if (diags.errors() > 0) return 1;
-
-    const passes: []const riverrun.compile.Pass = if (@hasDecl(vocabulary, "passes")) vocabulary.passes else &.{};
-    var out = try riverrun.compile.run(gpa, &diags, &checked, .{ .passes = passes });
-    defer out.deinit(gpa);
-    try cwd.writeFile(io, .{ .sub_path = graph_path, .data = out.graph });
-    try cwd.writeFile(io, .{ .sub_path = words_path, .data = out.words });
-    return 0;
+    return @intFromBool(diags.errors() > 0);
 }
 
 fn usage() u8 {

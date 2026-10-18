@@ -7,19 +7,22 @@
 //! Its passes, in order: declare every name (`declare`), walk every
 //! statement (`walk`: names, types, tags, widths, ids), then the graph
 //! (`flow`: dead ends, reachability, returns), then what no single statement
-//! shows (a fact nothing sets).
+//! shows (a fact nothing sets), then each package's own pass.
 
 const std = @import("std");
 const syntax = @import("syntax.zig");
-const Checker = @import("check/Checker.zig");
 
 pub const symbols = @import("check/symbols.zig");
 pub const Checked = @import("check/Checked.zig");
 pub const Schema = @import("check/schema.zig").Schema;
+/// The checker while it works: what a package's pass and its kind's hooks are given, to read the story and to
+/// report where it is written.
+pub const Checker = @import("check/Checker.zig");
 pub const Options = Checker.Options;
 pub const Mode = Checker.Mode;
 pub const Width = Checker.Width;
 pub const Kind = Checker.Kind;
+pub const Pass = Checker.Pass;
 pub const Builtin = Checker.Builtin;
 pub const Things = Checker.Things;
 
@@ -46,7 +49,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
     for (c.facts.items) |f| if (!f.game and !f.moment and !f.set) {
         try c.warn(f.span, "nothing sets `{s}`: declare it `(game)` if the game writes it", .{f.name});
     };
-    return .{
+    const out: Checked = .{
         .arena = arena,
         .files = files,
         .speakers = c.speakers.items,
@@ -57,7 +60,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
         .kinds = c.kinds.items,
         .modules = c.module_names.items,
         .version = c.version,
-        .registered = options.kinds,
+        .registered = try registered(arena.allocator(), options.kinds),
         .sections = c.sections.items,
         .labels = c.labels.items,
         .visits = c.visits.items,
@@ -72,6 +75,14 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
         .tags = c.tags,
         .text_tags = c.text_tags,
     };
+    for (options.passes) |p| try p.run(p.user, &c, &out);
+    return out;
+}
+
+fn registered(arena: std.mem.Allocator, kinds: []const Kind) error{OutOfMemory}![]const symbols.Registered {
+    const out = try arena.alloc(symbols.Registered, kinds.len);
+    for (kinds, out) |k, *r| r.* = .{ .name = k.name, .builtins = k.builtins };
+    return out;
 }
 
 test {

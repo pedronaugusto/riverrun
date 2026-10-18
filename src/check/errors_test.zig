@@ -543,6 +543,26 @@ test "a registered kind adds its tags and builtins to its own sections, and nowh
     try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
 }
 
+test "a package's pass reports inside the check, where the story is written" {
+    const Stuck = struct {
+        // a quest with no stage that ends it: what a quest package refuses and no schema can type
+        fn run(_: ?*anyopaque, c: *check.Checker, story: *const check.Checked) error{OutOfMemory}!void {
+            for (story.sections) |s| if (s.kind == .other and s.parts.len == 0) {
+                try c.err(s.node.name.span, "the quest `{s}` has no stage, so it can never end", .{s.name});
+            };
+        }
+    };
+    var o = try checkOne(
+        \\== pelts (quest)
+        \\Hilde wants ten pelts.
+        \\== hunt (quest)
+        \\= asked
+        \\  Ten pelts.
+    , .{ .kinds = &.{.{ .name = "quest" }}, .passes = &.{.{ .run = Stuck.run }} });
+    defer o.deinit();
+    try o.only(.err, 1, 4, "the quest `pelts` has no stage, so it can never end");
+}
+
 test "rules: each a condition and its effects, reached by nothing, their queries stamped" {
     var o = try checkOne(
         \\facts:

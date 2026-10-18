@@ -2,7 +2,8 @@
 //! the checker's ids to the format's. Every id the checker gave has its
 //! place here before any statement is compiled, so a statement compiles
 //! against this index alone. A package's pass for its registered kind gets
-//! this too, to find what the story's sections and facts became.
+//! this too, to find what the story's sections and facts became, and to say
+//! where the story is wrong if it finds what its check should have.
 
 const std = @import("std");
 const syntax = @import("../syntax.zig");
@@ -15,7 +16,7 @@ const sym = check.symbols;
 const ast = syntax.ast;
 
 pub const Error = story.BuildError || error{
-    /// A pass a package registered failed, and says so itself.
+    /// A pass a package registered failed: it says why in the diagnostics (`err`), or riverrun says it did not.
     PassFailed,
 };
 
@@ -27,6 +28,8 @@ gpa: std.mem.Allocator,
 arena: std.mem.Allocator,
 b: *story.Builder,
 checked: *const check.Checked,
+/// Where a package's pass reports what it refuses, as the checker does.
+diags: *syntax.Diagnostics,
 
 /// By the checker's id, what each became in the format.
 facts: []story.FactId,
@@ -43,6 +46,11 @@ labels: []story.NodeId,
 /// The section or part being compiled, for `place`.
 where: []const u8 = "",
 places: u32 = 0,
+
+/// Reports an error where the story is written; the story is then refused.
+pub fn err(c: *Compiler, span: syntax.Span, comptime fmt: []const u8, args: anytype) Error!void {
+    try c.diags.add(c.gpa, span, .err, fmt, args);
+}
 
 /// A name as the format keeps it: qualified by its module, the root module's bare.
 pub fn qualified(c: *const Compiler, module: sym.ModuleId, name: []const u8) Error![]const u8 {

@@ -2,6 +2,7 @@
 //! compiled and told by a session, so what is checked is what a player sees.
 
 const std = @import("std");
+const syntax = @import("../syntax.zig");
 const check = @import("../check.zig");
 const story = @import("riverrun").story;
 const facts = @import("riverrun").facts;
@@ -162,7 +163,7 @@ test "a registered kind's builtin is compiled for its package, and its pass adds
         \\= late    when { since(asked, day) > 3 }
         \\  { since(asked, day) > 5 } Far too late.
         \\  Too late.
-    }, .{ .kinds = &.{quest} }, &.{.{ .run = Pass.add }});
+    }, .{ .kinds = &.{quest} }, &.{.{ .name = "cairn", .run = Pass.add }});
     defer out.deinit(gpa);
     const s: story.Story = try .init(out.graph, .{});
     try std.testing.expectEqualStrings("stages", s.block("cairn").?.bytes);
@@ -172,6 +173,39 @@ test "a registered kind's builtin is compiled for its package, and its pass adds
     try std.testing.expectEqualStrings("pelts.asked", s.section(.fromRaw(s.builtinArg(call.args.start))).name);
     try std.testing.expectEqual(facts.Role.clock, s.fact(.fromRaw(@intCast(s.builtinArg(call.args.start + 1)))).role);
     try std.testing.expectEqual(story.Section.Kind.other, s.section(s.sectionNamed("pelts.late").?).kind);
+}
+
+test "a pass that refuses the story says where, and one that fails saying nothing is named" {
+    const Passes = struct {
+        fn refuse(_: ?*anyopaque, c: *compile.Compiler) compile.Compiler.Error!void {
+            const s = c.checked.sections[c.checked.section("pelts").?.raw()];
+            try c.err(s.node.name.span, "`{s}` has no stage", .{s.name});
+        }
+        fn silent(_: ?*anyopaque, _: *compile.Compiler) compile.Compiler.Error!void {
+            return error.PassFailed;
+        }
+    };
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const quest: check.Kind = .{ .name = "quest" };
+    const cases = .{
+        .{ Passes.refuse, 1, "`pelts` has no stage" },
+        .{ Passes.silent, 0, "`cairn`'s pass failed and said nothing of why" },
+    };
+    inline for (cases) |case| {
+        var diags: syntax.Diagnostics = .{};
+        defer diags.deinit(gpa);
+        const tree = try arena.allocator().create(syntax.ast.File);
+        tree.* = try syntax.parse(arena.allocator(), gpa, &diags, 0, "a.river", "== pelts (quest)\nHilde wants ten pelts.\n");
+        var checked = try check.run(gpa, &diags, tree[0..1], .{ .kinds = &.{quest} });
+        defer checked.deinit();
+        try std.testing.expectEqual(@as(usize, 0), diags.errors());
+        try std.testing.expectError(error.PassFailed, compile.run(gpa, &diags, &checked, .{ .passes = &.{.{ .name = "cairn", .run = case[0] }} }));
+        try std.testing.expectEqual(@as(usize, 1), diags.errors());
+        const d = diags.list.items[diags.list.items.len - 1];
+        try std.testing.expectEqual(@as(u32, case[1]), d.span.line);
+        try std.testing.expectEqualStrings(case[2], d.message);
+    }
 }
 
 test "rules from the text: a slight lowers honor, and time alone brings it back" {

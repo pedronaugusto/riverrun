@@ -30,8 +30,11 @@ pub const Error = Compiler.Error || error{
 pub const condition = exprs.condition;
 
 /// What a package adds when its kind of section is compiled: a pass over the whole story, which reads what the
-/// checker resolved and what the compiler made of it, and may add a block (`Compiler.b.block`).
+/// checker resolved and what the compiler made of it, and may add a block (`Compiler.b.block`). What it refuses
+/// it reports with `Compiler.err`, and the story is refused; one that fails saying nothing is reported by name.
 pub const Pass = struct {
+    /// Whose it is: the package's name.
+    name: []const u8,
     user: ?*anyopaque = null,
     run: *const fn (user: ?*anyopaque, c: *Compiler) Compiler.Error!void,
 };
@@ -54,7 +57,8 @@ pub const Compiled = struct {
     }
 };
 
-pub fn run(gpa: std.mem.Allocator, diags: *const syntax.Diagnostics, checked: *const check.Checked, options: Options) Error!Compiled {
+/// Compiles `checked`, which `diags` must hold no error for; each pass reports into `diags`.
+pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, checked: *const check.Checked, options: Options) Error!Compiled {
     if (diags.errors() > 0) return error.StoryHasErrors;
     var b: story.Builder = try .init(gpa);
     defer b.deinit();
@@ -66,6 +70,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *const syntax.Diagnostics, checked: *c
         .arena = a,
         .b = &b,
         .checked = checked,
+        .diags = diags,
         .facts = try a.alloc(story.FactId, checked.facts.len),
         .enums = try a.alloc(story.EnumId, checked.enums.len),
         .kinds = try a.alloc(story.RefKindId, checked.kinds.len),
@@ -79,11 +84,22 @@ pub fn run(gpa: std.mem.Allocator, diags: *const syntax.Diagnostics, checked: *c
     b.version = std.math.cast(u16, checked.version) orelse return error.TooLarge;
     try declare.run(&c);
     for (0..checked.files.len) |f| try file(&c, @intCast(f)); // safe: a FileId numbers the files
-    for (options.passes) |p| try p.run(p.user, &c);
+    for (options.passes) |p| try pass(&c, p);
     const graph = try b.bytes(gpa);
     errdefer gpa.free(graph);
     const written: story.Story = try .init(graph, .{ .verify_hash = false });
     return .{ .graph = graph, .words = try b.stringBytes(gpa, options.locale, written.hash()) };
+}
+
+// A package's pass, which never fails silently: an error it reports refuses the story, and a failure it does not
+// explain is reported by its name.
+fn pass(c: *Compiler, p: Pass) Error!void {
+    const before = c.diags.errors();
+    p.run(p.user, c) catch |e| {
+        if (e == error.PassFailed and c.diags.errors() == before) try c.err(.none, "`{s}`'s pass failed and said nothing of why", .{p.name});
+        return e;
+    };
+    if (c.diags.errors() > before) return error.PassFailed;
 }
 
 // riverrun's own number on a part, `# weight 3`, `# migrate 2`, which the checker held to a u16 above 0; 0 for none.

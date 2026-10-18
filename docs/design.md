@@ -215,6 +215,13 @@ things of the story, never values. The compiled story carries each builtin call 
 named, versioned **block** the package owns beside the graph. A query's stamp and a `(clock)` fact are carried too,
 so a package can wake a condition only when what it reads moves.
 
+A package reports through riverrun's diagnostics, never beside them. Its checks are a pass of the checker's
+(`check.Options.passes`), run inside `check.run` once riverrun's are done, over the checked story: what no schema can
+type (a calendar that does not hold together, a quest that can get stuck) is reported with `Checker.err` where it is
+written, and printed `file:line:col` as riverrun's own. Its compile pass reports the same way (`Compiler.err`), and
+the story is refused; a pass that fails without saying why is reported by its name. *Protects:* no check a tool must
+remember to run, and no build that fails without a place.
+
 ## The runtime
 
 A small data-oriented Zig **executor** walks the graph. There is no virtual machine.

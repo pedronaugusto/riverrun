@@ -187,6 +187,29 @@ pub const Part = struct {
 
 pub const PartRef = struct { section: SectionId, index: u16 };
 
+/// A function a registered kind's conditions may call, which its package evaluates: `since(stage, fact)`.
+pub const Builtin = struct {
+    name: []const u8,
+    params: []const Arg,
+    returns: Returns,
+
+    /// What a builtin's argument names: never a value, always something of the story.
+    pub const Arg = enum {
+        /// A part of the section the call is in: a quest's stage.
+        part,
+        section,
+        /// A fact, which must be an int.
+        int_fact,
+        /// Any fact.
+        fact,
+    };
+
+    pub const Returns = enum { boolean, int };
+};
+
+/// A kind of section a package registered, as the compiler needs it: its name and its builtins.
+pub const Registered = struct { name: []const u8, builtins: []const Builtin };
+
 /// `- (name)`: a gather that flow can go to by name.
 pub const Label = struct {
     name: []const u8,
