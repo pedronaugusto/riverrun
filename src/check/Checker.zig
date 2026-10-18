@@ -132,6 +132,8 @@ pub const Schema = struct {
         beside: []const ast.Tag,
         /// The section it is in; null on a cast entry.
         section: ?sym.SectionId,
+        /// The part of the section it is in; null in the section's own body.
+        part: ?u16,
         place: Schema.Place,
         /// The module its names are looked up in.
         module: sym.ModuleId,

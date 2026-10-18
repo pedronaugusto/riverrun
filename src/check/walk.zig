@@ -25,7 +25,7 @@ const Unit = struct {
 
 pub fn run(c: *Checker) Error!void {
     for (c.files, 0..) |file, i| for (file.decls) |decl| switch (decl) {
-        .cast => |entries| for (entries) |e| try tags.check(c, c.moduleOf(@intCast(i)), null, e.tags, .cast), // safe: a FileId numbers the files
+        .cast => |entries| for (entries) |e| try tags.check(c, c.moduleOf(@intCast(i)), null, null, e.tags, .cast), // safe: a FileId numbers the files
         else => {},
     };
     for (0..c.sections.items.len) |i| try section(c, sym.idOf(sym.SectionId, i));
@@ -33,7 +33,7 @@ pub fn run(c: *Checker) Error!void {
 
 fn section(c: *Checker, id: sym.SectionId) Error!void {
     const s = c.section(id).*;
-    try tags.check(c, s.module, id, s.node.tags, .section);
+    try tags.check(c, s.module, id, null, s.node.tags, .section);
     var unit: Unit = .{
         .scope = .{ .module = s.module, .section = id, .part = null },
         .path = .{ .section = s.name, .part = null, .ordinal = 0 },
@@ -44,7 +44,7 @@ fn section(c: *Checker, id: sym.SectionId) Error!void {
             .scope = .{ .module = s.module, .section = id, .part = @intCast(i) }, // safe: parts were numbered in u16
             .path = .{ .section = s.name, .part = p.name, .ordinal = 0 },
         };
-        try tags.check(c, s.module, id, p.node.tags, .part);
+        try tags.check(c, s.module, id, unit.scope.part, p.node.tags, .part);
         if (p.node.when) |*w| {
             try exprs.condition(c, unit.scope, w);
             if (never(c, w)) {
@@ -73,27 +73,27 @@ fn stmt(c: *Checker, u: *Unit, s: *const ast.Stmt, tagged: []const ast.Tag) Erro
             try exprs.condition(c, u.scope, &k.cond);
             if (never(c, &k.cond)) try c.warn(exprs.start(&k.cond), "this condition can never hold: what it gates is never said", .{});
             if (k.body.len == 1 and k.body[0].span.line == s.span.line) return stmt(c, u, &k.body[0], tagged);
-            try tags.check(c, u.scope.module, u.scope.section, tagged, .other);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
             try body(c, u, k.body);
             try body(c, u, k.otherwise);
         },
         .gather => |g| {
             if (g.then) |then| return stmt(c, u, then, tagged);
-            try tags.check(c, u.scope.module, u.scope.section, tagged, .other);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
         },
         .effect => |*e| {
             try exprs.effect(c, u.scope, e);
-            try tags.check(c, u.scope.module, u.scope.section, tagged, .other);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
         },
         .flow => |*f| {
             try flow.resolve(c, u.scope, f, s.span);
-            try tags.check(c, u.scope.module, u.scope.section, tagged, .other);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
         },
         .flow_if => |*f| {
             try exprs.condition(c, u.scope, &f.cond);
             try flow.resolve(c, u.scope, &f.then, s.span);
             try flow.resolve(c, u.scope, &f.otherwise, s.span);
-            try tags.check(c, u.scope.module, u.scope.section, tagged, .other);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
         },
     }
 }
@@ -109,7 +109,7 @@ fn line(c: *Checker, u: *Unit, s: *const ast.Stmt, l: *const ast.Line, tagged: [
     }
     try exprs.text(c, u.scope, l.text);
     try width.check(c, s.span, l.text, c.options.width.line, "line");
-    try tags.check(c, u.scope.module, u.scope.section, tagged, .line);
+    try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .line);
     try ids.give(c, s, tagged, u.path, key, l.text);
     u.path.ordinal += 1;
     for (l.effects) |*e| try stmt(c, u, e, e.tags);
@@ -122,7 +122,7 @@ fn choice(c: *Checker, u: *Unit, s: *const ast.Stmt, ch: *const ast.Choice, tagg
     }
     try exprs.text(c, u.scope, ch.text);
     try width.check(c, s.span, ch.text, c.options.width.choice, "choice");
-    try tags.check(c, u.scope.module, u.scope.section, tagged, .choice);
+    try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .choice);
     try ids.give(c, s, tagged, u.path, null, ch.text);
     u.path.ordinal += 1;
     try body(c, u, ch.body);

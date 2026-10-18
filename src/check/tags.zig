@@ -15,8 +15,10 @@ const Error = Checker.Error;
 const Schema = Checker.Schema;
 const id_key = schema_file.id_key;
 
-/// Checks the tags at one place. `from` is the section they are in, for edges; null for the cast.
-pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tags: []const ast.Tag, at: Schema.Place) Error!void {
+/// Checks the tags at one place. `from` is the section they are in, for edges, and `part` its part they are in;
+/// null for the cast, and for a section's own body.
+pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, part: ?u16, tags: []const ast.Tag, at: Schema.Place) Error!void {
+    const where: Where = .{ .module = module, .section = from, .part = part, .beside = tags, .place = at };
     for (tags) |*tag| {
         if (std.mem.eql(u8, tag.key.text, id_key)) {
             if (at != .line and at != .choice) try c.err(tag.key.span, "only a line or a choice has an `id`", .{});
@@ -36,7 +38,7 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tags: []co
         if (from) |s| if (c.kindOfSection(s)) |kind| if (kind.schema) |ks| switch (ks.find(tag.key.text, at)) {
             // a registered kind's own keys are checked by its schema; the rest fall to the host's
             .found => |k| {
-                try values(c, module, from, tags, tag, k, at);
+                try values(c, where, tag, k);
                 continue;
             },
             .elsewhere => {
@@ -57,9 +59,18 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, tags: []co
                 continue;
             },
         };
-        try values(c, module, from, tags, tag, key, at);
+        try values(c, where, tag, key);
     }
 }
+
+// Where a tag stands, as a judge is told.
+const Where = struct {
+    module: sym.ModuleId,
+    section: ?sym.SectionId,
+    part: ?u16,
+    beside: []const ast.Tag,
+    place: Schema.Place,
+};
 
 fn placeName(at: Schema.Place) []const u8 {
     return switch (at) {
@@ -102,10 +113,12 @@ fn count(c: *Checker, tag: *const ast.Tag, key: *const Schema.Key) Error!bool {
     return false;
 }
 
-// `beside` is the tags written where `tag` stands, which a judge may read.
-fn values(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, beside: []const ast.Tag, tag: *const ast.Tag, key: *const Schema.Key, at: Schema.Place) Error!void {
+fn values(c: *Checker, where: Where, tag: *const ast.Tag, key: *const Schema.Key) Error!void {
     if (!try count(c, tag, key)) return;
-    if (key.value == .judge) return key.value.judge(c, .{ .tag = tag, .beside = beside, .section = from, .place = at, .module = module });
+    if (key.value == .judge) return key.value.judge(c, .{ .tag = tag, .beside = where.beside, .section = where.section, .part = where.part, .place = where.place, .module = where.module });
+    const module = where.module;
+    const from = where.section;
+    const at = where.place;
     var sections: std.ArrayList(sym.SectionId) = .empty;
     if (key.value == .text) try c.text_tags.put(c.arena, tag, {});
     for (tag.values) |v| switch (key.value) {

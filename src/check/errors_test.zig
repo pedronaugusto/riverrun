@@ -650,10 +650,11 @@ test "a name a section declares within it never hides the story's own there" {
 
 test "a package judges its own tags' values, and says what is wrong where the tag stands" {
     const Stages = struct {
-        // `after` names stages of the quest it stands in
+        // `after` names other stages of the quest it stands in
         fn after(c: *check.Checker, t: check.Schema.Tagged) error{OutOfMemory}!void {
             const s = c.section(t.section.?);
             for (t.tag.values) |v| {
+                if (std.mem.eql(u8, s.parts[t.part.?].name, v)) try c.err(t.tag.key.span, "`{s}` comes after itself", .{v});
                 for (s.parts) |p| {
                     if (std.mem.eql(u8, p.name, v)) break;
                 } else try c.err(t.tag.key.span, "`{s}` is not a stage of `{s}`", .{ v, s.name });
@@ -668,11 +669,13 @@ test "a package judges its own tags' values, and says what is wrong where the ta
         \\= asked
         \\= late    # after asked, akked
         \\= early   # after
+        \\= done    # after done
     , .{ .kinds = &.{.{ .name = "quest", .schema = &quest_tags }} });
     defer o.deinit();
     try o.has(.err, 3, 13, "`akked` is not a stage of `pelts`");
     try o.has(.err, 4, 13, "`after` takes at least one value");
-    try std.testing.expectEqual(@as(usize, 2), o.diags.errors());
+    try o.has(.err, 5, 13, "`done` comes after itself");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
 }
 
 test "rules: each a condition and its effects, reached by nothing, their queries stamped" {

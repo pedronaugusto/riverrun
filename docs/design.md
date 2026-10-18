@@ -227,7 +227,7 @@ to the rest of the story and `named` inside the quest, so two quests' stages nev
 a name the story declares is refused.
 
 A key's value may be judged rather than typed (`Schema.Value.judge`): the package that defines the key is handed
-each such tag where it stands (its section, its place and the tags beside it) with the checker, and reports what is
+each such tag where it stands (its section and part, its place and the tags beside it) with the checker, and reports what is
 wrong at the tag, as `.values_of` and `.section` are riverrun's own judgements. An instant of a calendar, a
 schedule's unit, a reference to a quest's stage: what a word or a fixed list cannot say. A tag whose count is wrong
 is reported for that and never judged.
