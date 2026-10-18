@@ -5,7 +5,9 @@
 //! imports `syntax` or `check`.
 
 pub const syntax = @import("syntax.zig");
+pub const check = @import("check.zig");
 
 test {
     _ = syntax;
+    _ = check;
 }

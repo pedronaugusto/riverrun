@@ -1,0 +1,359 @@
+//! Each thing the checker refuses, or warns of, in the smallest story that
+//! shows it, with the message and the place it is reported.
+
+const std = @import("std");
+const syntax = @import("../syntax.zig");
+const check = @import("../check.zig");
+
+const Severity = syntax.source.Severity;
+
+const Outcome = struct {
+    arena: std.heap.ArenaAllocator,
+    diags: syntax.Diagnostics,
+    checked: ?check.Checked = null,
+
+    fn deinit(o: *Outcome) void {
+        if (o.checked) |*c| c.deinit();
+        o.diags.deinit(std.testing.allocator);
+        o.arena.deinit();
+    }
+
+    /// The one diagnostic there is, which must be this one.
+    fn only(o: *const Outcome, severity: Severity, line: u32, col: u32, message: []const u8) !void {
+        if (o.diags.list.items.len != 1) {
+            for (o.diags.list.items) |d| std.debug.print("{d}:{d}: {s}\n", .{ d.span.line, d.span.col, d.message });
+            return error.TestExpectedOneDiagnostic;
+        }
+        try o.has(severity, line, col, message);
+    }
+
+    /// A diagnostic with this message, at this place.
+    fn has(o: *const Outcome, severity: Severity, line: u32, col: u32, message: []const u8) !void {
+        for (o.diags.list.items) |d| {
+            if (d.severity == severity and d.span.line == line and d.span.col == col and std.mem.eql(u8, d.message, message)) return;
+        }
+        std.debug.print("wanted {t} {d}:{d}: {s}\n", .{ severity, line, col, message });
+        for (o.diags.list.items) |d| std.debug.print("  have {t} {d}:{d}: {s}\n", .{ d.severity, d.span.line, d.span.col, d.message });
+        return error.TestMissingDiagnostic;
+    }
+};
+
+fn checkOne(story: []const u8, options: check.Options) !Outcome {
+    var o: Outcome = .{ .arena = .init(std.testing.allocator), .diags = .{} };
+    errdefer o.deinit();
+    const tree = try o.arena.allocator().create(syntax.ast.File);
+    tree.* = try syntax.parse(o.arena.allocator(), std.testing.allocator, &o.diags, 0, "a.river", story);
+    if (o.diags.list.items.len > 0) return error.TestStoryDoesNotRead;
+    o.checked = try check.run(std.testing.allocator, &o.diags, tree[0..1], options);
+    return o;
+}
+
+test "a speaker comes from the cast or the extras" {
+    var o = try checkOne(
+        \\cast:
+        \\  dad  "Dad"
+        \\extras: a cellist
+        \\== a
+        \\DAD: Go.
+        \\A CELLIST: She stopped us once.
+        \\MUM: You could still play.
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 7, 1, "`MUM` is not a speaker: speakers come from `cast:` and `extras:`");
+}
+
+test "a fact must be declared" {
+    var o = try checkOne(
+        \\== a
+        \\~ carried += play
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 2, 3, "nothing is called `carried`: no fact");
+}
+
+test "a comparison is of like with like" {
+    var o = try checkOne(
+        \\facts:
+        \\  met: bool
+        \\== a
+        \\{ met = 3 }  Go.
+        \\~ met = true
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 4, 7, "`=` compares like with like: true or false and a number");
+}
+
+test "an effect's value is of its fact's type, and an item of its set" {
+    var o = try checkOne(
+        \\facts:
+        \\  life: one of stay, go
+        \\  carried: set of play, gave
+        \\== a
+        \\~ life = gone
+        \\~ carried += hands
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 5, 10, "`gone` is not one of stay, go");
+    try o.has(.err, 6, 14, "`hands` is not in `carried`: play, gave");
+}
+
+test "the story never sets a fact the game writes" {
+    var o = try checkOne(
+        \\facts:
+        \\  spot: one of stairs, piano   (game)
+        \\== a
+        \\~ spot = piano
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 4, 3, "`spot` is the game's, declared `(game)`: the story reads it and never sets it");
+}
+
+test "a fact nothing sets is a warning" {
+    var o = try checkOne(
+        \\facts:
+        \\  met: bool
+        \\== a
+        \\{ met } Hello again.
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.warning, 2, 3, "nothing sets `met`: declare it `(game)` if the game writes it");
+}
+
+test "a query is asked and an action is run" {
+    var o = try checkOne(
+        \\extern:
+        \\  lived(one of stay, go) -> bool
+        \\  rest_in(one of stay, go)
+        \\== a
+        \\{ rest_in(go) }  Go.
+        \\~ lived(go)
+        \\{ lived(gone) }  Stay.
+        \\~ rest_in(go)
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 5, 3, "`rest_in` is an action: it runs as an effect, `~ rest_in(…)`, and gives no value");
+    try o.has(.err, 6, 3, "`lived` is a query: it answers in a condition, and an effect runs an action");
+    try o.has(.err, 7, 9, "`gone` is not one of stay, go");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
+}
+
+test "a section nothing reaches from the entries is refused" {
+    var o = try checkOne(
+        \\== a
+        \\-> b
+        \\== b
+        \\-> end
+        \\== island
+        \\-> island
+    , .{ .entries = &.{"a"} });
+    defer o.deinit();
+    try o.only(.err, 5, 4, "nothing reaches `island` from where the story starts");
+}
+
+test "with no entries, a loop nothing leads into is still unreached" {
+    var o = try checkOne(
+        \\== a
+        \\-> end
+        \\== b
+        \\-> c
+        \\== c
+        \\-> b
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 3, 4, "nothing reaches `b` from where the story starts");
+    try o.has(.err, 5, 4, "nothing reaches `c` from where the story starts");
+}
+
+test "a scene ends by a flow on every way through it" {
+    var o = try checkOne(
+        \\cast:
+        \\  dad  "Dad"
+        \\== kitchen
+        \\DAD: Go.
+        \\* Who'll run the shop?
+        \\  DAD: I ran it before you could walk.
+        \\* Pick up the case.
+        \\  -> end
+    , .{ .schema = &.{ .keys = &.{} } });
+    defer o.deinit();
+    try o.only(.err, 3, 4, "the scene `kitchen` can run off its end: end it with `-> end`, `<-` or a flow elsewhere");
+}
+
+test "what follows a flow away is unreached, unless a label lets flow back" {
+    var o = try checkOne(
+        \\== a
+        \\- (again)
+        \\* Once more.
+        \\  -> again
+        \\* Enough.
+        \\  -> end
+        \\Nobody hears this.
+    , .{});
+    defer o.deinit();
+    try o.only(.warning, 7, 1, "nothing reaches this: the story always goes elsewhere before it");
+}
+
+test "a pool is called, and its candidates are picked" {
+    var o = try checkOne(
+        \\== a
+        \\->> kept
+        \\-> kept
+        \\== kept (pool 2)
+        \\= one   when { true }   One.
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 3, 4, "`kept` is a pool: call it, `->> kept`, and it gives its lines and comes back");
+    try o.has(.err, 4, 4, "the pool `kept` gives 2, but has 1 candidates");
+}
+
+test "a tag is one the host knows, where it may stand, with values of its type" {
+    const schema: check.Schema = .{ .keys = &.{
+        .{ .name = "at", .on = .{ .line = true }, .value = .number },
+        .{ .name = "heard", .on = .{ .line = true }, .value = .{ .values_of = "spot" }, .count = .many },
+        .{ .name = "then", .on = .{ .section = true }, .value = .section, .leads = true },
+    } };
+    var o = try checkOne(
+        \\cast:
+        \\  mum  "Mum"
+        \\  dad  "Dad"
+        \\facts:
+        \\  spot: one of stairs, piano   (game)
+        \\== hide   # then found
+        \\MUM: Then lock it.   # at 6.5 · heard piano, door
+        \\DAD: Who'd listen?   # at soon
+        \\MUM: You gave it up.   # pause 2
+        \\== found   # at 3
+        \\-> end
+    , .{ .schema = &schema });
+    defer o.deinit();
+    try o.has(.err, 7, 1, "`heard` takes one of stairs, piano: `door` is not one");
+    try o.has(.err, 8, 1, "`at` takes a number: `soon` is not one");
+    try o.has(.err, 9, 1, "`pause` is not a tag the host knows");
+    try o.has(.err, 10, 1, "`at` is not a tag of a section");
+    try std.testing.expectEqual(@as(usize, 4), o.diags.list.items.len);
+}
+
+test "a line wider than the host allows is refused" {
+    var o = try checkOne(
+        \\const:
+        \\  dies_at = "ten past nine"
+        \\== a
+        \\Frank died at {dies_at}.
+        \\Frank Marlowe died at {dies_at} that night, with the radio on.
+        \\-> end
+    , .{ .width = .{ .line = 40, .value = 13 } });
+    defer o.deinit();
+    try o.only(.err, 5, 1, "the line is 66 columns wide, past the host's 40");
+}
+
+test "a name is declared once, and the second says where the first is" {
+    var o = try checkOne(
+        \\facts:
+        \\  met: bool
+        \\const:
+        \\  met = true
+        \\== a
+        \\-> a
+        \\== a
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 4, 3, "`met` is declared twice: first at a.river:2:3");
+    try o.has(.err, 7, 4, "the section `a` is declared twice: first at a.river:5:4");
+}
+
+test "a line id is used once, and a release needs one on every line" {
+    var o = try checkOne(
+        \\== a
+        \\Go.   # id k7f3a2
+        \\Stay.   # id k7f3a2
+        \\Wait.
+        \\-> end
+    , .{ .mode = .release });
+    defer o.deinit();
+    try o.has(.err, 3, 1, "the line id `k7f3a2` is used twice: first at a.river:2:1");
+    try o.has(.err, 4, 1, "a release needs every line's `# id`: `riverrun tag` writes them");
+    try std.testing.expectEqual(@as(usize, 2), o.diags.list.items.len);
+}
+
+test "a choice that can never be offered is a warning" {
+    var o = try checkOne(
+        \\facts:
+        \\  spot: one of stairs, piano   (game)
+        \\  kept: set of dad, tom
+        \\const:
+        \\  demo = false
+        \\== a
+        \\~ kept += dad
+        \\* { spot = piano and spot = stairs } Both.
+        \\  -> end
+        \\* { kept has dad and kept hasnt dad } Neither.
+        \\  -> end
+        \\* { demo } Only in the demo.
+        \\  -> end
+        \\* { kept has dad and kept has tom } Both kept.
+        \\  -> end
+    , .{});
+    defer o.deinit();
+    try o.has(.warning, 8, 5, "this choice can never be offered: its condition can never hold");
+    try o.has(.warning, 10, 5, "this choice can never be offered: its condition can never hold");
+    try o.has(.warning, 12, 5, "this choice can never be offered: its condition can never hold");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
+}
+
+test "seen reads a visit count, which a condition takes as true once above zero" {
+    var o = try checkOne(
+        \\== a
+        \\- (ask)
+        \\* { not seen(ask) } First time.
+        \\  -> ask
+        \\* { seen(b) } Back again.
+        \\  -> b
+        \\* { seen(nowhere) } Nowhere.
+        \\  -> end
+        \\== b
+        \\-> a
+    , .{ .entries = &.{"a"} });
+    defer o.deinit();
+    try o.only(.err, 7, 10, "`seen` counts visits to a section, a part or a label: nothing is called `nowhere`");
+    const c = o.checked.?;
+    var read: usize = 0;
+    for (c.visits) |v| read += @intFromBool(v.read);
+    try std.testing.expectEqual(@as(usize, 2), read);
+}
+
+test "`<-` with nothing to go back to is a warning" {
+    var o = try checkOne(
+        \\== a
+        \\-> b
+        \\== b
+        \\Back.
+        \\<-
+    , .{});
+    defer o.deinit();
+    try o.only(.warning, 5, 1, "`<-` goes back to a caller, but nothing calls `b` with `->>`");
+}
+
+test "any story is checked or refused, never crashes" {
+    try std.testing.fuzz({}, struct {
+        fn one(_: void, smith: *std.testing.Smith) anyerror!void {
+            var input: [1024]u8 = undefined;
+            const bytes = input[0..smith.sliceWithHash(&input, 0)];
+            var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+            defer arena.deinit();
+            var diags: syntax.Diagnostics = .{};
+            defer diags.deinit(std.testing.allocator);
+            const tree = try arena.allocator().create(syntax.ast.File);
+            tree.* = try syntax.parse(arena.allocator(), std.testing.allocator, &diags, 0, "fuzz.river", bytes);
+            var checked = try check.run(std.testing.allocator, &diags, tree[0..1], .{ .mode = .release, .width = .{ .line = 40 } });
+            checked.deinit();
+        }
+    }.one, .{});
+}

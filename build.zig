@@ -38,7 +38,9 @@ pub fn dev(b: *std.Build, tools: type) void {
 
 fn imports(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) []const std.Build.Module.Import {
     const aegis = b.dependency("aegis", .{ .target = target, .optimize = optimize });
+    const xenoglyph = b.dependency("xenoglyph", .{ .target = target, .optimize = optimize });
     return b.allocator.dupe(std.Build.Module.Import, &.{
         .{ .name = "aegis", .module = aegis.module("aegis") },
+        .{ .name = "xenoglyph", .module = xenoglyph.module("xenoglyph") },
     }) catch @panic("OOM");
 }

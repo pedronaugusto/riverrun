@@ -9,6 +9,10 @@
             .url = "git+https://github.com/pedronaugusto/aegis?ref=v0.1.14#5852ab956e97a47926af73abbb7dced5361f9267",
             .hash = "aegis-0.1.14-rsxouiwFCACpt6FVOECFUhpjUaetlNneWpaDTj95q514",
         },
+        .xenoglyph = .{
+            .url = "git+https://github.com/pedronaugusto/xenoglyph?ref=v0.3.1#589f1226a36cd8c10a0e188bc83fa1e842f71065",
+            .hash = "xenoglyph-0.3.1-YKXZlUYcFwC87y1OTOyVEcNeUe5d26w1pknH-2n1zhZY",
+        },
     },
     .dev_dependencies = .{
         .preflight = .{
