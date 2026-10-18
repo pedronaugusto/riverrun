@@ -116,10 +116,13 @@ A `one of` fact holds one item or none; a `set of` fact holds any of them.
 | role | u8 | 0 story, 1 game (written by the game, never the story), 2 visits, 3 state, 4 clock (the game's, an int only ever advanced) |
 | padding | 3 bytes | |
 
-At most 4,096 facts. Visit counts are int facts of role `visits`, one per section,
-per choice (named by its line id text) and per labelled gather. Alternatives' state
-and a candidate's last-seen turn are int facts of role `state`. They are facts like
-any other, so they are saved and restored with their scope.
+At most 4,096 facts. Visit counts are int facts of role `visits`, one per section
+(`visits:<section>`), per part (`visits:<section>.<part>`), per choice (`visits:*<line
+id text>`) and per labelled gather (`visits:<section>#<label>`). Alternatives' state
+(`state:alt.<line id text>.<slot>`) and a candidate's last-seen turn
+(`state:seen.<pool>.<candidate>`) are int facts of role `state`. They are facts like
+any other, so they are saved and restored with their scope, and their names, made of
+what a writer wrote, survive a recompiled story.
 
 Initial values: false, 0, none, the empty set, the empty text, no thing (0).
 
@@ -183,9 +186,9 @@ the package does, when it evaluates the condition.
 
 **BuiltinCall**: `kind: Str` (the registered kind), `name: Str`, `args: Range` into
 builtin_args, `returns: u8` (0 boolean or 1 int), 3 bytes padding. An argument is a
-u32 naming something of the story: a section by its index, a part as its section's
-index shifted left 16 bits with the part's ordinal, or a fact by its id; which, the
-builtin's declaration says, and its package reads them so.
+u32 naming something of the story: a section by its index, a part by the index of the
+section it compiles to (a registered kind's parts are sections, `section.part`), or a
+fact by its id; which, the builtin's declaration says, and its package reads them so.
 
 **Block**: `name: Str`, `version: u32`, 4 bytes padding, `bytes: Range` into
 block_bytes. A package's own data beside the graph (cairn's stages and dependency

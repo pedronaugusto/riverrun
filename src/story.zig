@@ -50,6 +50,12 @@ pub const SlotKind = model.SlotKind;
 pub const Effect = model.Effect;
 pub const Tag = model.Tag;
 pub const TagValue = model.TagValue;
+pub const FactId = model.FactId;
+pub const RefKindId = model.RefKindId;
+pub const Thing = model.Thing;
+pub const Stamp = model.Stamp;
+pub const BuiltinCall = model.BuiltinCall;
+pub const Block = model.Block;
 
 pub const max_choices = format_.max_choices;
 pub const max_slots = format_.max_slots;

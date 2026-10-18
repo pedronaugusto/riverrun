@@ -1,0 +1,13 @@
+// A small story for addStory's test: a host's tag, a choice, an int that moves.
+cast:
+  hilde  "Hilde"
+facts (world):
+  pelts: int
+== market                                   # stall
+HILDE: Ten pelts before the frost.
+* I'll bring them.
+  ~ pelts += 10
+  HILDE: Good.
+* Not this year.
+  HILDE: Then next.
+-> end

@@ -121,8 +121,12 @@ A conversation with several speakers needs no construct of its own:
 
 ## The compiler
 
-It runs at build time. A game's build calls `riverrun.addStory(b, dep, .{ .files, .schema, .mode })` and embeds the
-result.
+It runs at build time. A game's build calls `riverrun.addStory(b, dep, .{ .files, .vocabulary, .release })` and
+imports the module it returns, which embeds the graph and the string table. The vocabulary is a Zig file of the
+host's: `pub const options` (its tag schema, the kinds of section its packages register, its widths and things) and
+`pub const passes` where packages add theirs. It is Zig, not data, because a registered kind carries functions; the
+compiler is built for the machine doing the building, with the vocabulary compiled in, and prints every diagnostic
+as `file:line:col: severity: message`.
 
 1. **Read** each file: a hand-written recursive-descent parser with positions, and a fuzz target for each parser.
 2. **Resolve** against one index of every file's declarations: speakers, facts, constants, externs, sections, labels
@@ -138,12 +142,16 @@ result.
    - line ids unique; a release build refuses a line without one.
 4. **Emit** the compiled format, and a JSON dump through strand for tools.
 
-A file is checked against the index and compiled on its own, then linked, so a change recompiles one file.
+The compiler enters every declaration in an index first (facts, types, externs, the cast, visit counts, sections),
+then compiles each file's sections against it alone, then runs each package's pass, then links: the builder writes
+the graph, reads it back and validates it, and writes the string table for its hash. A file's steps depend only on
+the index and its own tree, so a cache keyed by both can keep a file's steps between builds; that cache is not built
+yet, and every build compiles every file. Facts declared without a scope are kept in riverrun's scope `default`.
 **Line ids:** `riverrun tag` writes an `id` into every line that has none; a development build derives missing ones
 (`~` and a hash of the section, the part, the position, the speaker and the words). *Protects:* translations,
 recorded voices and model characters keyed on a line and surviving a typo fix.
 
-Built: read, resolve and check. The format, its builder and its reader are built; compiling into it is next.
+Built: all of it, `addStory` included.
 
 ## The compiled format
 
@@ -241,7 +249,7 @@ syntax    files → syntax tree, with positions                                 
 facts     types, scopes, the store interface, the default store, snapshots      needs nothing · built
 check     resolve and check the tree against a host's schema → a checked story  syntax · built
 story     the compiled format: builder, writer, validated reader               facts · built
-compile   a checked story → the format, file by file, then linked              check, story
+compile   a checked story → the format, file by file, then linked              check, story · built
 run       the executor over the format and a store                             story, facts · built
 ffi       the C ABI over run                                                   run
 tools     the program, on ensign                                               all

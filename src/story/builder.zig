@@ -358,6 +358,11 @@ pub const Builder = struct {
         return .fromRaw(try count(b.sections.items.len - 1));
     }
 
+    /// A section's tags, given once every section they may name is declared.
+    pub fn sectionTags(b: *Builder, s: model.SectionId, tags: Range) void {
+        b.sections.items[s.raw()].tags = tags;
+    }
+
     /// Where the section begins.
     pub fn enter(b: *Builder, s: model.SectionId, n: model.NodeId) void {
         b.sections.items[s.raw()].entry = n.raw();

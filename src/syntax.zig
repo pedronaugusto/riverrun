@@ -9,6 +9,8 @@ pub const parse = @import("syntax/parse.zig").parseFile;
 pub const Span = source.Span;
 pub const FileId = source.FileId;
 pub const Diagnostics = source.Diagnostics;
+/// The largest file the reader takes.
+pub const max_file = @import("syntax/lines.zig").max_bytes;
 
 test {
     _ = source;
