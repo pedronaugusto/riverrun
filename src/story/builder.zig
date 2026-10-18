@@ -59,6 +59,8 @@ pub const SectionIn = struct {
     tags: Range = .empty,
     /// Null only for a registered kind's section or part whose visits nothing reads.
     visits: ?FactId,
+    /// For a part, `section.part`: the section it is part of.
+    part_of: ?model.SectionId = null,
 };
 
 pub const CandidateIn = struct {
@@ -396,6 +398,7 @@ pub const Builder = struct {
             .pick = s.pick,
             .visits = if (s.visits) |v| v.raw() else format.none16,
             .kind = @backingInt(s.kind),
+            .part_of = codec.raw32(s.part_of),
         });
         return .fromRaw(try count(b.sections.items.len - 1));
     }

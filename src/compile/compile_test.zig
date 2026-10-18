@@ -233,6 +233,9 @@ test "the facts a registered kind declares are compiled and saved as the story's
     try std.testing.expectEqual(@as(?facts.FactId, null), t.story.section(t.section("pelts")).visits);
     try std.testing.expectEqual(@as(?facts.FactId, null), t.story.section(t.section("pelts.asked")).visits);
     try std.testing.expect(t.story.section(t.section("a")).visits != null);
+    // a part is a section of its own, which knows the section it is part of
+    try std.testing.expect(t.story.section(t.section("pelts.asked")).part_of.?.eql(t.section("pelts")));
+    try std.testing.expect(t.story.section(t.section("a")).part_of == null);
 }
 
 test "a section kept per thing is evaluated for one, its roles given or read as facts" {

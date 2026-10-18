@@ -219,6 +219,7 @@ pub const Story = struct {
             .entry = codec.optional(model.NodeId, r.entry),
             .candidates = r.candidates,
             .visits = codec.optional(facts.FactId, r.visits),
+            .part_of = codec.optional(model.SectionId, r.part_of),
         };
     }
 

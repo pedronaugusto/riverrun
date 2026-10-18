@@ -13,7 +13,7 @@ pub const magic = "RIVERRUN".*;
 /// end of the directory or fields at the end of a record, which an older
 /// reader skips by the stride the directory gives.
 pub const major: u16 = 2;
-pub const minor: u16 = 0;
+pub const minor: u16 = 1;
 
 /// The largest story a reader accepts.
 pub const max_bytes = 64 * 1024 * 1024;
@@ -197,6 +197,8 @@ pub const Section = extern struct {
     visits: u16,
     kind: u8,
     pad: [3]u8 = @splat(0),
+    /// For a part, `section.part`: the section it is part of; `none` for a section of its own.
+    part_of: u32 = none,
 };
 
 pub const Candidate = extern struct {
@@ -469,7 +471,7 @@ pub const Term = packed struct(u32) {
 
 comptime {
     // The sizes docs/format.md gives.
-    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 12 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 40 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 24 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 }, .{ Change, 8 }, .{ Bounds, 16 } };
+    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 12 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 48 }, .{ Candidate, 40 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 24 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 }, .{ Change, 8 }, .{ Bounds, 16 } };
     for (sizes) |s| if (@sizeOf(s[0]) != s[1]) @compileError("a record's size is not the specification's");
     for (@typeInfo(Table).@"enum".field_names) |field| {
         const R = Record(@field(Table, field));

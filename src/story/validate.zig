@@ -243,6 +243,12 @@ fn sections(g: *const Graph) Error!void {
         const of = std.enums.fromInt(format.SectionKind, s.kind) orelse return error.BadKind;
         // only a registered kind's section may keep no visit count: its package runs it
         if (s.visits != format.none16 or of != .other) try intFact(g, s.visits);
+        // a part is a scene's or a registered kind's, of its kind, and is part of a section that is no part
+        if (s.part_of != none) {
+            try index(g, .sections, s.part_of);
+            const whole = g.get(.sections, s.part_of);
+            if (s.part_of == i or whole.part_of != none or whole.kind != s.kind or (of != .scene and of != .other)) return error.BadNode;
+        }
         switch (of) {
             .pool => {
                 if (s.pick == 0) return error.BadNode;

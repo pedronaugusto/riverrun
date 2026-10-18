@@ -20,7 +20,7 @@ pub fn run(c: *Compiler) Error!void {
     for (k.visits, c.visits) |v, *out| out.* = if (kept(c, v)) try c.b.visits(try visitName(c, v)) else null;
     for (k.sections, c.sections, c.parts) |*s, *out, *parts| {
         out.* = try section(c, s);
-        parts.* = try partSections(c, s);
+        parts.* = try partSections(c, s, out.*);
     }
     // tags may name any section, so they come once every section has its place
     for (k.sections, c.sections, c.parts) |*s, id, parts| {
@@ -124,15 +124,15 @@ fn section(c: *Compiler, s: *const sym.Section) Error!story.SectionId {
     };
 }
 
-// The sections a scene's or a registered kind's parts become, `section.part`; a pool's candidates and a rules
-// section's rules are their own.
-fn partSections(c: *Compiler, s: *const sym.Section) Error![]?story.SectionId {
+// The sections a scene's or a registered kind's parts become, `section.part`, each part of `whole`; a pool's
+// candidates and a rules section's rules are their own.
+fn partSections(c: *Compiler, s: *const sym.Section, whole: story.SectionId) Error![]?story.SectionId {
     const out = try c.arena.alloc(?story.SectionId, s.parts.len);
     const base = try c.qualified(s.module, s.name);
     for (s.parts, out) |p, *o| o.* = switch (s.kind) {
         .pool, .rules => null,
-        .scene => try c.b.section(.{ .name = try c.arena.print("{s}.{s}", .{ base, p.name }), .visits = c.visits[p.visit.raw()] }),
-        .other => |kind| try c.b.section(.{ .name = try c.arena.print("{s}.{s}", .{ base, p.name }), .kind = .other, .kind_name = kind, .visits = c.visits[p.visit.raw()] }),
+        .scene => try c.b.section(.{ .name = try c.arena.print("{s}.{s}", .{ base, p.name }), .visits = c.visits[p.visit.raw()], .part_of = whole }),
+        .other => |kind| try c.b.section(.{ .name = try c.arena.print("{s}.{s}", .{ base, p.name }), .kind = .other, .kind_name = kind, .visits = c.visits[p.visit.raw()], .part_of = whole }),
     };
     return out;
 }

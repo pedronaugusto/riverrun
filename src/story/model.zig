@@ -106,6 +106,8 @@ pub const Section = struct {
     candidates: Range = .empty,
     /// Its visit count; null for a registered kind's section or part whose visits nothing reads.
     visits: ?FactId,
+    /// For a part, `section.part`, which is a section of its own: the section it is part of.
+    part_of: ?SectionId = null,
 
     pub const Kind = format.SectionKind;
 };

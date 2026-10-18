@@ -229,3 +229,23 @@ test "a story carries stamps, builtins and the blocks its packages own" {
     try std.testing.expectError(error.BadExpression, story.condition(.{ .start = when.start, .len = 2 }));
     try std.testing.expectError(error.OutOfRange, story.condition(.{ .start = when.start, .len = 99 }));
 }
+
+test "a part reads back as part of its section, and a part of a part is refused" {
+    const gpa = std.testing.allocator;
+    var b: Builder = try .init(gpa);
+    defer b.deinit();
+    const talk = try b.section(.{ .name = "talk", .visits = try b.visits("talk") });
+    const ask = try b.section(.{ .name = "talk.ask", .visits = try b.visits("talk.ask"), .part_of = talk });
+    const end = try b.node(.{ .step = .end });
+    b.enter(talk, try b.node(.{ .step = .{ .jump = ask } }));
+    b.enter(ask, end);
+    const graph = try b.bytes(gpa);
+    defer gpa.free(graph);
+    const story: Story = try .init(graph, .{});
+    try std.testing.expect(story.section(ask).part_of.?.eql(talk));
+    try std.testing.expect(story.section(talk).part_of == null);
+    // a part's own part: a part is of a section that is no part
+    const deeper = try b.section(.{ .name = "talk.ask.again", .visits = try b.visits("talk.ask.again"), .part_of = ask });
+    b.enter(deeper, end);
+    try std.testing.expectError(error.BadNode, b.bytes(gpa));
+}

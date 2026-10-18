@@ -38,7 +38,7 @@ Tables      each starting at a multiple of 8
 |---|---|---|
 | magic | [8]u8 | `RIVERRUN` or `RIVERTXT` |
 | major | u16 | 2 |
-| minor | u16 | 0 |
+| minor | u16 | 1 |
 | flags | u32 | 0 |
 | hash | u64 | XxHash64 of the whole file with these 8 bytes taken as zero |
 | length | u32 | the file's length |
@@ -77,7 +77,7 @@ Directory entries are in the fixed order of the tables below.
 | 9 | literals | Str | 8 |
 | 10 | ints | i64 | 8 |
 | 11 | terms | u32 (Term) | 4 |
-| 12 | sections | Section | 44 |
+| 12 | sections | Section | 48 |
 | 13 | candidates | Candidate | 40 |
 | 14 | nodes | Node | 32 |
 | 15 | choices | Choice | 28 |
@@ -241,6 +241,7 @@ else in the graph points at it.
 | visits | u16 | int fact; `none` for a section of kind `other` that keeps no visit count |
 | kind | u8 | 0 scene, 1 pool, 2 other, 3 rules |
 | padding | 3 bytes | |
+| part_of | u32 | for a part, `section.part`: the section it is part of; `none` for a section of its own (minor 1) |
 
 **Candidate**: `name: Str`, `when: Range` (a condition; empty matches always), `tags:
 Range`, `entry: u32`, `specificity: u16`, `visits: u16`, `seen: u16`, `weight: u16` (a pool candidate's weight in
@@ -424,7 +425,8 @@ Before it trusts a graph, a reader checks:
    is named `story`.
 7. Every term range typed for its place, as in *Terms*, the stack never past 64.
 8. Every node's, effect's and slot's fields as their kind says, unused ones zero.
-9. A scene's entry present; a pool's pick at least one; a rules section's pick one and its entry `none`.
+9. A scene's entry present; a pool's pick at least one; a rules section's pick one and its entry `none`; a part
+   part of another section of its kind, a scene or a registered kind, which is no part.
 10. Every change's clock a fact of role `clock`, and its `at` an int of role `state` in the reserved scope.
 
 A string table is checked for its header, sorted unique nonzero ids, entries

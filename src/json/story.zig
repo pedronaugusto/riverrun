@@ -64,6 +64,7 @@ const SectionDump = struct {
     pick: ?u16 = null,
     entry: ?u32 = null,
     visits: ?[]const u8 = null,
+    part_of: ?[]const u8 = null,
     tags: ?[]const TagDump = null,
     candidates: ?[]const CandidateDump = null,
 };
@@ -190,6 +191,7 @@ fn sectionList(story: *const Story, arena: Allocator) ![]const SectionDump {
             .pick = if (s.kind == .pool) s.pick else null,
             .entry = if (s.entry) |e| e.raw() else null,
             .visits = if (s.visits) |v| story.fact(v).name else null,
+            .part_of = if (s.part_of) |w| story.section(w).name else null,
             .tags = try tagList(story, arena, s.tags),
             .candidates = candidates,
         };
