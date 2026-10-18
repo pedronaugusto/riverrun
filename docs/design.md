@@ -159,8 +159,8 @@ A conversation with several speakers needs no construct of its own:
 
 ## The compiler
 
-It runs at build time. A game's build calls `riverrun.addStory(b, dep, .{ .files, .vocabulary, .release })` and
-imports the module it returns, which embeds the graph and the string table. The vocabulary is a Zig file of the
+It runs at build time. A game's build calls `riverrun.addStory(b, dep, .{ .files, .vocabulary, .packages,
+.release })`, `dep` being riverrun asked by `riverrun.building(b)` (below), and imports the module it returns, which embeds the graph and the string table. The vocabulary is a Zig file of the
 host's: `pub const options` (its tag schema, its widths and things), `pub const packages`, each package's
 `riverrun.Package` (its kinds, the tags it adds anywhere, its check and its compile pass), and `pub const passes`
 for the host's own. `riverrun.join` joins each package in after the host's, and two kinds of one name or one key
@@ -237,6 +237,29 @@ type (a calendar that does not hold together, a quest that can get stuck) is rep
 written, and printed `file:line:col` as riverrun's own. Its compile pass reports the same way (`Compiler.err`), and
 the story is refused; a pass that fails without saying why is reported by its name. *Protects:* no check a tool must
 remember to run, and no build that fails without a place.
+
+**A package's build.** A package with a compiler side offers it in its `build.zig` as `pub fn compiler(dep:
+*std.Build.Dependency) ?*std.Build.Module`: the module of that instance of the package, made on the first ask and
+kept in the instance, on the riverrun its own build depends on; null until lazy dependencies are fetched, as
+`riverrun.compiler(dep)` is. Its build asks riverrun, and every other dependency, with `.{ .target, .optimize }`
+and nothing more. A story's build asks riverrun and each such package by `riverrun.building(b)`, the machine doing
+the building at ReleaseSafe, and hands each compiler side to `addStory` by the name its vocabulary imports:
+
+```zig
+const river = b.dependency("riverrun", riverrun.building(b));
+const tide_side = tide.compiler(b.dependency("tide", riverrun.building(b))) orelse return;
+const story = riverrun.addStory(b, river, .{ .files = &.{b.path("episodes/ep1/story.river")},
+    .vocabulary = b.path("src/vocabulary.zig"), .packages = &.{.{ .name = "tide-compiler", .module = tide_side }} });
+exe.root_module.addImport("story", story.module);
+exe.root_module.addImport("tide", b.dependency("tide", .{ .target = target, .optimize = optimize }).module("tide"));
+```
+
+Zig keeps one instance of a package for one set of arguments, so asked alike they are one: the compiler, the
+vocabulary and every package's compiler side hold one riverrun, and the game, its runtime side and each package's
+runtime hold another, for the game's target. Two in one compilation would be two kinds of every type, so `addStory`
+refuses, by its name, a package whose compiler side stands on another riverrun. A package that builds on packages
+(lantern on tide and cairn) asks them by the same arguments from its own `compiler`, and gets the same instances.
+*Protects:* one riverrun in each program by construction, and packages any engine's build can register.
 
 ## The runtime
 
@@ -361,7 +384,7 @@ The layers are two modules. `riverrun`, the runtime, is `facts`, `story`, `run` 
 `riverrun-compiler` is `syntax`, `check`, `compile` and the JSON forms, standing on the runtime and adding
 xenoglyph (for widths) and strand (for JSON), both lazy dependencies. A game that only tells stories imports
 `riverrun` and never fetches the compiler's dependencies; its build runs the compiler through `addStory`, and a tool
-asks for it with `.compiler = true`. *Protects:* a small runtime, and compile-time work that stays at build time.
+asks for it with `riverrun.compiler(dep)`. *Protects:* a small runtime, and compile-time work that stays at build time.
 
 ## Napkin math
 

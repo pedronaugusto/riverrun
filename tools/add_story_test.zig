@@ -1,5 +1,5 @@
-//! A story compiled by `addStory` while riverrun builds, embedded and told:
-//! what a game's build does.
+//! A story compiled by `addStory` while riverrun builds, with a package
+//! registered, embedded and told: what a game's build does.
 
 const std = @import("std");
 const riverrun = @import("riverrun");
@@ -25,4 +25,12 @@ test "a story compiled at build time is embedded and told" {
     try std.testing.expectEqual(@as(i64, 10), memory.get(s.factNamed("pelts").?).int);
     try std.testing.expectEqualStrings("Good.", (try session.next(flow)).line.text);
     try std.testing.expectEqual(riverrun.run.Step.end, try session.next(flow));
+}
+
+test "a package registered through addStory declared its facts and wrote its block" {
+    const s: riverrun.story.Story = try .init(story.graph, .{});
+    const furs = s.factNamed("furs").?;
+    try std.testing.expectEqual(riverrun.facts.Role.game, s.fact(furs).role);
+    try std.testing.expectEqualStrings("world", s.scope(s.fact(furs).scope));
+    try std.testing.expectEqualSlices(u8, &.{2}, s.block("stall").?.bytes);
 }

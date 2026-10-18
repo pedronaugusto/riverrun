@@ -1,10 +1,14 @@
-// A small story for addStory's test: a host's tag, a choice, an int that moves.
+// A small story for addStory's test: a host's tag, a package's kind and tag, a choice, an int that moves.
 cast:
   hilde  "Hilde"
 facts (world):
   pelts: int
-== market                                   # stall
+== wares (stock)
+= furs
+= salt
+== market                                   # stall · sells furs
 HILDE: Ten pelts before the frost.
+{ furs > 0 } HILDE: You have furs already.
 * I'll bring them.
   ~ pelts += 10
   HILDE: Good.
