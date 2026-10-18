@@ -1,0 +1,421 @@
+//! Everything a reader checks before it trusts a story: every index in its
+//! table, every name in the names, every kind a kind, and every condition,
+//! value and argument list typed for its place. A story that passes cannot
+//! make the executor read out of bounds or meet a value of the wrong kind.
+
+const std = @import("std");
+const facts = @import("../facts.zig");
+const format = @import("format.zig");
+const tables = @import("tables.zig");
+
+const Graph = tables.Graph;
+const Error = tables.Error;
+const Range = format.Range;
+const Term = format.Term;
+const none = format.none;
+const none16 = format.none16;
+
+pub fn all(g: *const Graph) Error!void {
+    if (!std.unicode.utf8ValidateSlice(g.raw(.names))) return error.BadName;
+    try declarations(g);
+    try externs(g);
+    try reserved(g);
+    try sections(g);
+    try nodes(g);
+    try choices(g);
+    try texts(g);
+    try effects(g);
+    try tagTables(g);
+}
+
+fn name(g: *const Graph, s: format.Str) Error!void {
+    if (!tables.validName(g.raw(.names), s)) return error.BadName;
+}
+
+fn nonEmptyName(g: *const Graph, s: format.Str) Error!void {
+    if (s.len == 0) return error.BadName;
+    try name(g, s);
+}
+
+fn range(g: *const Graph, comptime table: format.Table, r: Range) Error!void {
+    if (r.end() > g.len(table)) return error.OutOfRange;
+}
+
+fn index(g: *const Graph, comptime table: format.Table, i: u32) Error!void {
+    if (i >= g.len(table)) return error.OutOfRange;
+}
+
+fn optionalNode(g: *const Graph, i: u32) Error!void {
+    if (i != none) try index(g, .nodes, i);
+}
+
+fn kind(raw: u8) Error!facts.Kind {
+    return std.enums.fromInt(facts.Kind, raw) orelse error.BadKind;
+}
+
+fn listed(k: facts.Kind) bool {
+    return k == .one_of or k == .set_of;
+}
+
+fn enumLen(g: *const Graph, e: u16) u32 {
+    return g.get(.enums, e).len;
+}
+
+// An enumeration where the kind needs one, and none where it does not.
+fn enumeration(g: *const Graph, k: facts.Kind, e: u16) Error!void {
+    if (!listed(k)) {
+        if (e != none16) return error.BadKind;
+        return;
+    }
+    try index(g, .enums, e);
+}
+
+fn intFact(g: *const Graph, f: u16) Error!void {
+    try index(g, .facts, f);
+    if (g.get(.facts, f).kind != @backingInt(facts.Kind.int)) return error.BadKind;
+}
+
+fn optionalIntFact(g: *const Graph, f: u16) Error!void {
+    if (f != none16) try intFact(g, f);
+}
+
+fn declarations(g: *const Graph) Error!void {
+    if (g.len(.scopes) > facts.max_scopes) return error.TooManyScopes;
+    for (0..g.len(.scopes)) |i| try nonEmptyName(g, g.get(.scopes, @intCast(i))); // safe: below a u32 count
+    for (0..g.len(.items)) |i| try nonEmptyName(g, g.get(.items, @intCast(i))); // safe: below a u32 count
+    for (0..g.len(.literals)) |i| try name(g, g.get(.literals, @intCast(i))); // safe: below a u32 count
+    if (g.len(.enums) >= none16) return error.OutOfRange;
+    for (0..g.len(.enums)) |i| {
+        const r = g.get(.enums, @intCast(i)); // safe: below a u32 count
+        try range(g, .items, r);
+        if (r.len == 0) return error.BadKind;
+        if (r.len > facts.max_items) return error.TooManyItems;
+    }
+    if (g.len(.facts) > facts.max_facts) return error.TooManyFacts;
+    for (0..g.len(.facts)) |i| {
+        const f = g.get(.facts, @intCast(i)); // safe: below a u32 count
+        try nonEmptyName(g, f.name);
+        try index(g, .scopes, f.scope);
+        _ = std.enums.fromInt(facts.Role, f.role) orelse return error.BadKind;
+        try enumeration(g, try kind(f.kind), f.enumeration);
+    }
+    if (g.len(.cast) >= none16) return error.OutOfRange;
+    for (0..g.len(.cast)) |i| {
+        const c = g.get(.cast, @intCast(i)); // safe: below a u32 count
+        try name(g, c.name);
+        try range(g, .tags, c.tags);
+        if (c.display == 0 or c.extra > 1) return error.BadKind;
+        if ((c.extra == 1) != (c.name.len == 0)) return error.BadName;
+    }
+}
+
+fn externs(g: *const Graph) Error!void {
+    for (0..g.len(.params)) |i| {
+        const p = g.get(.params, @intCast(i)); // safe: below a u32 count
+        try enumeration(g, try kind(p.kind), p.enumeration);
+    }
+    if (g.len(.externs) >= none16) return error.OutOfRange;
+    for (0..g.len(.externs)) |i| {
+        const e = g.get(.externs, @intCast(i)); // safe: below a u32 count
+        try nonEmptyName(g, e.name);
+        try range(g, .params, e.params);
+        if (e.action > 1) return error.BadKind;
+        if (e.returns == format.no_kind) {
+            if (e.action == 0) return error.BadKind; // a query answers
+            if (e.enumeration != none16) return error.BadKind;
+        } else try enumeration(g, try kind(e.returns), e.enumeration);
+    }
+}
+
+fn reserved(g: *const Graph) Error!void {
+    if (g.len(.meta) != 1) return error.MissingTable;
+    const m = g.get(.meta, 0);
+    try index(g, .scopes, m.reserved_scope);
+    const scope = g.get(.scopes, m.reserved_scope);
+    if (!std.mem.eql(u8, g.raw(.names)[scope.offset..][0..scope.len], facts.reserved_scope)) return error.BadReserved;
+    for ([_]u16{ m.seed, m.turn }) |f| {
+        try intFact(g, f);
+        const d = g.get(.facts, f);
+        if (d.scope != m.reserved_scope or d.role != @backingInt(facts.Role.state)) return error.BadReserved;
+    }
+}
+
+fn sections(g: *const Graph) Error!void {
+    if (g.len(.sections) >= none) return error.OutOfRange;
+    for (0..g.len(.sections)) |i| {
+        const s = g.get(.sections, @intCast(i)); // safe: below a u32 count
+        try nonEmptyName(g, s.name);
+        try name(g, s.kind_name);
+        try range(g, .tags, s.tags);
+        try optionalNode(g, s.entry);
+        try intFact(g, s.visits);
+        switch (std.enums.fromInt(format.SectionKind, s.kind) orelse return error.BadKind) {
+            .pool => {
+                if (s.pick == 0) return error.BadNode;
+                try range(g, .candidates, s.candidates);
+            },
+            .scene, .other => if (s.candidates.len != 0 or s.entry == none) return error.BadNode,
+        }
+    }
+    for (0..g.len(.candidates)) |i| {
+        const c = g.get(.candidates, @intCast(i)); // safe: below a u32 count
+        try nonEmptyName(g, c.name);
+        if (c.when.len > 0) try expr(g, c.when, .condition);
+        try range(g, .tags, c.tags);
+        try index(g, .nodes, c.entry);
+        try intFact(g, c.visits);
+        try intFact(g, c.seen);
+    }
+}
+
+fn nodes(g: *const Graph) Error!void {
+    if (g.len(.nodes) >= none) return error.OutOfRange;
+    for (0..g.len(.nodes)) |i| {
+        const n = g.get(.nodes, @intCast(i)); // safe: below a u32 count
+        try range(g, .tags, n.tags);
+        try optionalNode(g, n.next);
+        const k = std.enums.fromInt(format.NodeKind, n.kind) orelse return error.BadKind;
+        if (k != .line and n.speaker != none16) return error.BadNode;
+        // Fields a kind does not use hold nothing, so one story has one encoding.
+        const unused: u32 = switch (k) {
+            .line => n.d,
+            .choices, .effects => n.c | n.d,
+            .branch => 0,
+            .gather, .jump, .call => n.b | n.c | n.d,
+            .ret, .end => n.a | n.b | n.c | n.d,
+        };
+        if (unused != 0) return error.BadNode;
+        switch (k) {
+            .line => {
+                try index(g, .texts, n.a);
+                try range(g, .effects, .{ .start = n.b, .len = n.c });
+                if (n.speaker != none16) try index(g, .cast, n.speaker);
+            },
+            .choices => {
+                try range(g, .choices, .{ .start = n.a, .len = n.b });
+                if (n.b == 0) return error.BadNode;
+                if (n.b > format.max_choices) return error.TooManyChoices;
+            },
+            .branch => {
+                if (n.b == 0 or n.next != none) return error.BadNode;
+                try expr(g, .{ .start = n.a, .len = n.b }, .condition);
+                try optionalNode(g, n.c);
+                try optionalNode(g, n.d);
+            },
+            .gather => {
+                if (n.a > none16) return error.BadNode;
+                try optionalIntFact(g, @intCast(n.a)); // safe: checked to fit a u16
+            },
+            .effects => {
+                if (n.b == 0) return error.BadNode;
+                try range(g, .effects, .{ .start = n.a, .len = n.b });
+            },
+            .jump, .call => {
+                try index(g, .sections, n.a);
+                if (k == .jump and n.next != none) return error.BadNode;
+            },
+            .ret, .end => if (n.next != none) return error.BadNode,
+        }
+    }
+}
+
+fn choices(g: *const Graph) Error!void {
+    for (0..g.len(.choices)) |i| {
+        const c = g.get(.choices, @intCast(i)); // safe: below a u32 count
+        try index(g, .texts, c.text);
+        if (c.cond.len > 0) try expr(g, c.cond, .condition);
+        try range(g, .tags, c.tags);
+        try index(g, .nodes, c.target);
+        try intFact(g, c.visits);
+        if (c.sticky > 1) return error.BadKind;
+    }
+}
+
+fn texts(g: *const Graph) Error!void {
+    for (0..g.len(.texts)) |i| {
+        const t = g.get(.texts, @intCast(i)); // safe: below a u32 count
+        if (t.line == 0) return error.OutOfRange;
+        try range(g, .slots, t.slots);
+        if (t.slots.len > format.max_slots) return error.TooManySlots;
+    }
+    for (0..g.len(.slots)) |i| {
+        const s = g.get(.slots, @intCast(i)); // safe: below a u32 count
+        switch (std.enums.fromInt(format.SlotKind, s.kind) orelse return error.BadKind) {
+            .value => {
+                if (s.arity != 0 or s.state != none16) return error.BadNode;
+                try expr(g, s.expr, .value);
+            },
+            .choose => {
+                if (s.arity != 2 or s.state != none16) return error.BadNode;
+                try expr(g, s.expr, .condition);
+            },
+            .sequence, .cycle, .once, .shuffle => {
+                if (s.arity == 0 or s.expr.len != 0) return error.BadNode;
+                if (s.arity > format.max_slots) return error.TooManySlots;
+                try intFact(g, s.state);
+            },
+        }
+    }
+}
+
+fn effects(g: *const Graph) Error!void {
+    for (0..g.len(.effects)) |i| {
+        const e = g.get(.effects, @intCast(i)); // safe: below a u32 count
+        const k = std.enums.fromInt(format.EffectKind, e.kind) orelse return error.BadKind;
+        // Fields a kind does not use hold nothing, so one story has one encoding.
+        const canonical = switch (k) {
+            .set => e.item == 0 and e.action == none16 and e.result == none16,
+            .add, .remove => e.expr.len == 0 and e.expr.start == 0 and e.action == none16 and e.result == none16,
+            .call => e.fact == none16 and e.item == 0,
+        };
+        if (!canonical) return error.BadNode;
+        switch (k) {
+            .set => {
+                try index(g, .facts, e.fact);
+                try expr(g, e.expr, .{ .of = tyOfFact(g.get(.facts, e.fact)) });
+            },
+            .add, .remove => {
+                try index(g, .facts, e.fact);
+                const f = g.get(.facts, e.fact);
+                if (f.kind != @backingInt(facts.Kind.set_of)) return error.BadKind;
+                if (e.item >= enumLen(g, f.enumeration)) return error.OutOfRange;
+            },
+            .call => {
+                try index(g, .externs, e.action);
+                const x = g.get(.externs, e.action);
+                if (x.action != 1) return error.BadKind;
+                try expr(g, e.expr, .{ .args = x.params });
+                if (e.result != none16) {
+                    try index(g, .facts, e.result);
+                    if (x.returns == format.no_kind) return error.BadKind;
+                    if (!tyOfFact(g.get(.facts, e.result)).eql(.{ .kind = x.returns, .enumeration = x.enumeration })) return error.BadKind;
+                }
+            },
+        }
+    }
+}
+
+fn tagTables(g: *const Graph) Error!void {
+    for (0..g.len(.tags)) |i| {
+        const t = g.get(.tags, @intCast(i)); // safe: below a u32 count
+        try nonEmptyName(g, t.key);
+        try range(g, .tag_values, t.values);
+    }
+    for (0..g.len(.tag_values)) |i| {
+        const v = g.get(.tag_values, @intCast(i)); // safe: below a u32 count
+        try name(g, v.text);
+        if (v.section != none) try index(g, .sections, v.section);
+    }
+}
+
+// ---------------------------------------------------------------- expressions
+
+// The type of a value on the stack: its kind, and its enumeration where it has one.
+const Ty = struct {
+    kind: u8,
+    enumeration: u16,
+
+    const boolean: Ty = .{ .kind = @backingInt(facts.Kind.boolean), .enumeration = none16 };
+    const int: Ty = .{ .kind = @backingInt(facts.Kind.int), .enumeration = none16 };
+
+    fn eql(a: Ty, b: Ty) bool {
+        return a.kind == b.kind and a.enumeration == b.enumeration;
+    }
+};
+
+fn tyOfFact(f: format.Fact) Ty {
+    return .{ .kind = f.kind, .enumeration = f.enumeration };
+}
+
+const Want = union(enum) {
+    condition,
+    value,
+    of: Ty,
+    /// The values of these parameters, in order.
+    args: Range,
+};
+
+/// Checks that the terms of `r` evaluate to what `want` needs.
+fn expr(g: *const Graph, r: Range, want: Want) Error!void {
+    try range(g, .terms, r);
+    var stack: [format.max_stack]Ty = undefined;
+    var n: usize = 0;
+    for (0..r.len) |k| {
+        const word = g.get(.terms, r.start + @as(u32, @intCast(k))); // safe: below a u32 length
+        const op = std.enums.fromInt(Term.Op, @as(u8, @truncate(word))) orelse return error.BadExpression; // safe: the low byte is the op
+        const arg: u24 = @intCast(word >> 8); // safe: the high 24 bits
+        if (n == format.max_stack) return error.BadExpression;
+        switch (op) {
+            .fact => {
+                try index(g, .facts, arg);
+                stack[n] = tyOfFact(g.get(.facts, arg));
+                n += 1;
+            },
+            .int => {
+                try index(g, .ints, arg);
+                stack[n] = .int;
+                n += 1;
+            },
+            .text => {
+                try index(g, .literals, arg);
+                stack[n] = .{ .kind = @backingInt(facts.Kind.text), .enumeration = none16 };
+                n += 1;
+            },
+            .item => {
+                const t: Term = .{ .op = .item, .arg = arg };
+                try index(g, .enums, t.itemEnum());
+                if (t.itemIndex() >= enumLen(g, t.itemEnum())) return error.OutOfRange;
+                stack[n] = .{ .kind = @backingInt(facts.Kind.one_of), .enumeration = t.itemEnum() };
+                n += 1;
+            },
+            .true, .false => {
+                stack[n] = .boolean;
+                n += 1;
+            },
+            .not => {
+                if (n < 1 or !stack[n - 1].eql(.boolean)) return error.BadExpression;
+            },
+            .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => {
+                if (n < 2) return error.BadExpression;
+                const a = stack[n - 2];
+                const b = stack[n - 1];
+                const fits = switch (op) {
+                    .eq, .ne => a.eql(b),
+                    .lt, .le, .gt, .ge => a.eql(.int) and b.eql(.int),
+                    .has, .hasnt => a.kind == @backingInt(facts.Kind.set_of) and b.kind == @backingInt(facts.Kind.one_of) and a.enumeration == b.enumeration,
+                    else => a.eql(.boolean) and b.eql(.boolean),
+                };
+                if (!fits) return error.BadExpression;
+                n -= 1;
+                stack[n - 1] = .boolean;
+            },
+            .query => n = try query(g, arg, stack[0..], n),
+        }
+    }
+    const fits = switch (want) {
+        .condition => n == 1 and stack[0].eql(.boolean),
+        .value => n == 1,
+        .of => |ty| n == 1 and stack[0].eql(ty),
+        .args => |params| n == params.len and paramsFit(g, params, stack[0..n]),
+    };
+    if (!fits) return error.BadExpression;
+}
+
+// A query's arguments off the stack, its answer on: the stack's new depth.
+fn query(g: *const Graph, arg: u24, stack: []Ty, n: usize) Error!usize {
+    if (arg >= g.len(.externs)) return error.OutOfRange;
+    const x = g.get(.externs, @intCast(arg)); // safe: checked against the table
+    if (x.action != 0) return error.BadExpression;
+    if (n < x.params.len or !paramsFit(g, x.params, stack[n - x.params.len .. n])) return error.BadExpression;
+    const depth = n - x.params.len;
+    stack[depth] = .{ .kind = x.returns, .enumeration = x.enumeration };
+    return depth + 1;
+}
+
+fn paramsFit(g: *const Graph, params: Range, values: []const Ty) bool {
+    for (values, 0..) |v, i| {
+        const p = g.get(.params, params.start + @as(u32, @intCast(i))); // safe: below a u32 length
+        if (!v.eql(.{ .kind = p.kind, .enumeration = p.enumeration })) return false;
+    }
+    return true;
+}

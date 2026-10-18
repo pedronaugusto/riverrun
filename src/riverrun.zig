@@ -7,9 +7,11 @@
 pub const syntax = @import("syntax.zig");
 pub const facts = @import("facts.zig");
 pub const check = @import("check.zig");
+pub const story = @import("story.zig");
 
 test {
     _ = syntax;
     _ = facts;
     _ = check;
+    _ = story;
 }
