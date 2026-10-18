@@ -85,6 +85,12 @@ pub const Memory = struct {
                 return m.setKey(fact, key, v);
             }
         }.f,
+        .bounds = struct {
+            fn f(ptr: *anyopaque, fact: FactId) ?value.Bounds {
+                const m: *Memory = @ptrCast(@alignCast(ptr)); // safe: made by `store` from a *Memory
+                return m.schema.decl(fact).bounds;
+            }
+        }.f,
         .keyStamp = struct {
             fn f(ptr: *anyopaque, fact: FactId, key: Key) u64 {
                 const m: *Memory = @ptrCast(@alignCast(ptr)); // safe: made by `store` from a *Memory
@@ -150,7 +156,8 @@ pub fn check(d: schema_.Decl, v: Value) SetError!void {
             if (last >= d.items.len) return error.ItemOutOfRange;
         },
         .text => |x| if (x.len > value.max_text) return error.TextTooLong,
-        .boolean, .int, .ref => {},
+        .int => |x| if (d.bounds) |b| if (!b.holds(x)) return error.OutOfBounds,
+        .boolean, .ref => {},
     }
 }
 

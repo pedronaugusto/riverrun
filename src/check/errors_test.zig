@@ -616,3 +616,23 @@ test "a fact kept per thing is read and written for one key of its kind" {
     try o.has(.err, 9, 3, "`opinion` is kept per person: write it for one, `opinion(…)`");
     try o.has(.err, 10, 3, "`rank` is a fact with one value: it takes no key");
 }
+
+test "a bounded int is set within its bounds, and a clock has none" {
+    var o = try checkOne(
+        \\const:
+        \\  max_honor = 300
+        \\facts:
+        \\  honor: int from -100 to 100
+        \\  day:   int from 0 to 9   (clock)
+        \\== a
+        \\~ honor = 120
+        \\~ honor = max_honor
+        \\~ honor = -100
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 5, 3, "`day` is a clock, which only moves on: it has no bounds");
+    try o.has(.err, 7, 11, "120 is past `honor`'s bounds, -100 to 100");
+    try o.has(.err, 8, 11, "300 is past `honor`'s bounds, -100 to 100");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
+}

@@ -17,6 +17,7 @@ pub const max_text = value.max_text;
 pub const max_name = value.max_name;
 pub const max_keys = value.max_keys;
 pub const Key = value.Key;
+pub const Bounds = value.Bounds;
 pub const KeyDecl = schema.KeyDecl;
 
 pub const FactId = value.FactId;

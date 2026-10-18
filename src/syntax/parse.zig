@@ -199,6 +199,10 @@ const Reader = struct {
                 try r.report(l, "`{s}` names alternatives in text, so it cannot name a fact", .{name});
                 continue;
             }
+            const bounds = r.boundsOf(l, &t) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Invalid => continue,
+            };
             const parsed = r.typeOf(l, t, colon + 1) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Invalid => continue,
@@ -207,7 +211,7 @@ const Reader = struct {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Invalid => continue,
             };
-            try out.append(r.arena, .{ .name = .{ .text = name, .span = r.at(l, 0) }, .key = key, .type = parsed, .game = game or clock, .clock = clock, .moment = moment });
+            try out.append(r.arena, .{ .name = .{ .text = name, .span = r.at(l, 0) }, .key = key, .type = parsed, .bounds = bounds, .game = game or clock, .clock = clock, .moment = moment });
         }
         return out.toOwnedSlice(r.arena);
     }
@@ -227,6 +231,28 @@ const Reader = struct {
             return error.Invalid;
         }
         return .{ .ref = .{ .text = inner, .span = r.at(l, open + 1) } };
+    }
+
+    // `int from -100 to 100`: the bounds taken off the type, which is left `int`.
+    fn boundsOf(r: *Reader, l: Line, t: *[]const u8) Fail!?ast.Bounds {
+        if (!std.mem.startsWith(u8, t.*, "int from ")) return null;
+        const rest = t.*["int from ".len..];
+        const to = std.mem.find(u8, rest, " to ") orelse {
+            try r.report(l, "a bounded int is `int from least to most`", .{});
+            return error.Invalid;
+        };
+        const min = std.fmt.parseInt(i64, std.mem.trim(u8, rest[0..to], " "), 10) catch null;
+        const max = std.fmt.parseInt(i64, std.mem.trim(u8, rest[to + " to ".len ..], " "), 10) catch null;
+        if (min == null or max == null) {
+            try r.report(l, "a bounded int's least and most are numbers: `int from -100 to 100`", .{});
+            return error.Invalid;
+        }
+        if (min.? > max.?) {
+            try r.report(l, "a bounded int's least, {d}, is past its most, {d}", .{ min.?, max.? });
+            return error.Invalid;
+        }
+        t.* = "int";
+        return .{ .min = min.?, .max = max.? };
     }
 
     fn typeOf(r: *Reader, l: Line, t: []const u8, col: usize) Fail!ast.Type {

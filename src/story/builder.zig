@@ -103,6 +103,7 @@ pub const Builder = struct {
     blocks: std.ArrayList(format.Block) = .empty,
     block_bytes: std.ArrayList(u8) = .empty,
     changes: std.ArrayList(format.Change) = .empty,
+    bounds: std.ArrayList(format.Bounds) = .empty,
     lines: std.ArrayList(strings.Line) = .empty,
     reserved: ScopeId = .fromRaw(0),
     seed: FactId = .fromRaw(0),
@@ -122,7 +123,7 @@ pub const Builder = struct {
         const gpa = b.gpa;
         b.interned.deinit(gpa);
         b.fact_names.deinit(gpa);
-        inline for (.{ "names", "scopes", "enums", "items", "facts", "cast", "externs", "params", "literals", "ints", "terms", "sections", "candidates", "nodes", "defined", "choices", "texts", "slots", "effects", "tags", "tag_values", "kinds", "things", "builtins", "builtin_args", "blocks", "block_bytes", "changes", "lines" }) |field| {
+        inline for (.{ "names", "scopes", "enums", "items", "facts", "cast", "externs", "params", "literals", "ints", "terms", "sections", "candidates", "nodes", "defined", "choices", "texts", "slots", "effects", "tags", "tag_values", "kinds", "things", "builtins", "builtin_args", "blocks", "block_bytes", "changes", "bounds", "lines" }) |field| {
             @field(b, field).deinit(gpa);
         }
         b.arena.deinit();
@@ -205,9 +206,15 @@ pub const Builder = struct {
         if (gop.found_existing) return error.DuplicateFact;
         gop.key_ptr.* = try b.arena.allocator().dupe(u8, d.name);
         if (d.key != .none and (d.kind == .text or d.role == .clock or d.role == .moment or in_reserved)) return error.BadKind;
+        if (d.bounds) |bd| if (d.kind != .int or bd.min > bd.max or in_reserved or d.role == .clock) return error.BadKind;
+        const type_field: u16 = if (d.bounds) |bd| blk: {
+            if (b.bounds.items.len == format.none16 - 1) return error.TooLarge;
+            try b.bounds.append(b.gpa, .{ .min = bd.min, .max = bd.max });
+            break :blk @intCast(b.bounds.items.len - 1); // safe: checked above
+        } else codec.typeField(d.enumeration, d.ref_kind);
         try b.facts.append(b.gpa, .{
             .name = name,
-            .enumeration = codec.typeField(d.enumeration, d.ref_kind),
+            .enumeration = type_field,
             .scope = d.scope.raw(),
             .kind = @backingInt(d.kind),
             .role = @backingInt(d.role),

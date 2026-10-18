@@ -93,6 +93,7 @@ Directory entries are in the fixed order of the tables below.
 | 25 | blocks | Block | 24 |
 | 26 | block_bytes | u8 | 1 |
 | 27 | changes | Change | 8 |
+| 28 | bounds | Bounds | 16 |
 
 ### Declarations
 
@@ -111,7 +112,7 @@ A `one of` fact holds one item or none; a `set of` fact holds any of them.
 | field | type | |
 |---|---|---|
 | name | Str | qualified; facts of the reserved scope are `visits:<what>` or `state:<what>` |
-| enumeration | u16 | for `one_of` and `set_of`, the enumeration; for `ref`, its kind; else `none` |
+| enumeration | u16 | for `one_of` and `set_of`, the enumeration; for `ref`, its kind; for a bounded int, its index into bounds; else `none` |
 | scope | u8 | |
 | kind | u8 | 0 boolean, 1 int, 2 one_of, 3 set_of, 4 text, 5 ref |
 | role | u8 | 0 story, 1 game (written by the game, never the story), 2 visits, 3 state, 4 clock (the game's, an int only ever advanced), 5 moment (what happened: back to its initial value once what watches conditions has seen it, never in a snapshot) |
@@ -197,6 +198,10 @@ builtin_args, `returns: u8` (0 boolean or 1 int), 3 bytes padding. An argument i
 u32 naming something of the story: a section by its index, a part by the index of the
 section it compiles to (a registered kind's parts are sections, `section.part`), or a
 fact by its id; which, the builtin's declaration says, and its package reads them so.
+
+**Bounds**: `min: i64`, `max: i64`, `min` no more than `max`: a bounded int's least and most. A `change` of it
+stops at the nearer end; a value set past them is refused. A bounded int is never a clock, a visit count or the
+executor's state, and its bounds are no part of its type: it compares and is set as any int.
 
 **Change**: `fact: u16`, `clock: u16` (a fact of role `clock`), `at: u16` (an int of role `state` in the reserved
 scope, `state:changed.<fact>@<clock>`), 2 bytes padding. What `since_changed(fact, clock)` reads: the clock's value
@@ -363,7 +368,8 @@ first set; a key that names a thing is saved by its id where the story names it,
 its name. Restored, a key the host or the declaration no longer knows is reported lost.
 
 Names are at most 256 bytes. A restore applies nothing unless every byte is accepted. A moment is never in a
-snapshot, nor reported as added when a snapshot is restored: it is over before anything is saved.
+snapshot, nor reported as added when a snapshot is restored: it is over before anything is saved. A bounded int
+restored past the bounds the story declares now is held at the nearer end and reported clamped.
 
 A `ref` holding a thing the story names is saved by its text id (form 1) and restored
 to whatever handle the host gives that id then, so a host may number its handles anew

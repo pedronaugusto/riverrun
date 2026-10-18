@@ -102,6 +102,8 @@ pub const Fact = struct {
     moment: bool = false,
     /// For a fact kept per thing: what keys it, the things of a kind or an enumeration's values.
     key: ?Type = null,
+    /// For a bounded int: the least and the most it holds.
+    bounds: ?ast.Bounds = null,
     module: ModuleId,
     span: Span,
     /// Whether any effect of the story sets it.

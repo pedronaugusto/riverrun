@@ -46,6 +46,8 @@ pub const Fact = struct {
     /// `opinion(person): int`: a value for each of the things of a kind, or each value of an enumeration.
     key: ?Type = null,
     type: Type,
+    /// `int from -100 to 100`: the least and the most an int holds.
+    bounds: ?Bounds = null,
     /// Written by the game's mechanics, never by the story.
     game: bool,
     /// `(clock)`: an int the game only advances, so a comparison with it can be woken by its value.
@@ -63,6 +65,8 @@ pub const Type = union(enum) {
     /// `ref of kind`: an opaque handle to one of the host's things, named in the story by stable text ids.
     ref: Name,
 };
+
+pub const Bounds = struct { min: i64, max: i64 };
 
 pub const Const = struct { name: Name, value: Expr };
 

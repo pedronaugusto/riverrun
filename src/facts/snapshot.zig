@@ -114,6 +114,8 @@ pub const Report = struct {
     added: []const []const u8,
     /// Values the snapshot held that the fact's items no longer name.
     lost: []const Lost,
+    /// Bounded ints whose saved value was past the bounds the story declares now, held at the nearer end.
+    clamped: []const []const u8 = &.{},
 
     pub const Lost = struct { fact: []const u8, item: []const u8 };
 };
@@ -234,6 +236,7 @@ pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_s
     }
     var dropped: std.ArrayList([]const u8) = .empty;
     var lost: std.ArrayList(Report.Lost) = .empty;
+    var clamped: std.ArrayList([]const u8) = .empty;
     var staged: std.ArrayList(Staged) = .empty;
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     var restored: std.bit_set.Static(value.max_facts) = .empty;
@@ -248,7 +251,7 @@ pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_s
             try dropped.append(arena, s.name);
             continue;
         }
-        try staged.append(arena, .{ .id = id, .value = try matched(arena, d, s.name, s.value, &lost, names) });
+        try staged.append(arena, .{ .id = id, .value = try bounded(arena, d, s.name, try matched(arena, d, s.name, s.value, &lost, names), &clamped) });
         restored.set(id.raw());
     }
     for (keyed) |k| {
@@ -268,7 +271,7 @@ pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_s
                 error.KeyLost => continue,
                 else => |e| return e,
             };
-            try staged.append(arena, .{ .id = id, .key = key, .value = try matched(arena, d, k.name, entry.value, &lost, names) });
+            try staged.append(arena, .{ .id = id, .key = key, .value = try bounded(arena, d, k.name, try matched(arena, d, k.name, entry.value, &lost, names), &clamped) });
         }
         restored.set(id.raw());
     }
@@ -277,7 +280,15 @@ pub fn restoreSaved(m: *Memory, arena: std.mem.Allocator, scope: ScopeId, same_s
         if (isSaved(d, scope) and !restored.isSet(i)) try added.append(arena, d.name);
     }
     try apply(m, scope, staged.items);
-    return .{ .same_story = same_story, .dropped = dropped.items, .added = added.items, .lost = lost.items };
+    return .{ .same_story = same_story, .dropped = dropped.items, .added = added.items, .lost = lost.items, .clamped = clamped.items };
+}
+
+// A restored int held within the bounds the story declares now, and said so where it was past them.
+fn bounded(arena: std.mem.Allocator, d: schema_.Decl, name: []const u8, v: Value, clamped: *std.ArrayList([]const u8)) Error!Value {
+    const b = d.bounds orelse return v;
+    if (v != .int or b.holds(v.int)) return v;
+    try clamped.append(arena, name);
+    return .{ .int = b.clamp(v.int) };
 }
 
 // The staged values into `m`, with all the room they need taken first, so applying cannot fail halfway.
@@ -647,4 +658,24 @@ test "a fact kept per thing is saved key by key, each key named, and a key no lo
     try std.testing.expectEqual(@as(usize, 1), report.lost.len);
     try std.testing.expectEqualStrings("hank", report.lost[0].item);
     try std.testing.expect(again.getKey(.fromRaw(1), 1).boolean);
+}
+
+test "a saved int past the bounds a patch declares is held at the nearer end, and said so" {
+    const gpa = std.testing.allocator;
+    const world: ScopeId = .fromRaw(0);
+    const wide: schema_.Schema = .{ .scopes = &.{"world"}, .facts = &.{.{ .name = "honor", .scope = world, .kind = .int }} };
+    const narrow: schema_.Schema = .{ .scopes = &.{"world"}, .facts = &.{.{ .name = "honor", .scope = world, .kind = .int, .bounds = .{ .min = -100, .max = 100 } }} };
+    var m: Memory = try .init(gpa, wide);
+    defer m.deinit();
+    try m.set(.fromRaw(0), .{ .int = 250 });
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    try write(&m, &out.writer, world, 1);
+    var patched: Memory = try .init(gpa, narrow);
+    defer patched.deinit();
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const report = try read(&patched, arena.allocator(), world, 2, out.written());
+    try std.testing.expectEqual(@as(i64, 100), patched.get(.fromRaw(0)).int);
+    try std.testing.expectEqualStrings("honor", report.clamped[0]);
 }

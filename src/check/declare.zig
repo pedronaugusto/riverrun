@@ -77,6 +77,7 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
     if (key != null and (f.clock or f.moment or t == .text)) {
         try c.err(f.name.span, "`{s}` is kept per thing, so it cannot be a clock, a moment or text", .{f.name.text});
     }
+    if (f.bounds != null and f.clock) try c.err(f.name.span, "`{s}` is a clock, which only moves on: it has no bounds", .{f.name.text});
     const id = sym.idOf(sym.FactId, c.facts.items.len);
     if (!try named(c, module, f.name, .{ .fact = id })) return;
     try c.facts.append(c.arena, .{
@@ -87,6 +88,7 @@ fn fact(c: *Checker, module: sym.ModuleId, scope: ?ast.Name, f: *const ast.Fact)
         .clock = f.clock,
         .moment = f.moment,
         .key = key,
+        .bounds = f.bounds,
         .module = module,
         .span = f.name.span,
     });

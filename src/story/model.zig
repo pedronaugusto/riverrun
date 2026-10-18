@@ -34,6 +34,8 @@ pub const FactDecl = struct {
     role: facts.Role = .story,
     /// For a fact kept per thing: what keys it.
     key: Key = .none,
+    /// For a bounded int: the least and the most it holds.
+    bounds: ?facts.Bounds = null,
 
     pub const Key = union(enum) { none, items: EnumId, ref: RefKindId };
 };

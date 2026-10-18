@@ -30,6 +30,8 @@ pub const SetError = error{
     WrongKey,
     /// A fact kept per thing holds a value for `max_keys` keys already.
     TooManyKeys,
+    /// A bounded int set past its bounds: a change is clamped, a set refused.
+    OutOfBounds,
 };
 
 pub const Store = struct {
@@ -49,6 +51,8 @@ pub const Store = struct {
         setKey: *const fn (ptr: *anyopaque, fact: FactId, key: Key, v: Value) SetError!void,
         /// The stamp of the key's last change, 0 if it never changed: a watcher of one key compares it.
         keyStamp: *const fn (ptr: *anyopaque, fact: FactId, key: Key) u64,
+        /// A bounded int's bounds, which a change is clamped to; null for any other fact.
+        bounds: *const fn (ptr: *anyopaque, fact: FactId) ?value.Bounds,
     };
 
     pub fn get(s: Store, fact: FactId) Value {
@@ -73,6 +77,10 @@ pub const Store = struct {
 
     pub fn keyStamp(s: Store, fact: FactId, key: Key) u64 {
         return s.vtable.keyStamp(s.ptr, fact, key);
+    }
+
+    pub fn bounds(s: Store, fact: FactId) ?value.Bounds {
+        return s.vtable.bounds(s.ptr, fact);
     }
 
     fn read(s: Store, fact: FactId, key: ?Key) Value {
@@ -125,7 +133,9 @@ pub fn apply(store: Store, effect: Effect) SetError!?Call {
         .change => |e| {
             const now = store.read(e.fact, e.key);
             if (now != .int) return error.WrongKind;
-            try store.write(e.fact, e.key, .{ .int = std.math.add(i64, now.int, e.by) catch return error.Overflow });
+            // a bounded int stops at its ends; an unbounded one refuses to pass what an i64 holds
+            const moved = if (store.bounds(e.fact)) |b| b.clamp(now.int +| e.by) else std.math.add(i64, now.int, e.by) catch return error.Overflow;
+            try store.write(e.fact, e.key, .{ .int = moved });
         },
         .call => |c| return c,
     }

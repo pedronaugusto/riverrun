@@ -80,7 +80,11 @@ pub const Story = struct {
             .name = s.str(f.name),
             .scope = .fromRaw(f.scope),
             .kind = kind,
-            .enumeration = if (kind == .ref) null else codec.optional(model.EnumId, f.enumeration),
+            .enumeration = if (kind == .ref or kind == .int) null else codec.optional(model.EnumId, f.enumeration),
+            .bounds = if (kind == .int and f.enumeration != format.none16) blk: {
+                const b = s.g.get(.bounds, f.enumeration);
+                break :blk .{ .min = b.min, .max = b.max };
+            } else null,
             .ref_kind = if (kind == .ref) .fromRaw(f.enumeration) else null,
             .role = @fromBackingInt(f.role),
             .key = if (f.key_kind == @backingInt(facts.Kind.one_of)) .{ .items = .fromRaw(f.key_type) } else if (f.key_kind == @backingInt(facts.Kind.ref)) .{ .ref = .fromRaw(f.key_type) } else .none,
@@ -183,7 +187,7 @@ pub const Story = struct {
                 for (list, 0..) |*n, k| n.* = s.item(r.start + @as(u32, @intCast(k))); // safe: validated to max_items
                 names = list;
             }
-            d.* = .{ .name = f.name, .scope = f.scope, .kind = f.kind, .items = names, .ref_kind = if (f.ref_kind) |k| s.refKind(k) else "", .role = f.role, .key = switch (f.key) {
+            d.* = .{ .name = f.name, .scope = f.scope, .kind = f.kind, .items = names, .ref_kind = if (f.ref_kind) |k| s.refKind(k) else "", .role = f.role, .bounds = f.bounds, .key = switch (f.key) {
                 .none => .none,
                 .ref => |k| .{ .ref = s.refKind(k) },
                 .items => |e| .{ .items = try s.itemNames(arena, e) },

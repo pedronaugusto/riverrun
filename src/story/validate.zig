@@ -100,7 +100,8 @@ fn enumLen(g: *const Graph, e: u16) u32 {
     return g.get(.enums, e).len;
 }
 
-// An enumeration where the kind needs one, a kind of things for a ref, and none where neither is.
+// An enumeration where the kind needs one, a kind of things for a ref, bounds or none for an int, and none
+// where none of these is.
 fn enumeration(g: *const Graph, k: facts.Kind, e: u16) Error!void {
     if (k == .ref) return index(g, .kinds, e);
     if (!listed(k)) {
@@ -156,7 +157,12 @@ fn declarations(g: *const Graph) Error!void {
         const role = std.enums.fromInt(facts.Role, f.role) orelse return error.BadKind;
         const k = try kind(f.kind);
         if (role == .clock and k != .int) return error.BadKind;
-        try enumeration(g, k, f.enumeration);
+        if (k == .int and f.enumeration != none16) {
+            // a bounded int: its least no more than its most, and never a clock or the executor's own
+            try index(g, .bounds, f.enumeration);
+            const b = g.get(.bounds, f.enumeration);
+            if (b.min > b.max or role == .clock or role == .visits or role == .state) return error.BadKind;
+        } else try enumeration(g, k, f.enumeration);
         if (f.key_kind == format.no_kind) {
             if (f.key_type != none16) return error.BadKind;
         } else {
@@ -412,7 +418,9 @@ const Ty = struct {
     }
 };
 
+// A fact's value's type: a bounded int's `enumeration` names its bounds, which are no part of its type.
 fn tyOfFact(f: format.Fact) Ty {
+    if (f.kind == @backingInt(facts.Kind.int)) return .int;
     return .{ .kind = f.kind, .enumeration = f.enumeration };
 }
 

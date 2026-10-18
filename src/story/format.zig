@@ -90,6 +90,8 @@ pub const Table = enum(u32) {
     /// What `since_changed(fact, clock)` reads: a fact, a clock, and the state that keeps the clock's value at the
     /// fact's last change, which the rules evaluator writes.
     changes,
+    /// Bounded ints' least and most, by the index a bounded int fact's `enumeration` holds.
+    bounds,
 };
 
 pub const table_count = @typeInfo(Table).@"enum".field_names.len;
@@ -126,7 +128,8 @@ pub const Meta = extern struct {
 
 pub const Fact = extern struct {
     name: Str,
-    /// For a `one of` or a `set of`, its enumeration; for a `ref`, its kind; `none16` otherwise.
+    /// For a `one of` or a `set of`, its enumeration; for a `ref`, its kind; for a bounded int, its bounds;
+    /// `none16` otherwise.
     enumeration: u16,
     scope: u8,
     kind: u8,
@@ -316,6 +319,9 @@ pub const Block = extern struct {
     bytes: Range,
 };
 
+/// A bounded int's least and most.
+pub const Bounds = extern struct { min: i64, max: i64 };
+
 /// What `since_changed(fact, clock)` reads.
 pub const Change = extern struct {
     fact: u16,
@@ -362,6 +368,7 @@ pub fn Record(comptime t: Table) type {
         .blocks => Block,
         .block_bytes => u8,
         .changes => Change,
+        .bounds => Bounds,
     };
 }
 
@@ -436,7 +443,7 @@ pub const Term = packed struct(u32) {
 
 comptime {
     // The sizes docs/format.md gives.
-    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 12 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 }, .{ Change, 8 } };
+    const sizes = .{ .{ Header, 32 }, .{ Dir, 16 }, .{ Meta, 8 }, .{ Fact, 16 }, .{ Cast, 40 }, .{ Extern, 32 }, .{ Param, 4 }, .{ Section, 44 }, .{ Candidate, 36 }, .{ Node, 32 }, .{ Choice, 28 }, .{ Text, 16 }, .{ Slot, 12 }, .{ Effect, 20 }, .{ Tag, 16 }, .{ TagValue, 12 }, .{ Thing, 12 }, .{ BuiltinCall, 28 }, .{ Block, 24 }, .{ Change, 8 }, .{ Bounds, 16 } };
     for (sizes) |s| if (@sizeOf(s[0]) != s[1]) @compileError("a record's size is not the specification's");
     for (@typeInfo(Table).@"enum".field_names) |field| {
         const R = Record(@field(Table, field));

@@ -122,6 +122,9 @@ A conversation with several speakers needs no construct of its own:
 
 ## Facts
 
+- **Bounded ints,** `honor: int from -100 to 100`: a change stops at the nearer end, a set past the bounds is
+  refused (by the checker where the value is a number or a constant, by the store at run time), and a save restored
+  under tighter bounds holds its value at the nearer end and reports it. Honor, karma, approval, reputation.
 - **Types:** `bool`, `int`, `one of …`, `set of …`, text (only for names the player types), and `ref of kind`,
   the host's handle for one of its things. A story names things by stable text ids, resolved to handles once at
   load; a snapshot saves a named thing by its id, so a host may renumber its handles, and any other ref by its

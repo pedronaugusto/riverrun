@@ -43,6 +43,8 @@ pub const Decl = struct {
     role: Role = .story,
     /// For a fact kept per thing: what keys it.
     key: KeyDecl = .none,
+    /// For a bounded int: the least and the most it holds.
+    bounds: ?value.Bounds = null,
 
     pub fn itemNamed(d: Decl, name: []const u8) ?u16 {
         for (d.items, 0..) |item, i| {
@@ -100,6 +102,7 @@ pub const Schema = struct {
             if (listed != (d.items.len > 0)) return error.ItemsDoNotFitKind;
             if ((d.kind == .ref) != (d.ref_kind.len > 0)) return error.ItemsDoNotFitKind;
             if (d.items.len > value.max_items) return error.TooManyItems;
+            if (d.bounds) |b| if (d.kind != .int or b.min > b.max) return error.ItemsDoNotFitKind;
             switch (d.key) {
                 .none => {},
                 .ref => |k| if (k.len == 0 or d.kind == .text) return error.ItemsDoNotFitKind,

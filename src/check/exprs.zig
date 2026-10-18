@@ -256,6 +256,20 @@ fn keyFits(c: *Checker, scope: Scope, fact: *const ast.Name, key: ?*const ast.Ex
     return true;
 }
 
+// The number a value is when it is one written, or an int constant: what a bound can be checked against now.
+fn constantInt(c: *const Checker, scope: Scope, e: *const ast.Expr) ?i64 {
+    switch (e.kind) {
+        .int => |n| return n,
+        .name => |n| {
+            const named = c.valueNamed(scope.module, n) orelse return null;
+            if (named != .constant) return null;
+            const k = c.consts.items[named.constant.raw()].value;
+            return if (k == .int) k.int else null;
+        },
+        else => return null,
+    }
+}
+
 fn factArg(c: *Checker, scope: Scope, arg: *const ast.Expr) Error!?sym.FactId {
     const named = c.valueNamed(scope.module, arg.kind.name) orelse {
         try c.err(arg.span, "nothing is called `{s}`: no fact", .{arg.kind.name});
@@ -414,6 +428,9 @@ pub fn effect(c: *Checker, scope: Scope, eff: *const ast.Effect) Error!void {
                 if (s.key != null) try c.err(s.value.span, "an outcome is kept in a fact with one value", .{});
                 return;
             }
+            if (c.facts.items[id.raw()].bounds) |b| if (constantInt(c, scope, &s.value)) |n| if (n < b.min or n > b.max) {
+                try c.err(s.value.span, "{d} is past `{s}`'s bounds, {d} to {d}", .{ n, s.fact.text, b.min, b.max });
+            };
             try value(c, scope, &s.value, c.facts.items[id.raw()].type);
         },
         .add => |*a| try change(c, scope, a, "+="),

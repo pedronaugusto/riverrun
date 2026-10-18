@@ -24,6 +24,20 @@ pub const max_keys = 1 << 20;
 /// What a fact kept per thing is keyed by: a thing's handle, or an item's index.
 pub const Key = u64;
 
+/// The least and the most a bounded int holds: `int from -100 to 100`.
+pub const Bounds = struct {
+    min: i64,
+    max: i64,
+
+    pub fn clamp(b: Bounds, v: i64) i64 {
+        return @max(b.min, @min(b.max, v));
+    }
+
+    pub fn holds(b: Bounds, v: i64) bool {
+        return v >= b.min and v <= b.max;
+    }
+};
+
 /// A fact, by its place in the story's declarations.
 pub const FactId = aegis.id.Id(enum { fact }, u16);
 /// A scope, by its place in the story's scopes.

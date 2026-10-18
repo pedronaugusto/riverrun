@@ -323,3 +323,25 @@ test "facts kept per person: kill him, and his wife's opinion of you falls, and 
     try t.line("She will not look at you.");
     try t.end();
 }
+
+test "honor is bounded: it stops at its ends however much it changes" {
+    const t = try Told.init(gpa, &.{
+        \\facts (world):
+        \\  honor: int from -100 to 100
+        \\== a
+        \\~ honor += 80
+        \\~ honor += 80
+        \\{ honor = 100 } At the top.
+        \\~ honor -= 500
+        \\{ honor = -100 } At the bottom.
+        \\-> end
+    }, .{}, &.{}, testing.NoHost{});
+    defer t.deinit();
+    try t.session.start(.fromRaw(0), t.section("a"));
+    try t.effects();
+    try t.line("At the top.");
+    try t.effects();
+    try t.line("At the bottom.");
+    try t.end();
+    try std.testing.expectError(error.OutOfBounds, t.memory.set(t.fact("honor"), .{ .int = 101 }));
+}
