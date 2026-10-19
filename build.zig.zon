@@ -15,8 +15,8 @@
             .lazy = true,
         },
         .strand = .{
-            .url = "git+https://github.com/pedronaugusto/strand?ref=v0.13.0#2e5339055003178387222ec2fbb674b95c5432de",
-            .hash = "strand-0.13.0-8LNWVvwIJwBSRhUdNPFzHda8W132HUFV6AFq4xA_-Zz-",
+            .url = "git+https://github.com/pedronaugusto/strand?ref=v0.13.1#3f25dff5fc9ccacaab7772f6d414e4ec2720eeb4",
+            .hash = "strand-0.13.1-8LNWVo8NJwACyQGeXIBsswIL5a8Y--omAxQl5bnULXxY",
             .lazy = true,
         },
     },
