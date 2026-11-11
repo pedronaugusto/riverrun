@@ -9,3 +9,9 @@ riverrun reads, checks and runs stories written in `.river` files.
 
 A compiled story is graph data, specified in [docs/format.md](docs/format.md), so any engine's runtime can read
 it. The design is [docs/design.md](docs/design.md).
+
+## Stability
+
+riverrun is 0.x and tracks Zig 0.17.x. A breaking change comes only in a minor release
+(0.1 to 0.2), with a CHANGELOG entry saying what changed and what to write instead; a
+patch release never breaks.
