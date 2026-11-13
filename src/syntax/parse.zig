@@ -332,6 +332,10 @@ const Reader = struct {
         }
         var e: ast.Extern = .{ .name = .{ .text = std.mem.trim(u8, l.text[0..open], " "), .span = r.at(l, 0) }, .params = ps, .returns = returns };
         while (marks.len > 0) {
+            if (marks[0] != '(') {
+                try r.report(l, "after the parameters and the type come marks, each `(action)` or `(reads stamp)`, or nothing", .{});
+                return error.Invalid;
+            }
             const end = parenClose(marks, 0) orelse {
                 try r.report(l, "`(` is not closed", .{});
                 return error.Invalid;
@@ -500,8 +504,12 @@ const Reader = struct {
         var when: ?ast.Expr = null;
         const off = l.text.len - t.len;
         if (std.mem.startsWith(u8, t, "when ")) {
-            const open = std.mem.findScalar(u8, t, '{') orelse 0;
-            const close = text_mod.matching(t, open) orelse {
+            // the braces: none, or one not closed, is no condition
+            const braces: ?[2]usize = found: {
+                const o = std.mem.findScalar(u8, t, '{') orelse break :found null;
+                break :found .{ o, text_mod.matching(t, o) orelse break :found null };
+            };
+            const open, const close = braces orelse {
                 try r.report(l, "`when` takes `{{ condition }}`", .{});
                 r.i += 1;
                 return null;
