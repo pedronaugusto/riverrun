@@ -128,6 +128,7 @@ test "any bytes read to a tree or diagnostics, each at a line and column in the 
                 "cast:\n  mum: Mum # role\n",
                 "== q\n= a   when { met }\n  * Run.\n= b   when { a > 1 }   -> q\n",
                 "extern:\n  f(x: int) -> int (action) (reads s)\n  g()\n",
+                "== q\n  * Run.\n    # stage\n    ~ x = 1\n",
             });
             var diags: source.Diagnostics = .{};
             defer diags.deinit(testing.allocator);
@@ -144,13 +145,19 @@ test "any bytes read to a tree or diagnostics, each at a line and column in the 
     }.one, .{ .cases = 3000, .seed = 0xb17e5 });
 }
 
-test "a part's `when` with no braces, and a word after an extern's marks, are refused, not trapped" {
-    for ([_][]const u8{ "== q\n= a   when met\n", "== q\n= a   when { met\n", "extern:\n  f() -> int (action) x\n" }) |text| {
+test "a part's `when` with no braces, a word after an extern's marks and a line of tags alone are read, not trapped" {
+    const cases = [_]struct { text: []const u8, refused: bool }{
+        .{ .text = "== q\n= a   when met\n", .refused = true },
+        .{ .text = "== q\n= a   when { met\n", .refused = true },
+        .{ .text = "extern:\n  f() -> int (action) x\n", .refused = true },
+        .{ .text = "== q\n  * Run.\n    # stage\n", .refused = false },
+    };
+    for (cases) |case| {
         var state: std.heap.ArenaAllocator = .init(testing.allocator);
         defer state.deinit();
         var diags: source.Diagnostics = .{};
         defer diags.deinit(testing.allocator);
-        _ = try parse.parseFile(state.allocator(), testing.allocator, &diags, 0, "story.river", text);
-        try testing.expect(diags.errors() > 0);
+        _ = try parse.parseFile(state.allocator(), testing.allocator, &diags, 0, "story.river", case.text);
+        if (case.refused) try testing.expect(diags.errors() > 0);
     }
 }

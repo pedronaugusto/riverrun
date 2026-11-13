@@ -592,7 +592,7 @@ const Reader = struct {
         if (std.mem.startsWith(u8, t, "~ ")) return r.leaf(l, body, .{ .effect = try r.effect(l, t[2..]) });
         if (std.mem.startsWith(u8, t, "* ") or std.mem.startsWith(u8, t, "+ ")) return .{ .choice = try r.choice(l, body) };
         if (std.mem.eql(u8, t, "-") or std.mem.startsWith(u8, t, "- ")) return .{ .gather = try r.gather(l, body) };
-        if (t[0] == '{') {
+        if (t.len > 0 and t[0] == '{') {
             const close = text_mod.matching(t, 0) orelse {
                 try r.report(l, "`{{` is not closed", .{});
                 return error.Invalid;
