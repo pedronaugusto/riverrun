@@ -128,7 +128,7 @@ pub const Host = struct {
         inline for (names) |name| {
             const f = @field(impls, name);
             const T = @TypeOf(user);
-            const entry: Entry = .{ .call = thunk(f), .user = @ptrCast(user) }; // safe: the host's pointer, cast back by its thunk
+            const entry: Entry = .{ .call = thunk(f), .user = user };
             if (try b.set(name, comptime signatureOf(@TypeOf(f), T), entry) == .mismatched) {
                 try note(gpa, problems, b.nameOf(name), .mismatched);
             }
@@ -175,10 +175,10 @@ pub const RefLookup = struct {
     host: *const Host,
 
     pub fn names(l: *const RefLookup) facts.RefNames {
-        return .{ .user = @ptrCast(@constCast(l)), .idOf = idOf, .handleOf = handleOf }; // safe: read back as a *const RefLookup
+        return .{ .user = l, .idOf = idOf, .handleOf = handleOf };
     }
 
-    fn idOf(user: ?*anyopaque, kind: []const u8, handle: u64) ?[]const u8 {
+    fn idOf(user: ?*const anyopaque, kind: []const u8, handle: u64) ?[]const u8 {
         const l: *const RefLookup = @ptrCast(@alignCast(user)); // safe: made by `names`
         for (l.host.refs, 0..) |h, i| {
             if (h != handle) continue;
@@ -188,7 +188,7 @@ pub const RefLookup = struct {
         return null;
     }
 
-    fn handleOf(user: ?*anyopaque, kind: []const u8, id: []const u8) ?u64 {
+    fn handleOf(user: ?*const anyopaque, kind: []const u8, id: []const u8) ?u64 {
         const l: *const RefLookup = @ptrCast(@alignCast(user)); // safe: made by `names`
         for (0..l.host.refs.len) |i| {
             const t = l.story.thing(@intCast(i)); // safe: refs are one per thing
@@ -307,11 +307,21 @@ fn signatureOf(comptime F: type, comptime User: type) Signature {
     if (params.len < 2 or params[0].? != User or params[1].? != Context) {
         @compileError("an extern's implementation takes the host's pointer and a run.Context first");
     }
-    var kinds: [params.len - 2]Kind = undefined;
-    for (params[2..], &kinds) |p, *k| k.* = kindOf(p.?);
-    const final = kinds;
     const R = Returned(F);
-    return .{ .params = &final, .returns = if (R == void) null else kindOf(R) };
+    return .{ .params = &KindsOf(F).all, .returns = if (R == void) null else kindOf(R) };
+}
+
+// The kinds of `F`'s parameters past the host's pointer and the context, kept by a type of their own: storage
+// that outlives any call.
+fn KindsOf(comptime F: type) type {
+    const params = @typeInfo(F).@"fn".param_types;
+    return struct {
+        const all = all: {
+            var kinds: [params.len - 2]Kind = undefined;
+            for (params[2..], &kinds) |p, *k| k.* = kindOf(p.?);
+            break :all kinds;
+        };
+    };
 }
 
 fn thunk(comptime f: anytype) Fn {

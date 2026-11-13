@@ -12,6 +12,7 @@ const source = @import("source.zig");
 const lines_mod = @import("lines.zig");
 const expr = @import("expr.zig");
 const text_mod = @import("text.zig");
+const aegis = @import("aegis");
 
 const Line = lines_mod.Line;
 const Allocator = std.mem.Allocator;
@@ -87,7 +88,7 @@ const Reader = struct {
 
     // The lines indented under the line at `r.i`, which is consumed.
     fn block(r: *Reader) []const Line {
-        std.debug.assert(r.i < r.lines.len);
+        aegis.assert.invariant(r.i < r.lines.len, "the caller stands on a line");
         const head = r.lines[r.i];
         r.i += 1;
         const start = r.i;
@@ -419,7 +420,7 @@ const Reader = struct {
 
     fn section(r: *Reader) Error!?ast.Section {
         const l = r.lines[r.i];
-        std.debug.assert(std.mem.startsWith(u8, l.text, "=="));
+        aegis.assert.invariant(std.mem.startsWith(u8, l.text, "=="), "the caller met the section's `==` line");
         r.i += 1;
         const head = std.mem.trim(u8, l.text[2..], " ");
         const paren = std.mem.findScalar(u8, head, '(');
@@ -482,7 +483,7 @@ const Reader = struct {
 
     fn subsection(r: *Reader) Error!?ast.Subsection {
         const l = r.lines[r.i];
-        std.debug.assert(std.mem.startsWith(u8, l.text, "= "));
+        aegis.assert.invariant(std.mem.startsWith(u8, l.text, "= "), "the caller met the subsection's `= ` line");
         var t = std.mem.trim(u8, l.text[2..], " ");
         const end = blk: {
             var j: usize = 0;
@@ -544,7 +545,7 @@ const Reader = struct {
 
     // The statement at `r.i`, at indentation `indent`, with its body.
     fn stmt(r: *Reader, indent: u32, depth: usize) Error!?ast.Stmt {
-        std.debug.assert(r.i < r.lines.len);
+        aegis.assert.invariant(r.i < r.lines.len, "the caller stands on a line");
         const l = r.lines[r.i];
         if (l.indent != indent) {
             try r.report(l, "this line's indentation matches nothing above it", .{});
@@ -769,7 +770,7 @@ fn takeMark(t: *[]const u8, m: []const u8) bool {
 
 // The `)` that closes the `(` at `open`.
 fn parenClose(t: []const u8, open: usize) ?usize {
-    std.debug.assert(t[open] == '(');
+    aegis.assert.invariant(t[open] == '(', "`open` is a `(`");
     var depth: usize = 0;
     for (t[open..], open..) |c, i| switch (c) {
         '(' => depth += 1,

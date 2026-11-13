@@ -16,6 +16,7 @@ const codec = @import("codec.zig");
 const model = @import("model.zig");
 const strings = @import("strings.zig");
 const templates = @import("template.zig");
+const aegis = @import("aegis");
 const Story = @import("reader.zig").Story;
 
 const Range = format.Range;
@@ -197,7 +198,7 @@ pub const Builder = struct {
     pub fn thing(b: *Builder, kind: model.RefKindId, id: []const u8) Error!u24 {
         const s = try b.declName(id);
         for (b.things.items, 0..) |t, i| {
-            if (t.kind == kind.raw() and t.id.offset == s.offset and t.id.len == s.len) return arg(i);
+            if (kind.eql(.fromRaw(t.kind)) and t.id.offset == s.offset and t.id.len == s.len) return arg(i);
         }
         try b.things.append(b.gpa, .{ .id = s, .kind = kind.raw() });
         return arg(b.things.items.len - 1);
@@ -316,7 +317,7 @@ pub const Builder = struct {
     /// What `since_changed(fact, clock)` reads, for `Term.of(.since_changed, i)`: one per fact and clock, with
     /// the state that keeps the clock's value at the fact's last change, `state:changed.<fact>@<clock>`.
     pub fn sinceChanged(b: *Builder, fact_id: FactId, clock: FactId) Error!u24 {
-        for (b.changes.items, 0..) |c, i| if (c.fact == fact_id.raw() and c.clock == clock.raw()) return arg(i);
+        for (b.changes.items, 0..) |c, i| if (fact_id.eql(.fromRaw(c.fact)) and clock.eql(.fromRaw(c.clock))) return arg(i);
         const names = b.names.items;
         const f = b.facts.items[fact_id.raw()].name;
         const k = b.facts.items[clock.raw()].name;
@@ -476,7 +477,7 @@ pub const Builder = struct {
     }
 
     pub fn define(b: *Builder, id: model.NodeId, n: model.Node) void {
-        std.debug.assert(!b.defined.items[id.raw()]);
+        aegis.assert.invariant(!b.defined.items[id.raw()], "a node is defined once");
         b.nodes.items[id.raw()] = codec.encodeNode(n);
         b.defined.items[id.raw()] = true;
     }

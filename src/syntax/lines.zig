@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const source = @import("source.zig");
+const aegis = @import("aegis");
 
 pub const max_bytes = 16 * 1024 * 1024;
 pub const max_line = 64 * 1024;
@@ -52,7 +53,7 @@ pub fn split(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Di
         const cut = strip(body);
         const text = std.mem.trimEnd(u8, body[0..cut.text_end], " ");
         if (text.len == 0 and cut.tags.len == 0) continue;
-        std.debug.assert(text.len <= body.len);
+        aegis.assert.invariant(text.len <= body.len, "the text is a part of the line's body");
         try out.append(arena, .{ .number = number, .indent = indent, .text = text, .tags = cut.tags, .col = indent + 1, .tags_col = indent + 1 + @as(u32, @intCast(cut.tags_at)) });
     }
     return out.toOwnedSlice(arena);

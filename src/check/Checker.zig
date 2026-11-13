@@ -10,6 +10,7 @@ const sym = @import("symbols.zig");
 
 const Checker = @This();
 const Checked = @import("Checked.zig");
+const aegis = @import("aegis");
 const ast = syntax.ast;
 const Span = syntax.Span;
 const Allocator = std.mem.Allocator;
@@ -243,7 +244,7 @@ pub fn warn(c: *Checker, span: Span, comptime fmt: []const u8, args: anytype) Er
 
 /// The module a file's names belong to: the one its `module` line names, or the root.
 pub fn moduleOf(c: *const Checker, file: syntax.FileId) sym.ModuleId {
-    std.debug.assert(file < c.files.len);
+    aegis.assert.invariant(file < c.files.len, "the file is one of the story's");
     return if (file < c.file_modules.len) c.file_modules[file] else sym.root;
 }
 

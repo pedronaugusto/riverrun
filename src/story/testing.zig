@@ -121,7 +121,8 @@ pub fn kitchen(gpa: std.mem.Allocator) !Built {
 fn define(b: *Builder, given: *std.ArrayList(model.Node), id: ?model.NodeId, n: model.Node) !model.NodeId {
     const at = id orelse try b.reserve();
     b.define(at, n);
-    while (given.items.len <= at.raw()) try given.append(b.gpa, .{ .step = .end });
-    given.items[at.raw()] = n;
+    const index: usize = at.raw(); // the step's place in `given`
+    if (index >= given.items.len) try given.appendNTimes(b.gpa, .{ .step = .end }, index + 1 - given.items.len);
+    given.items[index] = n;
     return at;
 }

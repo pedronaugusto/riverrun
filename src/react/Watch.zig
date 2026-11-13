@@ -268,7 +268,7 @@ pub fn add(w: *Watch, terms: Range, user: u32, f: For) Error!CondId {
 pub fn remove(w: *Watch, cond: CondId) error{OutOfMemory}!void {
     const id = cond.raw();
     const c = &w.conds.items[id];
-    std.debug.assert(c.live);
+    aegis.assert.invariant(c.live, "the condition is added and not yet removed");
     try w.free.ensureUnusedCapacity(w.gpa, 1);
     w.unfile(id, c);
     release(w.gpa, c);
@@ -394,7 +394,7 @@ fn markChanged(w: *Watch) Error!void {
         var marks = logged;
         while (marks.next()) |m| try w.changedOne(m.fact, m.key, before);
     } else {
-        const changed = w.watcher.take(changes, w.changed) catch unreachable; // unreachable: `changed` holds the whole interest
+        const changed = w.watcher.take(changes, w.changed) catch unreachable; // glint-ignore: Z026 -- `changed` holds the whole interest
         for (changed) |f| try w.changedOne(f, null, before);
     }
     for (w.bumped.items) |b| {
@@ -622,7 +622,7 @@ fn constantAt(w: *const Watch, c: *const Cond, at: u32) ?facts.Value {
         .false => .{ .boolean = false },
         .this => .{ .ref = c.this },
         .role => for (c.roles) |r| {
-            if (r.fact.raw() == t.arg) break r.value;
+            if (r.fact.eql(.fromRaw(std.math.cast(@TypeOf(r.fact.raw()), t.arg) orelse continue))) break r.value;
         } else null,
         else => null,
     };

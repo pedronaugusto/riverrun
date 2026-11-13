@@ -10,6 +10,7 @@
 //! error stops it before anything is written.
 
 const std = @import("std");
+const aegis = @import("aegis");
 const riverrun = @import("riverrun-compiler");
 const vocabulary = @import("vocabulary");
 
@@ -41,7 +42,7 @@ pub fn main(init: std.process.Init) !u8 {
     const cwd = std.Io.Dir.cwd();
     const trees = try arena.alloc(syntax.ast.File, paths.items.len);
     for (paths.items, trees, 0..) |path, *tree, i| {
-        const bytes = try cwd.readFileAlloc(io, path, arena, .limited(max_file + 1));
+        const bytes = try aegis.own.readFile(io, cwd, path, arena, .fromRaw(max_file + 1));
         tree.* = try syntax.parse(arena, gpa, &diags, @intCast(i), path, bytes); // safe: fewer files than a FileId holds, which the checker asserts
     }
     var checked = try riverrun.check.run(gpa, &diags, trees, options);

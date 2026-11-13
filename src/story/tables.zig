@@ -8,6 +8,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const format = @import("format.zig");
+const aegis = @import("aegis");
 
 comptime {
     // Records are viewed in place: every target riverrun builds for is little-endian.
@@ -90,7 +91,7 @@ pub fn Tables(comptime T: type, comptime Record: fn (comptime T) type) type {
         pub fn get(t: *const Self, comptime table: T, i: u32) Record(table) {
             const R = Record(table);
             const d = t.dirs[@backingInt(table)];
-            std.debug.assert(i < d.count);
+            aegis.assert.invariant(i < d.count, "the record is in its table, as the caller checks");
             const at = @as(usize, d.offset) + @as(usize, i) * d.stride;
             return std.mem.bytesToValue(R, t.bytes[at..][0..@sizeOf(R)]);
         }

@@ -142,7 +142,7 @@ pub const Memory = struct {
                 m.keyed[i].clearRetainingCapacity();
                 continue;
             }
-            m.set(id, .initial(d.kind)) catch unreachable; // unreachable: an initial value fits its kind and allocates nothing
+            m.set(id, .initial(d.kind)) catch unreachable; // glint-ignore: Z026 -- an initial value fits its kind and allocates nothing
         }
     }
 };

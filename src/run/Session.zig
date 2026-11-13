@@ -254,7 +254,7 @@ pub fn speaker(s: *const Session, cast: story_.CastId) ?[]const u8 {
 
 /// The flow `id`, for tools that inspect a session.
 pub fn flowAt(s: *Session, id: FlowId) Error!*Flow {
-    if (id.raw() >= max_flows) return error.TooManyFlows;
+    if (id.compare(.fromRaw(max_flows)) != .lt) return error.TooManyFlows;
     return &s.flows[id.raw()];
 }
 

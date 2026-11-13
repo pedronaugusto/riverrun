@@ -1,0 +1,18 @@
+{
+  "seams": [
+    {
+      "file": "tools/compile.zig",
+      "rules": [
+        "A009"
+      ],
+      "reason": "the build's compile step: it reads the .river files the build names, each under the reader's limit, for the parser"
+    },
+    {
+      "file": "src/run/host.zig",
+      "rules": [
+        "P007"
+      ],
+      "reason": "the host's pointer, erased to *anyopaque when bound and cast back to its own type by the thunk made for it"
+    }
+  ]
+}

@@ -54,9 +54,9 @@ fn lookup(c: *const Checker, scope: Scope, n: []const u8) ?sym.Named {
     const s = &c.sections.items[scope.section.raw()];
     if (s.declares) {
         var buf: [256]u8 = undefined;
-        if (std.mem.print(&buf, "{s}.{s}", .{ s.name, n })) |own| {
-            if (c.value_names.map.get(.{ .module = s.module, .name = own })) |v| return v;
-        } else |_| {} // a name too long for the buffer is longer than any the section declares
+        // a name too long for the buffer is longer than any the section declares
+        const own = std.mem.print(&buf, "{s}.{s}", .{ s.name, n }) catch null;
+        if (own) |o| if (c.value_names.map.get(.{ .module = s.module, .name = o })) |v| return v;
     }
     return c.valueNamed(scope.module, n);
 }
@@ -85,7 +85,8 @@ fn infer(c: *Checker, scope: Scope, e: *const ast.Expr, hint: ?sym.Type) Error!?
         .int => |n| {
             // an enumeration may name a value with digits: `one of 1969, this_life`
             if (enumOf(hint)) |en| for (c.enums.items[en.raw()].values, 0..) |v, ix| {
-                const as = std.fmt.parseInt(i64, v, 10) catch continue;
+                // a value that is no number is not this one
+                const as = (std.fmt.parseInt(i64, v, 10) catch null) orelse continue;
                 if (as != n) continue;
                 const index: u16 = @intCast(ix); // safe: an enumeration holds at most limits.values
                 return record(c, e, .{ .one_of = en }, .{ .value = .{ .enumeration = en, .index = index } });

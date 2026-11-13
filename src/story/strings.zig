@@ -82,9 +82,13 @@ pub const Strings = struct {
         var hi: u32 = s.len();
         while (lo < hi) {
             const mid = lo + (hi - lo) / 2;
-            const here = s.t.get(.ids, mid);
-            if (here == id.raw()) return mid;
-            if (here < id.raw()) lo = mid + 1 else hi = mid;
+            // a zero names no line: not a table the compiler wrote, so no line is found in it
+            const here = model.LineId.fromRaw(s.t.get(.ids, mid)) catch return null;
+            switch (id.compare(here)) {
+                .eq => return mid,
+                .gt => lo = mid + 1,
+                .lt => hi = mid,
+            }
         }
         return null;
     }
@@ -150,7 +154,7 @@ pub fn write(gpa: std.mem.Allocator, lines: []const Line, locale: []const u8, st
     defer gpa.free(sorted);
     std.mem.sortUnstable(Line, sorted, {}, struct {
         fn less(_: void, a: Line, b: Line) bool {
-            return a.id.raw() < b.id.raw();
+            return a.id.compare(b.id) == .lt;
         }
     }.less);
     var text: std.ArrayList(u8) = .empty;

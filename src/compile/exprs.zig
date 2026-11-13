@@ -9,6 +9,7 @@ const syntax = @import("../syntax.zig");
 const check = @import("../check.zig");
 const story = @import("riverrun").story;
 const Compiler = @import("Compiler.zig");
+const aegis = @import("aegis");
 
 const sym = check.symbols;
 const ast = syntax.ast;
@@ -95,7 +96,7 @@ fn op(o: ast.Expr.Op) Term.Op {
 fn named(c: *Compiler, out: *Terms, e: *const ast.Expr) Error!void {
     const t = typed(c, e);
     const ref = t.ref orelse {
-        std.debug.assert(e.kind == .int);
+        aegis.assert.invariant(e.kind == .int, "the checker gave a name with no ref only to a number");
         return out.append(c.arena, .of(.int, try c.b.int(e.kind.int)));
     };
     if (ref == .own) return out.appendSlice(c.arena, &.{ this(c, ref.own), .of(.keyed, c.fact(ref.own).raw()) });

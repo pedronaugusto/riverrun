@@ -9,6 +9,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const source = @import("source.zig");
 const expr = @import("expr.zig");
+const aegis = @import("aegis");
 
 pub const Error = expr.Error;
 
@@ -141,7 +142,7 @@ pub fn alternativesOf(word: []const u8) ?ast.Alternatives {
 
 /// The index of the `}` that closes the `{` at `open`, braces nesting.
 pub fn matching(text: []const u8, open: usize) ?usize {
-    std.debug.assert(text[open] == '{');
+    aegis.assert.invariant(text[open] == '{', "`open` is a `{`");
     var depth: usize = 0;
     var i = open;
     while (i < text.len) : (i += 1) {

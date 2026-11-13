@@ -42,7 +42,8 @@ pub const Fired = struct {
     effects: []const facts.Effect,
 };
 
-const Rule = struct { section: story.SectionId, candidate: u32 };
+/// A rule: the rules section it is in, and its candidate in the watch.
+pub const Rule = struct { section: story.SectionId, candidate: u32 };
 
 watch: Watch,
 rules: []Rule,

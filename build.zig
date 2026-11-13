@@ -96,7 +96,11 @@ pub fn addStory(b: *std.Build, dep: *std.Build.Dependency, options: StoryOptions
             .root_source_file = dep.builder.path("tools/compile.zig"),
             .target = runtime.resolved_target,
             .optimize = runtime.optimize,
-            .imports = &.{ .{ .name = "riverrun-compiler", .module = river }, .{ .name = "vocabulary", .module = vocabulary } },
+            .imports = &.{
+                .{ .name = "riverrun-compiler", .module = river },
+                .{ .name = "vocabulary", .module = vocabulary },
+                .{ .name = "aegis", .module = dep.builder.dependency("aegis", .{ .target = runtime.resolved_target.?, .optimize = runtime.optimize.? }).module("aegis") },
+            },
         }),
     });
     const run = b.addRunArtifact(exe);

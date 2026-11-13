@@ -30,12 +30,13 @@ pub const Things = Checker.Things;
 const declare = @import("check/declare.zig");
 const walk = @import("check/walk.zig");
 const flow = @import("check/flow.zig");
+const aegis = @import("aegis");
 
 /// Checks the files of one story, numbered as their spans' `file`. Problems
 /// go to `diags`; what could be resolved is returned even when some could
 /// not, for tools. The trees must outlive the result.
 pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const syntax.ast.File, options: Options) error{OutOfMemory}!Checked {
-    std.debug.assert(files.len <= std.math.maxInt(syntax.FileId) + 1);
+    aegis.assert.invariant(files.len <= std.math.maxInt(syntax.FileId) + 1, "the caller gives no more files than a FileId numbers");
     const arena = try gpa.create(std.heap.ArenaAllocator);
     arena.* = .init(gpa);
     errdefer {

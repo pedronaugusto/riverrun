@@ -9,6 +9,7 @@ const std = @import("std");
 const facts = @import("../facts.zig");
 const story = @import("../story.zig");
 const host_ = @import("host.zig");
+const aegis = @import("aegis");
 
 const Value = facts.Value;
 const Term = story.Term;
@@ -90,7 +91,7 @@ pub fn condition(cx: Context, r: Range) Error!bool {
 pub fn value(cx: Context, r: Range) Error!Value {
     var stack: [story.max_stack]Value = undefined;
     const n = try run(cx, r, &stack);
-    std.debug.assert(n == 1);
+    aegis.assert.invariant(n == 1, "a value's code leaves one value on the stack, as the compiler wrote it");
     return stack[0];
 }
 

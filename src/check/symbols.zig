@@ -334,7 +334,7 @@ pub const Named = union(enum) { fact: FactId, constant: ConstId, external: Exter
 
 /// An id from a table position the checker just appended.
 pub fn idOf(comptime Id: type, index: usize) Id {
-    std.debug.assert(index <= limits.ids);
+    aegis.assert.invariant(index <= limits.ids, "the table holds at most limits.ids, checked as it grew");
     return .fromRaw(@intCast(index)); // safe: the table bounds were checked when it grew
 }
 

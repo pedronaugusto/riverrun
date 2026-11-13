@@ -191,7 +191,7 @@ fn reach(c: *Checker) Error!void {
     const edges = try c.arena.dupe(sym.Edge, c.edges.items);
     std.mem.sort(sym.Edge, edges, {}, struct {
         fn less(_: void, a: sym.Edge, b: sym.Edge) bool {
-            return a.from.raw() < b.from.raw();
+            return a.from.compare(b.from) == .lt;
         }
     }.less);
     var head: usize = 0;
@@ -215,7 +215,7 @@ fn lowerBound(edges: []const sym.Edge, from: sym.SectionId) usize {
     var hi = edges.len;
     while (lo < hi) {
         const mid = lo + (hi - lo) / 2;
-        if (edges[mid].from.raw() < from.raw()) lo = mid + 1 else hi = mid;
+        if (edges[mid].from.compare(from) == .lt) lo = mid + 1 else hi = mid;
     }
     return lo;
 }

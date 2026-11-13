@@ -120,8 +120,8 @@ pub const Story = struct {
         const c = s.g.get(.cast, id.raw());
         return .{
             .name = s.str(c.name),
-            .display = model.LineId.fromRaw(c.display) catch unreachable, // unreachable: validated nonzero
-            .relation = if (c.relation == 0) null else model.LineId.fromRaw(c.relation) catch unreachable, // unreachable: nonzero here
+            .display = model.LineId.fromRaw(c.display) catch unreachable, // glint-ignore: Z026 -- validated nonzero
+            .relation = if (c.relation == 0) null else model.LineId.fromRaw(c.relation) catch unreachable, // glint-ignore: Z026 -- nonzero here
             .tags = c.tags,
             .extra = c.extra == 1,
         };
@@ -264,7 +264,7 @@ pub const Story = struct {
 
     pub fn text(s: *const Story, id: model.TextId) model.Text {
         const t = s.g.get(.texts, id.raw());
-        return .{ .line = model.LineId.fromRaw(t.line) catch unreachable, .slots = t.slots }; // unreachable: validated nonzero
+        return .{ .line = model.LineId.fromRaw(t.line) catch unreachable, .slots = t.slots }; // glint-ignore: Z026 -- validated nonzero
     }
 
     pub fn slot(s: *const Story, i: u32) model.Slot {

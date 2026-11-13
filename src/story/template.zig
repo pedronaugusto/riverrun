@@ -179,7 +179,7 @@ fn renderSlot(t: []const u8, i: *usize, resolver: anytype, w: *std.Io.Writer, em
     i.* += 1;
     const start = i.*;
     while (std.ascii.isDigit(t[i.*])) i.* += 1;
-    const index = std.fmt.parseInt(u8, t[start..i.*], 10) catch unreachable; // unreachable: validated
+    const index = std.fmt.parseInt(u8, t[start..i.*], 10) catch unreachable; // glint-ignore: Z026 -- validated
     if (t[i.*] == '}') {
         i.* += 1;
         if (emit) try resolver.value(index, w);

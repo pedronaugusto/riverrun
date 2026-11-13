@@ -76,7 +76,7 @@ pub fn write(m: *const Memory, arena: std.mem.Allocator, w: *std.Io.Writer, scop
         try entries.append(arena, e);
     }
     var hex: [16]u8 = undefined;
-    _ = std.mem.print(&hex, "{x:0>16}", .{story_hash}) catch unreachable; // unreachable: a u64 is 16 digits
+    _ = std.mem.print(&hex, "{x:0>16}", .{story_hash}) catch unreachable; // glint-ignore: Z026 -- a u64 is 16 digits
     const doc: Document = .{ .story = &hex, .scope = m.schema.scopes[scope.raw()], .facts = entries.items };
     try strand.json.write(w, doc, .{ .nulls = .omit, .whitespace = .indent_2 });
 }

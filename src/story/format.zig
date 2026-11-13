@@ -457,7 +457,7 @@ pub const Term = packed struct(u32) {
     }
 
     pub fn item(enumeration: u16, index: u8) Term {
-        return .{ .op = .item, .arg = @as(u24, enumeration) << 8 | index };
+        return .{ .op = .item, .arg = (@as(u24, enumeration) << 8) | index };
     }
 
     pub fn itemEnum(t: Term) u16 {

@@ -87,20 +87,20 @@ pub const SavedRef = union(enum) { handle: u64, id: []const u8 };
 
 /// Between the host's handles and the text ids a story names its things by, so a snapshot keeps the id.
 pub const RefNames = struct {
-    user: ?*anyopaque = null,
+    user: ?*const anyopaque = null,
     /// The text id of the thing of `kind` whose handle is `handle`, if a story names it.
-    idOf: *const fn (user: ?*anyopaque, kind: []const u8, handle: u64) ?[]const u8 = noId,
+    idOf: *const fn (user: ?*const anyopaque, kind: []const u8, handle: u64) ?[]const u8 = noId,
     /// The handle of the thing of `kind` named `id`, if the host knows it.
-    handleOf: *const fn (user: ?*anyopaque, kind: []const u8, id: []const u8) ?u64 = noHandle,
+    handleOf: *const fn (user: ?*const anyopaque, kind: []const u8, id: []const u8) ?u64 = noHandle,
 
     /// Every ref saved as the host's handle.
     pub const none: RefNames = .{};
 
-    fn noId(_: ?*anyopaque, _: []const u8, _: u64) ?[]const u8 {
+    fn noId(_: ?*const anyopaque, _: []const u8, _: u64) ?[]const u8 {
         return null;
     }
 
-    fn noHandle(_: ?*anyopaque, _: []const u8, _: []const u8) ?u64 {
+    fn noHandle(_: ?*const anyopaque, _: []const u8, _: []const u8) ?u64 {
         return null;
     }
 };
@@ -569,11 +569,11 @@ test "a ref a story names is saved by its id, any other by the host's handle" {
     defer arena.deinit();
     const Names = struct {
         // The host's handles this run, and the next run's: margaret is 7 now, 70 after a restart.
-        fn idOf(user: ?*anyopaque, kind: []const u8, handle: u64) ?[]const u8 {
+        fn idOf(user: ?*const anyopaque, kind: []const u8, handle: u64) ?[]const u8 {
             _ = user;
             return if (std.mem.eql(u8, kind, "person") and handle == 7) "margaret" else null;
         }
-        fn handleOf(user: ?*anyopaque, kind: []const u8, id: []const u8) ?u64 {
+        fn handleOf(user: ?*const anyopaque, kind: []const u8, id: []const u8) ?u64 {
             _ = user;
             return if (std.mem.eql(u8, kind, "person") and std.mem.eql(u8, id, "margaret")) 70 else null;
         }
@@ -632,10 +632,10 @@ test "a fact kept per thing is saved key by key, each key named, and a key no lo
         .{ .name = "mood", .scope = world, .kind = .boolean, .key = .{ .items = &.{ "calm", "angry" } } },
     } };
     const Names = struct {
-        fn idOf(_: ?*anyopaque, _: []const u8, handle: u64) ?[]const u8 {
+        fn idOf(_: ?*const anyopaque, _: []const u8, handle: u64) ?[]const u8 {
             return if (handle == 7) "margaret" else if (handle == 8) "hank" else null;
         }
-        fn handleOf(_: ?*anyopaque, _: []const u8, id: []const u8) ?u64 {
+        fn handleOf(_: ?*const anyopaque, _: []const u8, id: []const u8) ?u64 {
             return if (std.mem.eql(u8, id, "margaret")) 70 else null;
         }
     };

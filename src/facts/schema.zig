@@ -97,7 +97,7 @@ pub const Schema = struct {
         for (s.facts) |d| {
             try checkName(d.name);
             if ((try seen.getOrPut(gpa, d.name)).found_existing) return error.DuplicateFact;
-            if (d.scope.raw() >= s.scopes.len) return error.ScopeOutOfRange;
+            if (!within(d.scope, s.scopes.len)) return error.ScopeOutOfRange;
             const listed = d.kind == .one_of or d.kind == .set_of;
             if (listed != (d.items.len > 0)) return error.ItemsDoNotFitKind;
             if ((d.kind == .ref) != (d.ref_kind.len > 0)) return error.ItemsDoNotFitKind;
@@ -138,6 +138,13 @@ pub const Schema = struct {
 fn checkName(name: []const u8) Error!void {
     if (name.len == 0) return error.EmptyName;
     if (name.len > value.max_name) return error.NameTooLong;
+}
+
+/// Whether `id` names one of `count` things: it comes before the count, by the id's own order. A count past any
+/// id's range holds every id.
+fn within(id: anytype, count: usize) bool {
+    const limit = std.math.cast(@TypeOf(id.raw()), count) orelse return true;
+    return id.compare(.fromRaw(limit)) == .lt;
 }
 
 test "a schema with a name declared twice is refused" {
