@@ -4,7 +4,7 @@
 //! kind, and writes only its own bookkeeping (visit counts, alternatives,
 //! pools' memory, in the reserved scope). The story's effects are never
 //! applied by riverrun: a step emits them as `Effect` records and the host
-//! applies them, lantern at once through `apply`, void-engine as commands at
+//! applies them, at once through `apply`, or as commands at
 //! its tick boundary. A host backs the interface with whatever holds its
 //! state; `Memory` is the default.
 

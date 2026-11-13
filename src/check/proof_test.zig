@@ -1,5 +1,5 @@
 //! The proof, checked: the WAKE prototype's whole story against a schema
-//! shaped like lantern's, which is what a host gives the checker. riverrun
+//! shaped like a game's, which is what a host gives the checker. riverrun
 //! knows none of these words; the test is where they live.
 
 const std = @import("std");
@@ -15,7 +15,7 @@ const on_line: Schema.Places = .{ .line = true };
 const on_choice: Schema.Places = .{ .choice = true };
 const on_both: Schema.Places = .{ .line = true, .choice = true };
 
-/// lantern's tags, as WAKE uses them: its mechanics' marks on sections, the
+/// A game's tags, as WAKE uses them: its mechanics' marks on sections, the
 /// listen mechanic's times and places on lines, the day's slots on choices.
 pub const wake_schema: Schema = .{ .keys = &.{
     .{ .name = "voice", .on = .{ .cast = true, .choice = true } },

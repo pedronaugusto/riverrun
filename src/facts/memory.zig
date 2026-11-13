@@ -1,5 +1,5 @@
 //! The default store: every fact in memory, a value each, texts owned by the
-//! store's allocator. lantern keeps its facts here; a host with state of its
+//! store's allocator. A host with no state of its own keeps its facts here; one with state of its
 //! own implements `Store` over it instead. A fact kept per thing holds a value
 //! only for the keys set, each with the stamp of its last change.
 

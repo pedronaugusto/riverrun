@@ -167,6 +167,8 @@ pub fn dev(b: *std.Build, tools: type) void {
         .filters = filters,
         .root_module = b.createModule(.{ .root_source_file = p.path("src/compiler.zig"), .target = target, .optimize = optimize, .imports = imports }),
     });
+    // The reader's properties: shakedown, for the tests alone.
+    compiler_tests.root_module.addImport("shakedown", b.dependency("shakedown", .{ .target = target, .optimize = optimize }).module("shakedown"));
     test_step.dependOn(&b.addRunArtifact(compiler_tests).step);
     test_step.dependOn(&b.addRunArtifact(storyTests(b, target, optimize, filters) orelse return).step);
     tools.preflight.addCi(b, p, .{ .tests = test_step });

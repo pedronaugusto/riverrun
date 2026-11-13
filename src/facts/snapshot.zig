@@ -1,5 +1,5 @@
 //! A scope's facts as bytes: what a host saves for a moment of a life, and
-//! what lantern commits to relic.
+//! what it commits to its own storage.
 //!
 //! A snapshot names every fact and every item, so it can be restored under
 //! another version of the story: facts are matched by name, an item by name

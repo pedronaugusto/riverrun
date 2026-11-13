@@ -1,6 +1,6 @@
 //! The release's proof: the WAKE prototype's whole story, read, checked
-//! against a schema shaped like lantern's, compiled, loaded and told, the
-//! host doing what lantern's mechanics would. 1969's hide and seek, where a
+//! against a game's schema, compiled, loaded and told, the
+//! host doing what the game's mechanics would. 1969's hide and seek, where a
 //! line is heard only where Iris hides; the kitchen of 1985, where what she
 //! heard opens a choice; the fork.
 
@@ -16,15 +16,15 @@ const wake_options = @import("../check/proof_test.zig").wake_options;
 const gpa = std.testing.allocator;
 const names = .{ "cast", "1969", "1985", "1998", "years", "wake", "back", "rest" };
 
-// What lantern answers: no life is lived yet, and resting does nothing here.
-const Lantern = struct {
-    fn lived(_: *Lantern, _: run.Context, _: u16) bool {
+// What the host answers: no life is lived yet, and resting does nothing here.
+const Game = struct {
+    fn lived(_: *Game, _: run.Context, _: u16) bool {
         return false;
     }
-    fn origin(_: *Lantern, _: run.Context, _: u16) u16 {
+    fn origin(_: *Game, _: run.Context, _: u16) u16 {
         return 0;
     }
-    fn restIn(_: *Lantern, _: run.Context, _: u16) void {}
+    fn restIn(_: *Game, _: run.Context, _: u16) void {}
 };
 
 const Proof = struct {
@@ -80,7 +80,7 @@ const Proof = struct {
     }
 };
 
-var lantern: Lantern = .{};
+var game: Game = .{};
 
 fn told(p: *Proof) !void {
     p.arena = .init(gpa);
@@ -98,7 +98,7 @@ fn told(p: *Proof) !void {
     p.story = try .init(p.compiled.graph, .{});
     p.words = try .init(p.compiled.words, .{});
     p.memory = try .init(gpa, try p.story.schema(a));
-    p.host = try run.Host.bind(gpa, &p.story, &lantern, .{ .lived = Lantern.lived, .origin = Lantern.origin, .rest_in = Lantern.restIn }, null);
+    p.host = try run.Host.bind(gpa, &p.story, &game, .{ .lived = Game.lived, .origin = Game.origin, .rest_in = Game.restIn }, null);
     p.session = try .init(gpa, &p.story, &p.words, p.memory.store(), &p.host, .{});
 }
 

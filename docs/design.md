@@ -272,7 +272,7 @@ Zig keeps one instance of a package for one set of arguments, so asked alike the
 vocabulary and every package's compiler side hold one riverrun, and the game, its runtime side and each package's
 runtime hold another, for the game's target. Two in one compilation would be two kinds of every type, so `addStory`
 refuses, by its name, a package whose compiler side stands on another riverrun. A package that builds on packages
-(lantern on tide and cairn) asks them by the same arguments from its own `compiler`, and gets the same instances.
+(a game's package on tide and cairn) asks them by the same arguments from its own `compiler`, and gets the same instances.
 *Protects:* one riverrun in each program by construction, and packages any engine's build can register.
 
 ## The runtime

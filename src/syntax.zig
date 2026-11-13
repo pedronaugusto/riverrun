@@ -20,4 +20,5 @@ test {
     _ = @import("syntax/text.zig");
     _ = @import("syntax/parse.zig");
     _ = @import("syntax/proof_test.zig");
+    _ = @import("syntax/reader_test.zig");
 }
