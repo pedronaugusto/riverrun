@@ -17,9 +17,6 @@ const gpa = std.testing.allocator;
 
 const joined = whole.joined;
 
-/// What tagging did over all the cases, so the property is known to tag and compile.
-const Seen = struct { tagged: u32 = 0, compared: u32 = 0 };
-
 fn printed(a: std.mem.Allocator, f: *const ast.File) ![]const u8 {
     var out: std.Io.Writer.Allocating = .init(a);
     try syntax.print(&out.writer, f);
@@ -131,24 +128,21 @@ fn isIdByte(c: u8) bool {
 }
 
 test "tagging any story the reader reads adds ids and nothing else, once, new to the story, and compiles to the same story" {
-    var seen: Seen = .{};
-    try shakedown.check(gpa, &seen, struct {
-        fn one(counts: *Seen, case: *shakedown.Case) anyerror!void {
+    try shakedown.check(gpa, {}, struct {
+        fn one(_: void, case: *shakedown.Case) anyerror!void {
             var arena: std.heap.ArenaAllocator = .init(gpa);
             defer arena.deinit();
             const a = arena.allocator();
             const pages = try whole.storyOf(case.source, a);
-            expectTagged(a, pages, counts) catch |e| {
+            expectTagged(a, pages, case) catch |e| {
                 for (pages) |f| std.debug.print("--- {s}\n{s}\n", .{ f.path, f.text });
                 return e;
             };
         }
-    }.one, .{ .cases = 1000, .seed = 0x7a6 });
-    try std.testing.expect(seen.tagged > 200);
-    try std.testing.expect(seen.compared > 100);
+    }.one, .{ .cases = 1000, .seed = 0x7a6, .reach = &.{ "tagged", "compared compiled" } });
 }
 
-fn expectTagged(a: std.mem.Allocator, pages: []const Manuscript.Page, seen: *Seen) !void {
+fn expectTagged(a: std.mem.Allocator, pages: []const Manuscript.Page, case: *shakedown.Case) !void {
     var before: Manuscript = try .read(gpa, pages);
     defer before.deinit();
     // tag gives ids only where the reader read the files without an error
@@ -177,7 +171,7 @@ fn expectTagged(a: std.mem.Allocator, pages: []const Manuscript.Page, seen: *See
         try std.testing.expectEqual(page.text.len + n * (2 + tag.length), text.len);
         p.* = .{ .path = page.path, .text = text };
     }
-    if (added > 0) seen.tagged += 1;
+    if (added > 0) case.reached("tagged");
     // read again: no error, every line and choice has its id, and tagging again changes nothing
     var after: Manuscript = try .read(gpa, after_pages);
     defer after.deinit();
@@ -209,5 +203,5 @@ fn expectTagged(a: std.mem.Allocator, pages: []const Manuscript.Page, seen: *See
     try expectSameRows(x.json, y.json);
     try std.testing.expectEqual(x.lines.len, y.lines.len);
     for (x.lines, y.lines) |l, r| try std.testing.expectEqualStrings(l, r);
-    seen.compared += 1;
+    case.reached("compared compiled");
 }

@@ -417,10 +417,8 @@ fn holdable(b: Bounded, out: *std.ArrayList(i64), a: std.mem.Allocator) !void {
 }
 
 test "what the checker decides of a condition over bounded ints holds for every value they can have" {
-    const Count = struct { decided: usize = 0 };
-    var count: Count = .{};
-    try shakedown.check(gpa, &count, struct {
-        fn one(counted: *Count, case: *shakedown.Case) anyerror!void {
+    try shakedown.check(gpa, {}, struct {
+        fn one(_: void, case: *shakedown.Case) anyerror!void {
             var arena: std.heap.ArenaAllocator = .init(gpa);
             defer arena.deinit();
             const a = arena.allocator();
@@ -459,7 +457,8 @@ test "what the checker decides of a condition over bounded ints holds for every 
                 const row = tree.place(d.span).line;
                 if (row == never_row) never = true else if (row == always_row) always = true else return error.TestUnexpectedResult;
             }
-            if (never or always) counted.decided += 1;
+            if (never) case.reached("decided never");
+            if (always) case.reached("decided always");
             if (!never and !always) return;
             // every assignment the facts can hold, the unbounded int at its extremes and about 0
             var values: [3]std.ArrayList(i64) = .{ .empty, .empty, .empty };
@@ -475,9 +474,12 @@ test "what the checker decides of a condition over bounded ints holds for every 
                 }
             };
         }
-    }.one, .{ .cases = 1500, .seed = 0xc4ec7 });
-    // the property is not vacuous: the checker decides some conditions
-    try std.testing.expect(count.decided > 100);
+    }.one, .{
+        .cases = 1500,
+        .seed = 0xc4ec7,
+        // the property is not vacuous: the checker decides conditions both ways
+        .reach = &.{ "decided never", "decided always" },
+    });
 }
 
 // ---------------------------------------------------------------- the react layer wakes when a value changes

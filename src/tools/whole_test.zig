@@ -94,23 +94,25 @@ const Wake = struct {
 };
 pub const wake = river.join(Wake);
 
-/// What the property saw over all its cases, so it is known to reach the compiler and the runtime.
-pub const Seen = struct { compiled: u32 = 0, told: u32 = 0, chosen: u32 = 0 };
+/// What a property over the whole compiler must reach in some passing case, so it is known to reach the compiler
+/// and the runtime and not only the reader's refusals.
+pub const reached = [_][]const u8{ "compiled", "told a line", "took a choice" };
 
-/// `trial` of `pages` with `with`, every choice taken by `source`: fails, saying how, on a fault.
-pub fn expectWhole(with: river.Joined, pages: []const Manuscript.Page, options: trial.Options, source: *shakedown.Source, seen: *Seen) !void {
+/// `trial` of `pages` with `with`, every choice taken by the case: fails, saying how, on a fault, and marks what it
+/// reached.
+pub fn expectWhole(with: river.Joined, pages: []const Manuscript.Page, options: trial.Options, case: *shakedown.Case) !void {
     const Picker = struct {
         fn pick(ctx: ?*anyopaque, open: usize) usize {
             const s: *shakedown.Source = @ptrCast(@alignCast(ctx.?));
             return gen.intRange(s, usize, 0, open - 1);
         }
     };
-    switch (try trial.trial(gpa, pages, with, options, .{ .ctx = source, .pick = Picker.pick })) {
+    switch (try trial.trial(gpa, pages, with, options, .{ .ctx = case.source, .pick = Picker.pick })) {
         .refused => {},
         .told => |t| {
-            seen.compiled += 1;
-            seen.told += t.lines;
-            seen.chosen += t.chosen;
+            case.reached("compiled");
+            if (t.lines > 0) case.reached("told a line");
+            if (t.chosen > 0) case.reached("took a choice");
         },
         .fault => |f| {
             var buffer: [256]u8 = undefined;
@@ -342,32 +344,27 @@ pub fn proofChanged(s: *shakedown.Source, a: std.mem.Allocator) ![]const Manuscr
 }
 
 test "any text through the reader, the checker with a package registered and the compiler is a story that is told, or diagnostics; never a crash" {
-    var seen: Seen = .{};
-    try shakedown.check(gpa, &seen, struct {
-        fn one(counts: *Seen, case: *shakedown.Case) anyerror!void {
+    try shakedown.check(gpa, {}, struct {
+        fn one(_: void, case: *shakedown.Case) anyerror!void {
             var arena: std.heap.ArenaAllocator = .init(gpa);
             defer arena.deinit();
             const files = try storyOf(case.source, arena.allocator());
             const mode: check.Mode = if (gen.intRange(case.source, u8, 0, 7) == 0) .release else .development;
-            expectWhole(joined, files, .{ .mode = mode }, case.source, counts) catch |e| {
+            expectWhole(joined, files, .{ .mode = mode }, case) catch |e| {
                 for (files) |f| std.debug.print("--- {s}\n{s}\n", .{ f.path, f.text });
                 return e;
             };
         }
-    }.one, .{ .cases = 1500, .seed = 0x3f00d });
-    // the property reaches the compiler and the runtime, not only the reader's refusals
-    try std.testing.expect(seen.compiled > 250);
-    try std.testing.expect(seen.told > 2500);
+    }.one, .{ .cases = 1500, .seed = 0x3f00d, .reach = &reached });
 }
 
 test "the proof, any of its files changed, through the reader, the checker and the compiler with its host is a story that is told, or diagnostics; never a crash" {
-    var seen: Seen = .{};
-    try shakedown.check(gpa, &seen, struct {
-        fn one(counts: *Seen, case: *shakedown.Case) anyerror!void {
+    try shakedown.check(gpa, {}, struct {
+        fn one(_: void, case: *shakedown.Case) anyerror!void {
             var arena: std.heap.ArenaAllocator = .init(gpa);
             defer arena.deinit();
             const files = try proofChanged(case.source, arena.allocator());
-            expectWhole(wake, files, .{}, case.source, counts) catch |e| {
+            expectWhole(wake, files, .{}, case) catch |e| {
                 for (files) |f| if (!isProof(f)) std.debug.print("--- {s}\n{s}\n", .{ f.path, f.text });
                 return e;
             };
@@ -383,6 +380,6 @@ test "the proof, any of its files changed, through the reader, the checker and t
         // back.river with its first section's row of tags twice: two `[forks …]`, whose words were given one line
         // id, and the compiler's refusal lost
         .regressions = &.{"6:1:cd:0:4"},
+        .reach = &reached,
     });
-    try std.testing.expect(seen.compiled > 30);
 }
