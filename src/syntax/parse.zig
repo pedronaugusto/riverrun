@@ -571,8 +571,10 @@ const Reader = struct {
         }
         const after = inner.from(n);
         const told = after.trim().text;
+        // a sum before `=` is an effect written wrong, which `effect` refuses by name
+        const sum_first = told.len > 0 and (told[0] == '+' or told[0] == '-') and std.mem.findScalar(u8, told, '=') != null;
         const tells = (after.text.len > 0 and after.text[0] == '(') or std.mem.startsWith(u8, told, "+=") or std.mem.startsWith(u8, told, "-=") or
-            (std.mem.startsWith(u8, told, "=") and !std.mem.startsWith(u8, told, "=="));
+            (std.mem.startsWith(u8, told, "=") and !std.mem.startsWith(u8, told, "==")) or sum_first;
         if (tells) {
             const inside: Line = .{ .indent = l.indent, .text = inner, .id = inner.cut(0, 0) };
             const e = r.effect(inside, inner) catch |err| switch (err) {
@@ -903,9 +905,16 @@ const Reader = struct {
 
     fn effect(r: *Reader, l: Line, t: Placed) Fail!ast.Effect {
         const span = t.span(r.file);
-        if (std.mem.find(u8, t.text, "+=")) |k| return .{ .add = try r.change(l, t, k) };
-        if (std.mem.find(u8, t.text, "-=")) |k| return .{ .remove = try r.change(l, t, k) };
-        if (std.mem.findScalar(u8, t.text, '=')) |k| {
+        if (assignment(t.text)) |k| {
+            // `+=` and `-=` change what `=` would set; what stands before them is the one fact written
+            const sign: ?u8 = if (k > 0 and (t.text[k - 1] == '+' or t.text[k - 1] == '-')) t.text[k - 1] else null;
+            const written_as = t.to(if (sign != null) k - 1 else k).trim();
+            if (summed(written_as.text)) {
+                const op: []const u8 = if (sign) |c| (if (c == '+') "+=" else "-=") else "=";
+                try r.diags.add(r.gpa, written_as.span(r.file), .err, "an effect writes one fact, named before `{s}`: a sum is written after it, `[x {s} a + b]`", .{ op, op });
+                return error.Invalid;
+            }
+            if (sign) |c| return if (c == '+') .{ .add = try r.change(l, t, k - 1) } else .{ .remove = try r.change(l, t, k - 1) };
             const value = try expr.parse(r.arena, r.gpa, r.diags, r.file, t.from(k + 1).trim());
             const w = try r.written(l, t.to(k));
             return .{ .set = .{ .span = span, .fact = w.fact, .key = w.key, .value = value.* } };
@@ -918,13 +927,9 @@ const Reader = struct {
         return .{ .call = call.kind.call };
     }
 
-    // `fact += amount` or `fact -= amount`, the operator at `k`: an item's name or a number, and nothing more.
+    // `fact += amount` or `fact -= amount`, the operator at `k`: a set's item, or an int, which the checker tells.
     fn change(r: *Reader, l: Line, t: Placed, k: usize) Fail!ast.Change {
         const amount = try expr.parse(r.arena, r.gpa, r.diags, r.file, t.from(k + 2).trim());
-        if (amount.kind != .name and amount.kind != .int) {
-            try r.diags.add(r.gpa, amount.span, .err, "`+=` and `-=` take an item, a number or a constant, never an expression", .{});
-            return error.Invalid;
-        }
         const dest = try r.written(l, t.to(k));
         return .{ .span = t.span(r.file), .fact = dest.fact, .key = dest.key, .amount = amount.* };
     }
@@ -1100,6 +1105,37 @@ fn dotAt(t: []const u8) ?usize {
         if (!quoted and std.mem.startsWith(u8, t[i..], "·")) return i;
     }
     return null;
+}
+
+// Where an effect's `=` is, the first outside parentheses and quotes (`+=` and `-=` end in one): what stands before
+// it is the fact written, `opinion(a = b)`'s key aside.
+fn assignment(t: []const u8) ?usize {
+    var depth: usize = 0;
+    var quoted = false;
+    for (t, 0..) |c, i| switch (c) {
+        '"' => quoted = !quoted,
+        '(' => if (!quoted) {
+            depth += 1;
+        },
+        ')' => if (!quoted) {
+            depth -|= 1;
+        },
+        '=' => if (!quoted and depth == 0) return i,
+        else => {},
+    };
+    return null;
+}
+
+// Whether the words an effect writes hold a sum: a `+` or a `-` outside a key's parentheses.
+fn summed(t: []const u8) bool {
+    var depth: usize = 0;
+    for (t) |c| switch (c) {
+        '(' => depth += 1,
+        ')' => depth -|= 1,
+        '+', '-' => if (depth == 0) return true,
+        else => {},
+    };
+    return false;
 }
 
 // Whether what follows a comma names a parameter: `name:`.
@@ -1371,7 +1407,7 @@ test "a section's own facts come straight under its heading, its roles marked" {
     try std.testing.expectEqual(@as(usize, 1), f.decls.len);
 }
 
-test "an int changes by a number or a constant, never by an expression" {
+test "an effect writes one fact by what follows `=`, `+=` or `-=`, a sum among them, and never writes a sum" {
     const gpa = std.testing.allocator;
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
@@ -1381,14 +1417,27 @@ test "an int changes by a number or a constant, never by an expression" {
         \\== a
         \\[ryuji_points += 2]
         \\[ryuji_points -= penalty]
-        \\[ryuji_points += 2 and 3]
+        \\[trust += favour - slight]
+        \\[owed = price - paid]
+        \\[opinion(a) -= 1]
+        \\[a + b = 3]
+        \\[a-b += 3]
+        \\[opinion(a) + 1 = 3]
         \\-> end
     ;
     const f = try parseFile(arena.allocator(), gpa, &diags, 0, "a.river", story);
     const body = f.sections[0].body;
     try std.testing.expectEqual(@as(i64, 2), body[0].kind.effect.add.amount.kind.int);
     try std.testing.expectEqualStrings("penalty", body[1].kind.effect.remove.amount.kind.name);
-    try std.testing.expectEqual(@as(usize, 1), diags.errors());
+    try std.testing.expectEqual(ast.Expr.Op.sub, body[2].kind.effect.add.amount.kind.binary.op);
+    try std.testing.expectEqualStrings("trust", body[2].kind.effect.add.fact.text);
+    try std.testing.expectEqual(ast.Expr.Op.sub, body[3].kind.effect.set.value.kind.binary.op);
+    try std.testing.expectEqualStrings("opinion", body[4].kind.effect.remove.fact.text);
+    try std.testing.expectEqual(@as(usize, 3), diags.errors());
+    for (diags.list.items, [_][]const u8{ "a + b", "a-b", "opinion(a) + 1" }, [_][]const u8{ "=", "+=", "=" }) |d, written, op| {
+        try std.testing.expectEqualStrings(written, story[d.span.start..d.span.end]);
+        try std.testing.expect(std.mem.find(u8, d.message, op) != null);
+    }
 }
 
 test "else follows a condition block, and nothing else" {

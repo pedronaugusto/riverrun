@@ -543,19 +543,19 @@ fn expr(g: *const Graph, r: Range, want: Want) Error!void {
             .not => {
                 if (n < 1 or !stack[n - 1].eql(.boolean)) return error.BadExpression;
             },
-            .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => {
+            .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or", .add, .sub => {
                 if (n < 2) return error.BadExpression;
                 const a = stack[n - 2];
                 const b = stack[n - 1];
                 const fits = switch (op) {
                     .eq, .ne => a.eql(b),
-                    .lt, .le, .gt, .ge => a.eql(.int) and b.eql(.int),
+                    .lt, .le, .gt, .ge, .add, .sub => a.eql(.int) and b.eql(.int),
                     .has, .hasnt => a.kind == @backingInt(facts.Kind.set_of) and b.kind == @backingInt(facts.Kind.one_of) and a.enumeration == b.enumeration,
                     else => a.eql(.boolean) and b.eql(.boolean),
                 };
                 if (!fits) return error.BadExpression;
                 n -= 1;
-                stack[n - 1] = .boolean;
+                stack[n - 1] = if (op == .add or op == .sub) .int else .boolean;
             },
             .query => n = try query(g, arg, stack[0..], n),
         }

@@ -1,5 +1,6 @@
 //! Conditions that can never hold, where that can be told without running
-//! the story: one that folds to false from literals and constants, and one
+//! the story: one that folds to false from literals, constants and the least
+//! and most of its ints (`a + b > 300` with both bounded at 100), and one
 //! whose `and` asks a fact two things that cannot both be true
 //! (`spot = piano and spot = door`, `kept has dad and kept hasnt dad`).
 //! Anything else is the runtime's to find; this never guesses.
@@ -8,6 +9,7 @@ const std = @import("std");
 const syntax = @import("../syntax.zig");
 const sym = @import("symbols.zig");
 const Checker = @import("Checker.zig");
+const interval = @import("interval.zig");
 
 const ast = syntax.ast;
 
@@ -17,13 +19,20 @@ pub const max_atoms = 32;
 
 /// Whether `e`, already typed, can never be true.
 pub fn never(c: *const Checker, e: *const ast.Expr) bool {
-    if (fold(c, e) == .no) return true;
+    if (verdict(c, e) == .no) return true;
     var atoms: Atoms = .{};
     atoms.gather(c, e);
     return atoms.contradict();
 }
 
-const Truth = enum { yes, no, unknown };
+/// What a condition is in every run where it gives a value: always true, never true, or either.
+pub const Truth = enum { yes, no, unknown };
+
+/// What `e`, already typed, folds to: `.yes` and `.no` hold for every run where it gives a value (a sum that
+/// overflows gives none, and is the run time's named error).
+pub fn verdict(c: *const Checker, e: *const ast.Expr) Truth {
+    return fold(c, e);
+}
 
 fn fold(c: *const Checker, e: *const ast.Expr) Truth {
     return switch (e.kind) {
@@ -40,13 +49,42 @@ fn fold(c: *const Checker, e: *const ast.Expr) Truth {
         .binary => |b| switch (b.op) {
             .@"and" => both(fold(c, b.lhs), fold(c, b.rhs), .no, .yes),
             .@"or" => both(fold(c, b.lhs), fold(c, b.rhs), .yes, .no),
-            .eq, .ne => {
+            .eq, .ne, .lt, .le, .gt, .ge => if (interval.of(c, b.lhs)) |x| (if (interval.of(c, b.rhs)) |y| compare(b.op, x, y) else .unknown) else {
+                if (b.op != .eq and b.op != .ne) return .unknown;
                 const same = equal(c, b.lhs, b.rhs) orelse return .unknown;
                 return if (same == (b.op == .eq)) .yes else .no;
             },
-            .has, .hasnt, .lt, .le, .gt, .ge => .unknown,
+            .has, .hasnt, .add, .sub => .unknown,
         },
         else => .unknown,
+    };
+}
+
+// Two ints compared, from the least and most each can be: decided where every pair of values agrees.
+fn compare(op: ast.Expr.Op, x: interval.Interval, y: interval.Interval) Truth {
+    // `x < y` for every pair, and for none
+    const below: Truth = if (x.most < y.least) .yes else if (x.least >= y.most) .no else .unknown;
+    // `x > y` for every pair, and for none
+    const above: Truth = if (x.least > y.most) .yes else if (x.most <= y.least) .no else .unknown;
+    const apart = x.most < y.least or y.most < x.least;
+    const same = x.least == x.most and y.least == y.most and x.least == y.least;
+    const equal_: Truth = if (same) .yes else if (apart) .no else .unknown;
+    return switch (op) {
+        .lt => below,
+        .gt => above,
+        .ge => negate(below),
+        .le => negate(above),
+        .eq => equal_,
+        .ne => negate(equal_),
+        else => .unknown,
+    };
+}
+
+fn negate(t: Truth) Truth {
+    return switch (t) {
+        .yes => .no,
+        .no => .yes,
+        .unknown => .unknown,
     };
 }
 
@@ -126,7 +164,7 @@ const Atoms = struct {
                 const set = b.op == .has or b.op == .hasnt;
                 if (asks(c, b.lhs, b.rhs) orelse asks(c, b.rhs, b.lhs)) |pair| a.add(.{ .fact = pair.fact, .value = pair.value, .is = is, .set = set });
             },
-            .@"or", .lt, .le, .gt, .ge => {},
+            .@"or", .lt, .le, .gt, .ge, .add, .sub => {},
         }
     }
 

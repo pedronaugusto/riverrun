@@ -12,8 +12,8 @@ pub const magic = "RIVERRUN".*;
 /// A reader refuses another major version; a newer minor adds tables at the
 /// end of the directory or fields at the end of a record, which an older
 /// reader skips by the stride the directory gives.
-pub const major: u16 = 2;
-pub const minor: u16 = 1;
+pub const major: u16 = 3;
+pub const minor: u16 = 0;
 
 /// The largest story a reader accepts.
 pub const max_bytes = 64 * 1024 * 1024;
@@ -450,6 +450,10 @@ pub const Term = packed struct(u32) {
         /// Push a role of the section it is in: the value the evaluation was given for it, else the fact's own (for
         /// the thing the evaluation is for, where it is kept per thing). `arg` is its fact id.
         role = 24,
+        /// Ints added: a named error, never a wrap, past what an i64 holds.
+        add = 25,
+        /// Ints subtracted, the second from the first: a named error past what an i64 holds.
+        sub = 26,
     };
 
     pub fn of(op: Op, arg: u24) Term {

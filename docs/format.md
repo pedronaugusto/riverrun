@@ -37,8 +37,8 @@ Tables      each starting at a multiple of 8
 | Header field | type | |
 |---|---|---|
 | magic | [8]u8 | `RIVERRUN` or `RIVERTXT` |
-| major | u16 | 2 |
-| minor | u16 | 1 |
+| major | u16 | 3 |
+| minor | u16 | 0 |
 | flags | u32 | 0 |
 | hash | u64 | XxHash64 of the whole file with these 8 bytes taken as zero |
 | length | u32 | the file's length |
@@ -59,7 +59,9 @@ Directory entries are in the fixed order of the tables below.
 - A newer **minor** version may append tables to the directory and fields to the
   end of a record. A reader skips tables past those it knows, and reads each record
   at `offset + i × stride`, ignoring bytes past the fields it knows.
-- A minor version never changes the meaning of an existing field, table or term.
+- A minor version never changes the meaning of an existing field, table or term, and adds no term: a reader
+  cannot step over a term it does not know, so a new one is a new major version. Major 3 added `add` and `sub`
+  (25, 26); a story of major 2 is refused by name, never read without them, and is compiled again.
 
 ## The graph: `RIVERRUN`
 
@@ -181,6 +183,7 @@ its argument in the high 24 bits.
 | 22 keyed | a fact kept per thing's value for a key | fact id, of a fact kept per thing | key → its kind |
 | 23 this | the thing the evaluation is for, `no thing` where none is | index into kinds | → ref of that kind |
 | 24 role | a section's role: the value the evaluation was given for it, else the fact's own, for `this` where it is kept per thing | fact id | → its kind |
+| 25 add, 26 sub | ints added, or the second taken from the first | 0 | int int → int |
 
 `eq` and `ne` compare refs of one kind by handle; a ref that holds no thing equals
 nothing, as a `one of` that holds no value does.
@@ -189,6 +192,9 @@ A section kept per thing (a quest that runs many times, each instance a thing) k
 every fact it declares within it per that kind of thing, and is evaluated for one: its
 own facts are read `this keyed` and written with `this` as their key. A fact kept per
 thing read for no thing reads as its initial value.
+
+`add` and `sub` are exact: a result past what an i64 holds is an error of the evaluation, never a wrap, and the
+condition, value or effect it was part of gives nothing. A story writes `a - b + c` as `a b sub c add`.
 
 `seen(name)` is the visits fact of what it names; as a condition, `visits 0 gt`.
 There are no jumps: `and` and `or` evaluate both sides, which is sound because
@@ -241,7 +247,7 @@ else in the graph points at it.
 | visits | u16 | int fact; `none` for a section of kind `other` that keeps no visit count |
 | kind | u8 | 0 scene, 1 pool, 2 other, 3 rules |
 | padding | 3 bytes | |
-| part_of | u32 | for a part, `section.part`: the section it is part of; `none` for a section of its own (minor 1) |
+| part_of | u32 | for a part, `section.part`: the section it is part of; `none` for a section of its own |
 
 **Candidate**: `name: Str`, `when: Range` (a condition; empty matches always), `tags:
 Range`, `entry: u32`, `specificity: u16`, `visits: u16`, `seen: u16`, `weight: u16` (a pool candidate's weight in
@@ -313,7 +319,7 @@ The words are the string table's: a slot is only what fills a place in them.
 | 0 set | fact, expr (its value) | item 0, action and result `none` |
 | 1 add, 2 remove | fact (a set), item | expr empty, action and result `none` |
 | 3 call | action (an action), expr (its arguments), result (a fact or `none`) | fact `none`, item 0 |
-| 4 change | fact (an int), expr (an int: the amount, negative for `-=`) | item 0, action and result `none` |
+| 4 change | fact (an int), expr (an int: the amount; for `-=`, the amount taken from 0, `0 amount sub`) | item 0, action and result `none` |
 
 A **fact kept per thing** is written for one key: a `set`'s terms leave the key, then the value; a `change`'s the key,
 then the amount; an `add`'s or a `remove`'s `expr` holds the key's terms alone. A key is a thing's handle (a ref)

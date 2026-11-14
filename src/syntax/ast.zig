@@ -419,7 +419,8 @@ pub const Expr = struct {
         binary: struct { op: Op, lhs: *const Expr, rhs: *const Expr },
     },
 
-    pub const Op = enum { eq, ne, lt, le, gt, ge, has, hasnt, @"and", @"or" };
+    /// `add` and `sub` are an int's `+` and `-`; the rest compare or join conditions.
+    pub const Op = enum { eq, ne, lt, le, gt, ge, has, hasnt, @"and", @"or", add, sub };
 };
 
 /// `name(args)`: a query's, a builtin's or an action's.

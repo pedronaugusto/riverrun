@@ -176,7 +176,7 @@ fn story(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
                 try out.appendSlice(a, gen.oneOf(s, []const u8, &.{ "true", "false", "3", "other" }));
                 try out.append(a, ']');
                 try spaces(s, &out, a);
-                try out.print(a, "[{s} += {s}]\n", .{ gen.oneOf(s, []const u8, &words), gen.oneOf(s, []const u8, &words) });
+                try out.print(a, "[{s} += {s}]\n", .{ gen.oneOf(s, []const u8, &words), gen.oneOf(s, []const u8, &.{ "alpha", "beta - 2", "seen+night", "(kept - 1) + alpha" }) });
             },
             2 => {
                 try out.append(a, '[');
@@ -194,7 +194,7 @@ fn story(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
                 if (gen.boolean(s)) try out.print(a, "  [{s} -= 1]\n", .{gen.oneOf(s, []const u8, &words)});
             },
             4 => {
-                try out.print(a, "* {{ {s} }} Choose it.\n  [side go]\n  -> part_0 ->\n", .{gen.oneOf(s, []const u8, &words)});
+                try out.print(a, "* {{ {s} }} Choose it.\n  [side go]\n  -> part_0 ->\n", .{gen.oneOf(s, []const u8, &.{ "alpha", "beta", "kept + night >= 3", "seen - (alpha + 1) < beta" })});
             },
             5 => try out.appendSlice(a, gen.oneOf(s, []const u8, &.{ "-> end\n", "<-\n", "- (back) Home.\n", "{ alpha: -> part_0 | <- }\n" })),
             else => try out.appendSlice(a, "MUM: Something said.\n"),
@@ -234,6 +234,9 @@ fn laidOut(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
         "{ met: -> kitchen | -> end }",
         "-> kitchen ->",
         "ASTRO (laughing manically): Not {n as one: once | other: twice}.",
+        "DAD: That's {owed - paid} you still owe me.",
+        "{ coins >= fee + tip }",
+        "  [trust += favour - 1]",
         "\\[sic\\] she said.",
         "= candidate   when { met }",
         "  [weight 2]",

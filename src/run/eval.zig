@@ -3,7 +3,8 @@
 //! combines, so evaluation always ends, and `and` and `or` evaluate both
 //! sides, which is sound because queries are pure. The reader has typed
 //! every range for its place; what is checked here is only what the host
-//! answers.
+//! answers, and that a sum or a difference stays within what an int holds:
+//! one that leaves it is `error.Overflow`, never a wrap.
 
 const std = @import("std");
 const facts = @import("../facts.zig");
@@ -26,7 +27,12 @@ pub const Error = error{
     BuiltinFailed,
     /// A fact kept per thing written for a key that holds no thing or no value.
     NoKey,
+    /// A sum or a difference past what an int (an i64) holds.
+    Overflow,
 };
+
+// A story's int as it is added and subtracted: checked, so it never wraps.
+const Int = aegis.int.Checked(i64);
 
 /// What answers the builtins registered kinds add (cairn's `since`): the package that owns them.
 pub const Builtins = struct {
@@ -189,6 +195,13 @@ fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
             .false => push(stack, &n, .{ .boolean = false }),
             .not => stack[n - 1] = .{ .boolean = !stack[n - 1].boolean },
             .query => try query(cx, t, stack, &n),
+            .add, .sub => {
+                const a = Int.init(stack[n - 2].int);
+                const b = stack[n - 1].int;
+                const result = (if (t.op == .add) a.add(b) else a.sub(b)) catch return error.Overflow;
+                n -= 1;
+                stack[n - 1] = .{ .int = result.raw() };
+            },
             else => {
                 const a = stack[n - 2];
                 const b = stack[n - 1];

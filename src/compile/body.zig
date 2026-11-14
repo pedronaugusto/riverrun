@@ -130,7 +130,7 @@ fn effect(c: *Compiler, e: *const ast.Effect) Error!story.Effect {
     }
 }
 
-// `+=` and `-=`: a set's item, or an int's amount, negative for `-=`.
+// `+=` and `-=`: a set's item, or an int's amount, taken from 0 for `-=`.
 fn change(c: *Compiler, x: *const ast.Change, minus: bool) Error!story.Effect {
     const fact = factNamed(c, &x.fact);
     const typed = c.checked.exprs.get(&x.amount) orelse unreachable; // unreachable: the checker typed the amount
@@ -139,11 +139,11 @@ fn change(c: *Compiler, x: *const ast.Change, minus: bool) Error!story.Effect {
         const key: story.Range = if (x.key) |k| try exprs.value(c, k) else if (own(c, &x.fact)) |id| try c.b.expr(&.{exprs.this(c, id)}) else .empty;
         return if (minus) .{ .remove = .{ .fact = fact, .item = item, .key = key } } else .{ .add = .{ .fact = fact, .item = item, .key = key } };
     }
-    const n: i64 = if (typed.ref) |r| c.checked.consts[r.constant.raw()].value.int else x.amount.kind.int;
-    const by = if (minus) std.math.sub(i64, 0, n) catch return error.TooLarge else n;
     var terms: exprs.Terms = .empty;
     if (x.key) |k| try exprs.into(c, &terms, k) else if (own(c, &x.fact)) |id| try terms.append(c.arena, exprs.this(c, id));
-    try terms.append(c.arena, .of(.int, try c.b.int(by)));
+    if (minus) try terms.append(c.arena, .of(.int, try c.b.int(0)));
+    try exprs.into(c, &terms, &x.amount);
+    if (minus) try terms.append(c.arena, .of(.sub, 0));
     return .{ .change = .{ .fact = fact, .by = try c.b.expr(terms.items) } };
 }
 

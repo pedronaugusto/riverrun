@@ -96,6 +96,7 @@ test {
     _ = @import("check/ids.zig");
     _ = @import("check/width.zig");
     _ = @import("check/never.zig");
+    _ = @import("check/interval.zig");
     _ = @import("check/proof_test.zig");
     _ = @import("check/errors_test.zig");
     _ = @import("check/excerpts_test.zig");

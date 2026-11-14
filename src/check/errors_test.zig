@@ -511,7 +511,7 @@ test "another module's names are reached qualified" {
     try o.only(.err, 3, 3, "nothing is called `met`: no fact or constant");
 }
 
-test "an int changes by a number or an int constant; a set by one of its items" {
+test "an int changes by an int; a set by one of its items" {
     var o = try checkOne(
         \\facts:
         \\  points: int
@@ -530,10 +530,49 @@ test "an int changes by a number or an int constant; a set by one of its items" 
         \\-> end
     , .{});
     defer o.deinit();
-    try o.has(.err, 11, 12, "`+=` changes the int `points` by a number or an int constant, and `word` is neither");
+    try o.has(.err, 11, 12, "`+=` changes the int `points` by an int: this is text");
     try o.has(.err, 12, 10, "`+=` changes the set `kept` by an item: ruth, dad");
     try o.has(.err, 13, 2, "`+=` changes a set or an int; `met` is true or false");
     try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
+}
+
+test "a sum adds ints, never always overflows, and never sets a bounded fact past its bounds; what cannot meet never holds" {
+    var o = try checkOne(
+        \\facts:
+        \\  a: int from 0 to 100
+        \\  b: int from 0 to 100
+        \\  h: int from 5 to 10
+        \\  flag: bool
+        \\const:
+        \\  most = 9223372036854775807
+        \\== s
+        \\[h = a + 200]
+        \\[h = 20 + 1]
+        \\[a += flag]
+        \\{ a + flag > 1 } A flag.
+        \\{ most + 1 > 0 } Past.
+        \\{ a + b } A sum.
+        \\It is {a + b} and {flag + 1}.
+        \\[b = a + b] [flag = true]
+        \\* { a + b > 300 } Never.
+        \\  -> end
+        \\* { a + b >= 200 } At the top.
+        \\  -> end
+        \\* { a - b < 0 - 100 } Below.
+        \\  -> end
+    , .{});
+    defer o.deinit();
+    try o.has(.err, 9, 6, "this is 200 to 300, always past `h`'s bounds, 5 to 10");
+    try o.has(.err, 10, 6, "21 is past `h`'s bounds, 5 to 10");
+    try o.has(.err, 11, 7, "`+=` changes the int `a` by an int: this is true or false");
+    try o.has(.err, 12, 7, "`+` takes ints: this is true or false");
+    try o.has(.err, 13, 3, "this always passes what an int holds: it is 9223372036854775808 to 9223372036854775808");
+    try o.has(.err, 14, 3, "a condition is true or false; this is a number");
+    try o.has(.err, 15, 20, "`+` takes ints: this is true or false");
+    try o.has(.warning, 17, 5, "this choice can never be offered: its condition can never hold");
+    try o.has(.warning, 21, 5, "this choice can never be offered: its condition can never hold");
+    try std.testing.expectEqual(@as(usize, 7), o.diags.errors());
+    try std.testing.expectEqual(@as(usize, 9), o.diags.list.items.len);
 }
 
 test "a thing is said through a query, never as itself" {

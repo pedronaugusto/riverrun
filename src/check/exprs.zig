@@ -3,14 +3,16 @@
 //! says which enumeration is wanted, one of its values: `life = go`,
 //! `kept has dad`, `lived(go)`. A query is asked with its arguments; `seen(x)`
 //! reads the visit count of a section, a part or a label, a number that is
-//! true in a condition once it is above zero. Every node is recorded with its
-//! type and what it names.
+//! true in a condition once it is above zero. Ints add and subtract, and a
+//! sum that always leaves what an int holds is refused. Every node is recorded
+//! with its type and what it names.
 
 const std = @import("std");
 const syntax = @import("../syntax.zig");
 const sym = @import("symbols.zig");
 const Checker = @import("Checker.zig");
 const template = @import("riverrun").story.template;
+const interval = @import("interval.zig");
 
 const ast = syntax.ast;
 const Error = Checker.Error;
@@ -283,20 +285,6 @@ fn keyFits(c: *Checker, scope: Scope, fact: *const ast.Name, key: ?*const ast.Ex
     return true;
 }
 
-// The number a value is when it is one written, or an int constant: what a bound can be checked against now.
-fn constantInt(c: *const Checker, scope: Scope, e: *const ast.Expr) ?i64 {
-    switch (e.kind) {
-        .int => |n| return n,
-        .name => |n| {
-            const named = lookup(c, scope, n) orelse return null;
-            if (named != .constant) return null;
-            const k = c.consts.items[named.constant.raw()].value;
-            return if (k == .int) k.int else null;
-        },
-        else => return null,
-    }
-}
-
 fn factArg(c: *Checker, scope: Scope, arg: *const ast.Expr) Error!?sym.FactId {
     const named = lookup(c, scope, arg.kind.name) orelse {
         try c.err(arg.span, "nothing is called `{s}`: no fact", .{arg.kind.name});
@@ -400,6 +388,7 @@ fn visitOf(c: *const Checker, scope: Scope, n: []const u8) ?sym.VisitId {
 
 fn binary(c: *Checker, scope: Scope, e: *const ast.Expr, op: ast.Expr.Op, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!?sym.Type {
     switch (op) {
+        .add, .sub => return sum(c, scope, e, op, lhs, rhs),
         .@"and", .@"or" => {
             try condition(c, scope, lhs);
             try condition(c, scope, rhs);
@@ -435,6 +424,31 @@ fn binary(c: *Checker, scope: Scope, e: *const ast.Expr, op: ast.Expr.Op, lhs: *
     return record(c, e, .boolean, null);
 }
 
+// `a + b` and `a - b`: ints, whose sum must be one an int can hold for some value of its sides.
+fn sum(c: *Checker, scope: Scope, e: *const ast.Expr, op: ast.Expr.Op, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!?sym.Type {
+    const mark = if (op == .add) "+" else "-";
+    var ints = true;
+    for ([_]*const ast.Expr{ lhs, rhs }) |side| {
+        const t = try infer(c, scope, side, .int) orelse {
+            ints = false;
+            continue;
+        };
+        if (t == .int) continue;
+        try c.err(side.span, "`{s}` takes ints: this is {s}", .{ mark, try c.describe(t) });
+        ints = false;
+    }
+    if (!ints) return null;
+    const t = try record(c, e, .int, null);
+    const range = interval.of(c, e) orelse return t;
+    if (range.past()) try c.err(e.span, "this always passes what an int holds: it is {d} to {d}", .{ range.least, range.most });
+    return t;
+}
+
+// Whether `e` is a sum or a difference of ints, written as one.
+fn isSum(e: *const ast.Expr) bool {
+    return e.kind == .binary and (e.kind.binary.op == .add or e.kind.binary.op == .sub);
+}
+
 // A name or a number that means something only once the wanted type is known.
 fn bare(c: *const Checker, scope: Scope, e: *const ast.Expr) bool {
     return switch (e.kind) {
@@ -455,10 +469,13 @@ pub fn effect(c: *Checker, scope: Scope, eff: *const ast.Effect) Error!void {
                 if (s.key != null) try c.err(s.value.span, "an outcome is kept in a fact with one value", .{});
                 return;
             }
-            if (c.facts.items[id.raw()].bounds) |b| if (constantInt(c, scope, &s.value)) |n| if (n < b.min or n > b.max) {
-                try c.err(s.value.span, "{d} is past `{s}`'s bounds, {d} to {d}", .{ n, s.fact.text, b.min, b.max });
-            };
             try value(c, scope, &s.value, c.facts.items[id.raw()].type);
+            // a value every run would refuse: each it can be lies past the bounds
+            const b = c.facts.items[id.raw()].bounds orelse return;
+            const range = interval.of(c, &s.value) orelse return;
+            if (range.most >= b.min and range.least <= b.max) return;
+            if (range.only()) |n| return c.err(s.value.span, "{d} is past `{s}`'s bounds, {d} to {d}", .{ n, s.fact.text, b.min, b.max });
+            try c.err(s.value.span, "this is {d} to {d}, always past `{s}`'s bounds, {d} to {d}", .{ range.least, range.most, s.fact.text, b.min, b.max });
         },
         .add => |*a| try change(c, scope, a, "+="),
         .remove => |*r| try change(c, scope, r, "-="),
@@ -491,7 +508,7 @@ fn outcome(c: *Checker, scope: Scope, v: *const ast.Expr, fact: sym.FactId) Erro
     return true;
 }
 
-// `+=` and `-=`: a set gains or loses an item; an int moves by a number or an int constant.
+// `+=` and `-=`: a set gains or loses an item; an int moves by an int, a sum among them.
 fn change(c: *Checker, scope: Scope, ch: *const ast.Change, op: []const u8) Error!void {
     const id = try settable(c, scope, &ch.fact) orelse return;
     if (!try keyFits(c, scope, &ch.fact, ch.key, id)) return;
@@ -505,16 +522,8 @@ fn change(c: *Checker, scope: Scope, ch: *const ast.Change, op: []const u8) Erro
             _ = try record(c, amount, .{ .one_of = en }, .{ .value = .{ .enumeration = en, .index = ix } });
         },
         .int => {
-            if (amount.kind == .int) {
-                _ = try record(c, amount, .int, null);
-                return;
-            }
-            const named = lookup(c, scope, amount.kind.name);
-            if (named != null and named.? == .constant and c.consts.items[named.?.constant.raw()].type == .int) {
-                _ = try record(c, amount, .int, .{ .constant = named.?.constant });
-                return;
-            }
-            try c.err(amount.span, "`{s}` changes the int `{s}` by a number or an int constant, and `{s}` is neither", .{ op, ch.fact.text, amount.kind.name });
+            const by = try infer(c, scope, amount, .int) orelse return;
+            if (by != .int) try c.err(amount.span, "`{s}` changes the int `{s}` by an int: this is {s}", .{ op, ch.fact.text, try c.describe(by) });
         },
         else => try c.err(ch.fact.span, "`{s}` changes a set or an int; `{s}` is {s}", .{ op, ch.fact.text, try c.describe(t) }),
     }
@@ -557,7 +566,7 @@ pub fn text(c: *Checker, scope: Scope, t: ast.Text) Error!void {
     for (t) |*piece| switch (piece.kind) {
         .literal => {},
         .value => |*e| {
-            if (e.kind != .name and e.kind != .call) return c.err(e.span, "`{{…}}` says a fact, a constant or a query's answer", .{});
+            if (e.kind != .name and e.kind != .call and !isSum(e)) return c.err(e.span, "`{{…}}` says a fact, a constant, a query's answer or a sum of ints", .{});
             const typ = try infer(c, scope, e, null) orelse continue;
             if (typ == .set_of) try c.err(e.span, "a set cannot be said", .{});
             if (typ == .ref) try c.err(e.span, "a thing is said through a query the host answers, such as `{{name(…)}}`", .{});

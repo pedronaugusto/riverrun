@@ -171,5 +171,6 @@ test {
     _ = exprs;
     _ = @import("compile/text.zig");
     _ = @import("compile/compile_test.zig");
+    _ = @import("compile/sums_test.zig");
     _ = @import("compile/proof_test.zig");
 }

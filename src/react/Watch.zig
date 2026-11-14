@@ -7,9 +7,14 @@
 //! key as a constant, else under the whole fact), under
 //! the stamp of every query it asks (by the query's keyed arguments where
 //! they are written in the condition, else by the stamp's whole family), and,
-//! where it compares a `(clock)` fact, a `since_changed` or a builtin that
-//! moves with a clock with a number, under the clock's value at which the
-//! comparison can next flip, in a heap per clock. A condition may be watched
+//! where a comparison reads a `(clock)` fact, a `since_changed` or a builtin
+//! that moves with a clock once, added or subtracted among anything else,
+//! under the clock's value at which the comparison next flips, in a heap per
+//! clock: `hour >= arrived + 3` waits for `arrived + 3`. Each time it is
+//! evaluated that value is worked out anew from what the comparison reads
+//! now, so when `arrived` changes (which wakes it, as any fact it reads) it
+//! waits for the new one. A comparison that reads two clocks, or one twice,
+//! is filed under each clock and wakes when one moves. A condition may be watched
 //! for a thing (`this`, where its section is kept per thing) and given roles:
 //! both are constants to it, so `alive(giver)` is filed under the giver's key
 //! alone. A condition removed is taken out of all it was filed under, and its
@@ -99,15 +104,18 @@ const Filed = struct {
     }
 };
 
-// A number a clock-like value is compared with: the clock's own value, how far it moved since a fact changed, or
-// a builtin's answer that moves with it.
+// A comparison that reads a clock-like value once, added or subtracted: the clock's own value, how far it moved
+// since a fact changed, or a builtin's answer that moves with it. `left` less `right` is that value, `sign` before
+// it, and the rest, which does not move with the clock: so the comparison flips only where the value passes the
+// rest, and nowhere else.
 const Threshold = struct {
     clock: FactId,
-    k: i64,
-    /// For `since_changed`: the state that keeps the clock's value at the fact's last change.
-    at: ?FactId,
-    /// For a builtin that moves with the clock: its term, whose answer now says where the clock's count began.
-    builtin: ?u32 = null,
+    op: Term.Op,
+    /// +1 where the value is added, -1 where it is taken away.
+    sign: i2,
+    /// The comparison's two sides, as ranges of the story's terms.
+    left: Range,
+    right: Range,
     /// This condition's slot in the clock's heap.
     slot: u32,
 };
@@ -436,17 +444,35 @@ fn clockMoved(w: *Watch, clock: FactId) void {
     w.clock_was[clock.raw()] = now;
 }
 
-// Puts the condition's next flip of this comparison in its clock's heap: the least threshold past now.
+// Puts the condition's next flip of this comparison in its clock's heap, from what its sides are now. With `v` the
+// clock-like value and `r` the rest, the sides differ by `sign * v + r`, and the clock moves `v` one for one; so the
+// difference is 0 where the clock is `now - sign * difference`, and the comparison flips there or one past, by its
+// operator and sign: `>=` with the value added becomes true where the difference reaches 0, with it taken away
+// false one past, and `=` and `!=` flip at both. The least instant past now is armed; none past now, none is.
 fn arm(w: *Watch, cx: run.eval.Context, t: Threshold) Error!void {
     const now = w.store.get(t.clock).int;
-    const base = if (t.at) |at| w.store.get(at).int else if (t.builtin) |b| now -| (try run.eval.value(cx, .{ .start = b, .len = 1 })).int else 0;
+    const difference = @as(i128, (try run.eval.value(cx, t.left)).int) - (try run.eval.value(cx, t.right)).int;
+    const zero = @as(i128, now) - @as(i128, t.sign) * difference;
     const h = &w.heaps[t.clock.raw()];
     var next: ?i64 = null;
-    for ([_]i64{ t.k, t.k +| 1 }) |q| {
-        const instant = base +| q;
+    for (flips(t.op, t.sign)) |past| {
+        const instant = std.math.cast(i64, zero + past) orelse continue;
         if (instant > now and (next == null or instant < next.?)) next = instant;
     }
     if (next) |instant| h.set(t.slot, instant) else h.remove(t.slot);
+}
+
+// Where past the difference's 0 a comparison flips, as the clock-like value climbs: `<` and `>=` where the
+// difference reaches 0 if the value is added, one past if it is taken away; `>` and `<=` the other way about; `=`
+// and `!=` at both.
+fn flips(op: Term.Op, sign: i2) []const i128 {
+    const at: []const i128 = &.{0};
+    const one_past: []const i128 = &.{1};
+    return switch (op) {
+        .lt, .ge => if (sign > 0) at else one_past,
+        .gt, .le => if (sign > 0) one_past else at,
+        else => &.{ 0, 1 },
+    };
 }
 
 fn refreshInterest(w: *Watch) Error!void {
@@ -525,48 +551,85 @@ fn fileKey(w: *Watch, at: Filing, f: FactId, key: facts.Key) Error!void {
     try gop.value_ptr.append(w.gpa, at.id);
 }
 
-// `clock OP number`, `number OP clock`, `since_changed(…) OP number`, a builtin that moves with a clock compared
-// with a number, and their mirrors: the clock is read only through the comparison, which can flip only where the
-// clock passes the number, so it waits in the clock's heap.
+// A comparison that reads one clock-like value once, added or subtracted among anything else (`hour >= arrived + 3`,
+// `since_changed(f, day) > 8`, `since(stage, day) - grace < 2`): the clock is read only through the comparison, which
+// can flip only where the value passes the rest, so it waits in the clock's heap. What else the comparison reads is
+// filed as it is, and wakes it; a comparison that reads two clocks, or one twice, or one inside a query's
+// arguments, is not taken here, and each clock it reads wakes it as a fact.
 fn comparisons(w: *Watch, at: Filing, compared: *std.DynamicBitSetUnmanaged) Error!void {
     const terms = at.cond.terms;
     if (terms.len < 3) return;
-    for (0..terms.len - 2) |k| {
-        const a = w.story.term(terms.start + @as(u32, @intCast(k))); // safe: below a u32 length
-        const b = w.story.term(terms.start + @as(u32, @intCast(k + 1))); // safe: below a u32 length
-        const op = w.story.term(terms.start + @as(u32, @intCast(k + 2))); // safe: below a u32 length
+    // where the value each term leaves begins
+    const begin = try w.gpa.alloc(u32, terms.len);
+    defer w.gpa.free(begin);
+    var starts: [story_.max_stack]u32 = undefined;
+    var n: usize = 0;
+    for (0..terms.len) |k| {
+        const t = w.story.term(terms.start + @as(u32, @intCast(k))); // safe: below a u32 length
+        n = stackAfter(w.story, t, &starts, n, @intCast(k)); // safe: below a u32 length
+        begin[k] = starts[n - 1];
+    }
+    for (2..terms.len) |k| {
+        const op = w.story.term(terms.start + @as(u32, @intCast(k))); // safe: below a u32 length
         switch (op.op) {
             .lt, .le, .gt, .ge, .eq, .ne => {},
             else => continue,
         }
-        const clocky, const number = if (b.op == .int) .{ a, b } else if (a.op == .int) .{ b, a } else continue;
-        const t: Threshold = switch (clocky.op) {
-            .fact => blk: {
-                const f: FactId = .fromRaw(@intCast(clocky.arg)); // safe: validated to a fact id
-                if (w.story.fact(f).role != .clock) continue;
-                break :blk .{ .clock = f, .k = w.story.int(number.arg), .at = null, .slot = 0 };
-            },
-            .since_changed => blk: {
-                const c = w.story.change(clocky.arg);
-                // a change of the fact moves where the comparison flips, so the fact wakes it too
-                try fileFact(w, at, c.fact);
-                break :blk .{ .clock = c.clock, .k = w.story.int(number.arg), .at = c.at, .slot = 0 };
-            },
-            .builtin => blk: {
-                // what else the builtin reads wakes it, its package says: the clock waits in the heap
-                const clock = w.story.builtin(clocky.arg).clock orelse continue;
-                const pos = terms.start + @as(u32, @intCast(if (b.op == .int) k else k + 1)); // safe: below a u32 length
-                break :blk .{ .clock = clock, .k = w.story.int(number.arg), .at = null, .builtin = pos, .slot = 0 };
-            },
-            else => continue,
+        const right = begin[k - 1];
+        const left = begin[k];
+        // the one clock-like term of the comparison, which must stand in its sums
+        var only: ?u32 = null;
+        var clocks: usize = 0;
+        for (left..k) |i| if (w.clockOf(terms.start + @as(u32, @intCast(i))) != null) {
+            clocks += 1; // safe: below a u32 length
+            only = @intCast(i); // safe: below a u32 length
         };
-        var armed = t;
+        if (clocks != 1) continue;
+        const sign = linear(w.story, terms.start, begin, left, right, 1, only.?) orelse linear(w.story, terms.start, begin, right, @intCast(k), -1, only.?) orelse continue; // safe: below a u32 length
+        const term = w.story.term(terms.start + only.?);
+        // a change of the fact `since_changed` reads moves where the comparison flips, so the fact wakes it too
+        if (term.op == .since_changed) try fileFact(w, at, w.story.change(term.arg).fact);
+        var t: Threshold = .{
+            .clock = w.clockOf(terms.start + only.?).?,
+            .op = op.op,
+            .sign = sign,
+            .left = .{ .start = terms.start + left, .len = right - left },
+            .right = .{ .start = terms.start + right, .len = @as(u32, @intCast(k)) - right }, // safe: below a u32 length
+            .slot = 0,
+        };
         try at.cond.thresholds.ensureUnusedCapacity(w.gpa, 1);
-        armed.slot = try w.heaps[t.clock.raw()].slot(w.gpa, at.id);
-        at.cond.thresholds.appendAssumeCapacity(armed);
-        compared.set(k);
-        compared.set(k + 1);
+        t.slot = try w.heaps[t.clock.raw()].slot(w.gpa, at.id);
+        at.cond.thresholds.appendAssumeCapacity(t);
+        compared.set(only.?);
     }
+}
+
+// The clock a term reads one for one, if it does: a `(clock)` fact, a `since_changed`'s clock, or the clock a
+// builtin's answer moves with.
+fn clockOf(w: *const Watch, at: u32) ?FactId {
+    const t = w.story.term(at);
+    return switch (t.op) {
+        .fact => blk: {
+            const f: FactId = .fromRaw(@intCast(t.arg)); // safe: validated to a fact id
+            break :blk if (w.story.fact(f).role == .clock) f else null;
+        },
+        .since_changed => w.story.change(t.arg).clock,
+        .builtin => w.story.builtin(t.arg).clock,
+        else => null,
+    };
+}
+
+// The sign term `want` stands with in the value the terms `from` to `to` leave, `sign` before it, where it stands
+// in that value's sums alone; null where it does not stand there, or stands inside something else (a query's
+// argument). `begin` is where each term's value begins, relative to `base`.
+fn linear(s: *const story_.Story, base: u32, begin: []const u32, from: u32, to: u32, sign: i2, want: u32) ?i2 {
+    if (want < from or want >= to) return null;
+    const last = s.term(base + to - 1);
+    if (last.op == .add or last.op == .sub) {
+        const mid = begin[to - 2];
+        return linear(s, base, begin, from, mid, sign, want) orelse linear(s, base, begin, mid, to - 1, if (last.op == .sub) -sign else sign, want);
+    }
+    return if (to - from == 1) sign else null;
 }
 
 // A query's stamp: by the values of its keyed arguments where each is a constant written in the condition, else by
@@ -632,7 +695,7 @@ fn constantAt(w: *const Watch, c: *const Cond, at: u32) ?facts.Value {
 fn stackAfter(s: *const story_.Story, t: Term, starts: *[story_.max_stack]u32, n: usize, k: u32) usize {
     switch (t.op) {
         .not, .keyed => return n,
-        .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or" => return n - 1,
+        .eq, .ne, .lt, .le, .gt, .ge, .has, .hasnt, .@"and", .@"or", .add, .sub => return n - 1,
         .query => {
             const params = s.externFn(.fromRaw(@intCast(t.arg))).params.len; // safe: validated to an extern id
             if (params == 0) {

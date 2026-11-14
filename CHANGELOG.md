@@ -6,6 +6,22 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Added
 
+- Integer `+` and `-` (docs/design.md, "Counting"): between int facts, constants, numbers, query answers, visit
+  counts and int builtins, wherever an int stands: a comparison's sides, an effect's value and amount
+  (`[trust += favour]`), a value a line says (`{owed - paid}`) or chooses its words by. They bind tighter than the
+  comparisons and run left to right; parentheses group. `*`, `/` and `%` are refused naming the game as what
+  computes formulas, a `-` before a name is refused, and so is a sum before an effect's `=`, `+=` or `-=`.
+  `ast.Expr.Op.add` and `.sub`.
+- A sum past what an i64 holds is `error.Overflow` at run time, evaluated with aegis's checked ints, never a wrap;
+  the checker refuses one that always overflows.
+- The checker works out each int expression's least and most (`check/interval.zig`): a bounded fact's bounds and 0,
+  a constant's and a number's value, anything an int holds otherwise, and a sum's from its sides. A comparison
+  whose sides cannot meet folds to never or always, so `{ a + b > 300 }` over two ints bounded at 100 is reported as
+  never offered; a set whose every possible value lies past the fact's bounds is refused.
+- A watched comparison that reads one clock once, added or subtracted among anything else (`hour >= arrived + 3`),
+  waits in the clock's heap where it next flips, worked out anew each time it is evaluated, so it moves when
+  `arrived` changes; it wakes only at the instant its operator flips at. One that reads two clocks wakes when
+  either moves.
 - A speaker's delivery, the screenwriter's parenthetical: `DAD (quietly): I'd do it again.` It fills one tag of the
   line, of the key `check.Options.delivery` names, typed by the host's schema like any key: a closed list is
   checked, and a key typed as text puts the words in the string table beside the line. The line's text is still
@@ -37,6 +53,10 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Changed
 
+- **Breaking:** the compiled format is major 3 (docs/format.md): the terms `add` (25) and `sub` (26), which a
+  major 2 reader could not step over. A story compiled before is refused by name and compiled again; snapshots are
+  unchanged. A `-=` amount compiles to `0 amount sub`.
+- An int's `+=` and `-=` take any int, where they took a number or a constant.
 - **Breaking:** the story language is design B (docs/design.md, "The language"), and the reader reads it alone.
   `{ … }` the story asks, `[ … ]` the game is told, `( … )` qualifies, `->` is flow and nothing else:
   - tags are brackets on rows under what they describe, one tag a bracket: `# at 9.5 · heard door` at a line's end

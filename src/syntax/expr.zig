@@ -4,11 +4,15 @@
 //!     or     = and { "or" and }
 //!     and    = not { "and" not }
 //!     not    = "not" not | rel
-//!     rel    = atom [ ( "=" | "!=" | "<" | "<=" | ">" | ">=" | "has" | "hasnt" ) atom ]
+//!     rel    = sum [ ( "=" | "!=" | "<" | "<=" | ">" | ">=" | "has" | "hasnt" ) sum ]
+//!     sum    = atom { ( "+" | "-" ) atom }
 //!     atom   = name [ "(" [ expr { "," expr } ] ")" ] | int | string | "true" | "false" | "(" expr ")"
 //!
-//! There is no arithmetic and nothing that loops: a story asks and the host
-//! computes, through the queries it declares.
+//! A sum binds tighter than a comparison and runs left to right: a story
+//! counts its own state. There is no multiplication, division or remainder
+//! and nothing that loops: a formula is the game's, asked for by name through
+//! the queries it declares. Each operand of a sum is a nesting level, so a sum
+//! is as long as `max_depth` allows.
 
 const std = @import("std");
 const ast = @import("ast.zig");
@@ -104,11 +108,43 @@ const Parser = struct {
     }
 
     fn relExpr(p: *Parser, depth: usize) Error!*const ast.Expr {
-        const lhs = try p.atom(depth + 1);
+        const lhs = try p.sumExpr(depth + 1);
         p.space();
         const op: ?ast.Expr.Op = if (p.eat("!=")) .ne else if (p.eat("<=")) .le else if (p.eat(">=")) .ge else if (p.eat("<")) .lt else if (p.eat(">")) .gt else if (p.eat("=")) .eq else if (p.keyword("hasnt")) .hasnt else if (p.keyword("has")) .has else null;
         const o = op orelse return lhs;
-        return p.node(lhs.span.start, .{ .binary = .{ .op = o, .lhs = lhs, .rhs = try p.atom(depth + 1) } });
+        return p.node(lhs.span.start, .{ .binary = .{ .op = o, .lhs = lhs, .rhs = try p.sumExpr(depth + 1) } });
+    }
+
+    // Atoms added and subtracted, left to right; each operand after the first nests one level deeper.
+    fn sumExpr(p: *Parser, depth: usize) Error!*const ast.Expr {
+        var lhs = try p.atom(depth + 1);
+        var d = depth;
+        while (true) {
+            p.space();
+            if (p.i == p.text.len) return lhs;
+            const op: ast.Expr.Op = switch (p.text[p.i]) {
+                '+' => .add,
+                '-' => if (p.i + 1 < p.text.len and p.text[p.i + 1] == '>') return lhs else .sub,
+                '*', '/', '%' => return p.formula(),
+                else => return lhs,
+            };
+            p.i += 1;
+            d += 1;
+            if (d > max_depth) return p.fail("the expression nests deeper than {d}", .{max_depth});
+            lhs = try p.node(lhs.span.start, .{ .binary = .{ .op = op, .lhs = lhs, .rhs = try p.atom(d + 1) } });
+        }
+    }
+
+    // `*`, `/` or `%` where a sum would go on: the boundary of what a story computes.
+    fn formula(p: *Parser) Error {
+        const at = p.here();
+        const what = switch (p.text[p.i]) {
+            '*' => "`*` multiplies",
+            '/' => "`/` divides",
+            else => "`%` takes a remainder",
+        };
+        try p.diags.add(p.gpa, .{ .file = p.file, .start = at, .end = at + 1 }, .err, "{s}, and a formula is the game's: a story adds and subtracts, and asks the game by name, through a query in `extern:`", .{what});
+        return error.Invalid;
     }
 
     fn eat(p: *Parser, s: []const u8) bool {
@@ -144,6 +180,7 @@ const Parser = struct {
             return p.node(at, .{ .int = n });
         }
         const word = p.peekWord();
+        if (word.len == 0 and c == '-') return p.fail("`-` stands between two values: a number may be written `-3`, and `0 - x` takes `x` from nothing", .{});
         if (word.len == 0) return p.fail("`{c}` cannot start an expression", .{c});
         p.i += word.len;
         if (std.mem.eql(u8, word, "true")) return p.node(at, .{ .boolean = true });
@@ -228,6 +265,66 @@ test "hasnt is not has followed by nt" {
     defer r.arena.deinit();
     defer r.diags.deinit(std.testing.allocator);
     try std.testing.expectEqual(ast.Expr.Op.hasnt, r.expr.?.kind.binary.op);
+}
+
+test "a sum binds tighter than a comparison and runs left to right; parentheses group" {
+    var r = try testParse("a - b + c >= d - (e + f) and x");
+    defer r.arena.deinit();
+    defer r.diags.deinit(std.testing.allocator);
+    const ge = r.expr.?.kind.binary.lhs;
+    try std.testing.expectEqual(ast.Expr.Op.ge, ge.kind.binary.op);
+    // (a - b) + c
+    const left = ge.kind.binary.lhs;
+    try std.testing.expectEqual(ast.Expr.Op.add, left.kind.binary.op);
+    try std.testing.expectEqual(ast.Expr.Op.sub, left.kind.binary.lhs.kind.binary.op);
+    try std.testing.expectEqualStrings("c", left.kind.binary.rhs.kind.name);
+    try std.testing.expectEqual(source.Span{ .file = 0, .start = 0, .end = 9 }, left.span);
+    // d - (e + f)
+    const right = ge.kind.binary.rhs;
+    try std.testing.expectEqual(ast.Expr.Op.sub, right.kind.binary.op);
+    try std.testing.expectEqual(ast.Expr.Op.add, right.kind.binary.rhs.kind.binary.op);
+    try std.testing.expectEqual(source.Span{ .file = 0, .start = 13, .end = 24 }, right.span);
+}
+
+test "a number may be negative, and a minus stands between two values" {
+    var r = try testParse("a-3 = -2 + b");
+    defer r.arena.deinit();
+    defer r.diags.deinit(std.testing.allocator);
+    const eq = r.expr.?.kind.binary;
+    try std.testing.expectEqual(ast.Expr.Op.sub, eq.lhs.kind.binary.op);
+    try std.testing.expectEqual(@as(i64, 3), eq.lhs.kind.binary.rhs.kind.int);
+    try std.testing.expectEqual(@as(i64, -2), eq.rhs.kind.binary.lhs.kind.int);
+    var neg = try testParse("-a > 0");
+    defer neg.arena.deinit();
+    defer neg.diags.deinit(std.testing.allocator);
+    try std.testing.expect(neg.expr == null);
+    try std.testing.expect(std.mem.startsWith(u8, neg.diags.list.items[0].message, "`-` stands between two values"));
+}
+
+test "`*`, `/` and `%` are refused where they stand, naming the game as what computes them" {
+    for ([_][]const u8{ "price * 2 > coins", "coins >= price / 100", "day % 7 = 0" }, [_]u32{ 6, 15, 4 }, [_][]const u8{ "`*` multiplies", "`/` divides", "`%` takes a remainder" }) |text, at, starts| {
+        var r = try testParse(text);
+        defer r.arena.deinit();
+        defer r.diags.deinit(std.testing.allocator);
+        try std.testing.expect(r.expr == null);
+        const d = r.diags.list.items[0];
+        try std.testing.expectEqual(source.Span{ .file = 0, .start = at, .end = at + 1 }, d.span);
+        try std.testing.expect(std.mem.startsWith(u8, d.message, starts));
+        try std.testing.expect(std.mem.find(u8, d.message, "asks the game by name") != null);
+    }
+}
+
+test "a sum is as long as the nesting allows" {
+    var long: [2 * max_depth + 8]u8 = undefined;
+    for (&long, 0..) |*c, i| c.* = if (i % 2 == 0) 'a' else '+';
+    var r = try testParse(long[0 .. 2 * max_depth + 1]);
+    defer r.arena.deinit();
+    defer r.diags.deinit(std.testing.allocator);
+    try std.testing.expect(r.expr == null);
+    var short = try testParse(long[0..41]);
+    defer short.arena.deinit();
+    defer short.diags.deinit(std.testing.allocator);
+    try std.testing.expect(short.expr != null);
 }
 
 test "any bytes are read or refused, never crash" {
