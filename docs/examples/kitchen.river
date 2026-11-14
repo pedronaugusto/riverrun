@@ -1,0 +1,34 @@
+// The first example of riverrun's design: what a story looks like.
+cast:
+  mum   "Mum"
+  dad   "Dad"     — Frank, her father
+facts (player):
+  carried: set of play, gave, hands
+facts (life):
+  spot: one of stairs, piano, door, landing   (game)
+
+== hide_1969
+  [listen] [count 20]
+MUM: You could still play, Frank. ^k7f3a2
+  [at 9.5] [heard piano, door, landing]
+  [carried += play]
+DAD (quietly): Who'd listen? ^m2c9qd
+  [at 12.5] [heard piano]
+-> kitchen_1985
+
+== kitchen_1985
+DAD: Go.
+- (ask)
+* Who'll run the shop?
+  DAD: I ran it before you could walk.
+  -> ask
+* { carried has play } You could still play, Dad.
+  [known play]
+  DAD: Who'd listen?
+  -> ask
+* Pick up the case.
+  -> fork_1985
+
+== fork_1985
+The bus is at the stop.
+-> end

@@ -20,6 +20,12 @@
             .hash = "strand-0.15.0-8LNWVkmDNwDK8RScQrz4qFv1tVSJjsOxxypARQc4JcOB",
             .lazy = true,
         },
+
+        .ensign = .{
+            .url = "git+https://github.com/pedronaugusto/ensign#731cf26b86d8950dd0b63855ab3eba72cc16b9ba",
+            .hash = "ensign-0.3.1-6eMTDz-pBQBO3LxOsJg0BaLjBBpHiTzbt4nJxHyLy5-h",
+            .lazy = true,
+        },
     },
     .dev_dependencies = .{
         .preflight = .{
@@ -28,8 +34,8 @@
         },
 
         .shakedown = .{
-            .url = "git+https://github.com/pedronaugusto/shakedown#9005b65d81e8efab8bda86bf5001de6351717fe0",
-            .hash = "shakedown-0.6.0-BR8U40gRGwA1j8mnIfkc4u_U4meNZwr9_YRrNv4zVzTM",
+            .url = "git+https://github.com/pedronaugusto/shakedown#ed5a8738c5786408a924b4dab5f5c3c0498abbd4",
+            .hash = "shakedown-0.6.0-BR8U4wEcGwCB0U0MLFTDRuUrRm6VIl4HzzjzLcwsrhbr",
         },
     },
 }

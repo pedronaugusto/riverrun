@@ -6,6 +6,27 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Added
 
+- `riverrun`, the program a writer runs, its arguments read by ensign: `riverrun check` checks a story exactly as
+  the game's build does (read, checked with the vocabulary's packages, compiled in memory, nothing written),
+  `riverrun tag` writes ` ^id` at the end of every line and choice that has none and changes nothing else
+  (`--check` reports them instead), and `riverrun compile` is what `addStory` runs. A game's build makes it with its
+  vocabulary and packages in it, `addProgram`, which `addStory` uses and returns (`Story.program`), with
+  `Story.check`, a step that checks the story's files; `addCheck` checks any files with a program. Every command
+  prints a diagnostic as `path:line:col-line:col: severity: message` (the end just past the range), a file it
+  cannot read as `path: error: …`, and what is about no file as `riverrun: error: …`; it exits 0 with no error, 1
+  with one, 2 on a mistaken command line.
+- Ids `riverrun tag` writes: a letter then five letters or digits from Crockford's base 32, lowercase, made from a
+  hash of the line's section, part, place and words, hashed again until unused in the story's files: the same files
+  always get the same ids, and a written id never changes.
+- `riverrun-tools` (`tools(dep)`), the model every tool shows: `Manuscript` (a story's files, their trees and every
+  diagnostic, read, checked and compiled as the build does), `report`, `tag`, `walk` (a compiled story loaded and
+  told a bounded number of steps), `trial` (a story put through all of it, as the whole compiler's property does,
+  with a package's own runtime run over it) and `excerpts`. `addExcerptsTest` holds every story a package's
+  documents show to rows of the stories its tests check.
+- The whole compiler's property: any text, one file or two, a story written to check or the proof with a file
+  changed, through the reader, the checker with a package registered and the compiler, is a story told with every
+  choice taken, or diagnostics placed in the files; fuzzed by the `fuzz` step.
+- The documentation's stories are checked by `riverrun check` in the tests (`docs/examples/`).
 - Integer `+` and `-` (docs/design.md, "Counting"): between int facts, constants, numbers, query answers, visit
   counts and int builtins, wherever an int stands: a comparison's sides, an effect's value and amount
   (`[trust += favour]`), a value a line says (`{owed - paid}`) or chooses its words by. They bind tighter than the
@@ -53,6 +74,14 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Changed
 
+- `addStory` compiles with the `riverrun` program (`tools/riverrun.zig`, `riverrun compile`), which replaces
+  `tools/compile.zig` and its hand-read arguments; its diagnostics take the program's form, with the range's end.
+- A key stands once where it is, all its values in its one bracket: a second `[forks …]` on a section, or a
+  `[delivery …]` beside `DAD (quietly):`, is refused naming the first. The proof's `wake` writes
+  `[rooms front, kitchen, stairs]` for `[rooms] [rooms front, kitchen, stairs]`.
+- Every name a story declares is a name: a fact's, a cast entry's id, an extern's and each value of a `one of` or
+  `set of` are letters, digits and `_`, and a `one of` lists one value or more; each was taken as written.
+- shakedown is pinned at main (ed5a873), whose fuzzer takes the `--build-arg` preflight's fuzz step gives.
 - A bounded int starts, and its scope's reset puts it back, at the value in its range nearest 0 (`Value.start`,
   `Decl.start`, `FactDecl.start`), where it started at 0 even when 0 lay outside the range; a key of a bounded fact
   kept per thing reads so until set, and a snapshot leaves out a key that holds it. A fact's value always lies in its
@@ -94,6 +123,14 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Fixed
 
+- What the compiled format cannot hold is refused where it is written: a name that, joined with the names it is
+  written within, passes 256 bytes, more facts, values, scopes, choices or speakers than the format holds. The
+  builder's error used to escape the compiler with no place (`NameTooLong` for a 300-letter fact or section name, or
+  a long line id that names its alternatives' state). Found by the whole compiler's property.
+- A fact, an extern or an enumeration with an empty name (`  : int`, `  (int)`, `one of ,`) was read and checked,
+  and the compiler then failed with `EmptyName` and no place. Found by the whole compiler's property.
+- Two text tags of one key on one owner were given one line id, and the compiler failed with `DuplicateLineId`
+  (now refused by the checker, above). Found by the whole compiler's property, over the proof.
 - Resetting a scope that holds a bounded int whose range leaves out 0 trapped (`catch unreachable` on the set of 0);
   it is put back at its starting value, which always fits.
 - `join` takes a vocabulary of any size: comparing every pair of a schema's keys ran past the compiler's default

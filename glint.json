@@ -1,11 +1,11 @@
 {
   "seams": [
     {
-      "file": "tools/compile.zig",
+      "file": "tools/riverrun.zig",
       "rules": [
         "A009"
       ],
-      "reason": "the build's compile step: it reads the .river files the build names, each under the reader's limit, for the parser"
+      "reason": "the program's one read: the .river files a writer or the build names, each under the reader's limit, for the parser, which takes any bytes"
     },
     {
       "file": "src/run/host.zig",

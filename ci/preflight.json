@@ -1,5 +1,5 @@
 {
   "shipped": {
-    "tools": "The compiler as a program: a game's build runs it through addStory to compile its story at build time."
+    "tools": "The riverrun program's front, tools/riverrun.zig: a game's build compiles it with its vocabulary through addProgram and addStory, to check, tag and compile its story."
   }
 }

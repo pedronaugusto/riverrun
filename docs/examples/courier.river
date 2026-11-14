@@ -1,0 +1,23 @@
+// An example of riverrun's design: brackets, what the game is told.
+extras: a courier
+facts:
+  paid: bool
+  letter: one of carried, burned
+extern:
+  cutscene(ref of scene)
+  pay_fee(int) -> bool (action)
+  give(ref of item)
+
+== courier_day12
+  [at day 12 evening] [courier]
+[cutscene(courier_at_the_gate)]
+A COURIER: Letter for you. Signed L. There's a fee on it, mind.
+* Pay the fee.
+  [paid = pay_fee(5)]
+  { paid }
+    A COURIER: Pleasure doing business.
+    [give(letter_from_l)]
+    [letter = carried]
+  -> end
+* Not today.
+  -> end

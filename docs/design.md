@@ -18,7 +18,7 @@ A `.river` file is plain UTF-8 a writer reads top to bottom, indented by spaces.
 game falls into three delimiters, each with one meaning: `{ … }` the story asks, `[ … ]` the game is told, `( … )`
 qualifies what stands before it. `->` is flow and nothing else, and the structure is Ink's weave on indentation.
 
-```
+```river
 cast:
   mum   "Mum"
   dad   "Dad"     — Frank, her father
@@ -34,12 +34,14 @@ MUM: You could still play, Frank. ^k7f3a2
   [carried += play]
 DAD (quietly): Who'd listen? ^m2c9qd
   [at 12.5] [heard piano]
+-> kitchen_1985
 
 == kitchen_1985
 DAD: Go.
 - (ask)
 * Who'll run the shop?
   DAD: I ran it before you could walk.
+  -> ask
 * { carried has play } You could still play, Dad.
   [known play]
   DAD: Who'd listen?
@@ -193,7 +195,7 @@ Anywhere else, at a section's level, inside a condition's block, under a choice 
 is an **effects step,** its effects in order, and a tag there is an error: indent it under the line, the choice or
 the heading it describes. Nothing is indented under a row of brackets.
 
-```
+```river
 == courier_day12
   [at day 12 evening] [courier]
 [cutscene(courier_at_the_gate)]
@@ -343,8 +345,8 @@ tag schema, its widths and things), `pub const packages`, each package's `riverr
 adds anywhere, its check and its compile pass), and `pub const passes` for the host's own. `riverrun.join` joins
 each package in after the host's, and two kinds of one name or one key twice where both may stand fail to compile,
 so nothing a package adds shadows another silently. It is Zig, not data, because a registered kind carries
-functions; the compiler is built for the machine doing the building, with the vocabulary compiled in, and prints
-every diagnostic as `file:line:col: severity: message`.
+functions; the compiler is built for the machine doing the building, with the vocabulary compiled in, as the
+`riverrun` program ("The program", below), and prints every diagnostic as `riverrun check` does.
 
 1. **Read** each file: a hand-written recursive-descent parser into a tree that keeps every byte (each row's
    indentation, words, id, comment, spaces and line ending, so the tree prints the file back byte for byte), every
@@ -370,11 +372,85 @@ then compiles each file's sections against it alone, then runs each package's pa
 the graph, reads it back and validates it, and writes the string table for its hash. A file's steps depend only on
 the index and its own tree, so a cache keyed by both can keep a file's steps between builds; that cache is not built
 yet, and every build compiles every file. Facts declared without a scope are kept in riverrun's scope `default`.
-**Line ids:** `riverrun tag` writes an id, `^id`, at the end of every line that has none; a development build
-derives missing ones (`~` and a hash of the section, the part, the position, the speaker and the words).
+**Line ids:** `riverrun tag` writes an id, `^id`, at the end of every line that has none ("The program", below);
+a development build derives missing ones (`~` and a hash of the section, the part, the position, the speaker and
+the words). **The format's limits** (a name, with the names it is written within, of at most 256 bytes; so many
+facts, values, choices) are the compiler's to meet, and it reports one where the declaration or statement that
+meets it is written, never as an error with no place.
 *Protects:* translations, recorded voices and model characters keyed on a line and surviving a typo fix.
 
 Built: all of it, `addStory` included.
+
+## The program
+
+`riverrun` is what a writer runs, or an AI writing for one: `riverrun check`, `riverrun tag` and `riverrun
+compile`, its arguments read by ensign. A vocabulary is Zig, since a package's kinds, judges, checks and passes are
+functions, so no program can read one when it starts: the game's build makes the program with its vocabulary and
+its packages compiled in, `riverrun.addProgram(b, dep, .{ .vocabulary, .packages })`, and that program is the one
+`addStory` compiles the story with. `addStory` hands it back, `Story.program`, with `Story.check`, a step that runs
+`riverrun check` over the story's files; a game installs the program, or hangs the step on one of its own, so a
+writer checks the story without building the game:
+
+```zig
+const story = riverrun.addStory(b, river, .{ .files = …, .vocabulary = b.path("src/vocabulary.zig"), .packages = … });
+b.installArtifact(story.program); // zig-out/bin/riverrun check story/*.river
+b.step("story", "Check the story without building the game").dependOn(&story.check.step);
+```
+
+So `riverrun check` checks exactly what the game's build does: one vocabulary, the game's, in one program, with the
+same reader, checker, packages' checks and compile passes; there is no second description of the vocabulary, a file
+of names beside the Zig, to fall out of step with it. *Protects:* a story that checks builds.
+
+- **`riverrun check [--release] FILE…`** reads the files as one story (names one file uses from another are found
+  across them), checks it and compiles it in memory, writing nothing: a package's compile pass can refuse a story
+  too, and what the build refuses `check` must. `--release` checks as a release build: every line and choice
+  needs its id.
+- **`riverrun tag [--check] FILE…`** writes ` ^id` at the end of every line and choice that has none, before its
+  comment, through the tree that keeps every byte, and prints the name of each file it changed. Every other byte
+  is as it was, an id once written never changes, every new id is new to all the files given, and a second run
+  changes nothing. A file the reader refuses is reported and nothing is written: an id goes only where the reader
+  reads a line. `--check` changes nothing and reports each line and choice without an id, for a release's CI.
+- **`riverrun compile --graph PATH --words PATH [--release] FILE…`** is what `addStory` runs: `check`, then the
+  graph and the string table written, the diagnostics to standard error.
+
+**Diagnostics**, one to a line, in one form for every command, which a person reads, an editor jumps to and an AI
+parses:
+
+```
+story/kitchen.river:12:5-12:9: error: `MUMM` is not a speaker: speakers come from `cast:` and `extras:`
+```
+
+the path as it was given; where the range starts and where it ends, each `line:column` from 1, columns counting
+bytes, the end just past the range's last byte (so `12:5-12:5` is a place to insert at); `error` or `warning`; the
+message. What is about a whole file has its path alone (`story/x.river: error: there is no such file`), and what is
+about no file, the host's vocabulary, the program's name (`riverrun: error: …`). `check` and `tag` print to
+standard output, and nothing when nothing is wrong; `compile`, run inside a build, to standard error. The exit
+status is 0 when there is no error (warnings allowed), 1 when there is one (or a line without an id under
+`tag --check`, or a file that cannot be read or written), and 2 when the command line is mistaken, which ensign
+answers with the usage.
+
+**An id** is `^` and six characters, a letter then five letters or digits, lowercase, from Crockford's base 32
+(no `i`, `l`, `o` or `u`): `^k7f3a2`. It is what translations, recorded voices and saves key on, and once written
+it is the line's for good, through any edit of its words, a move to another section, a rename. So it says nothing
+about where its line is (an id that named its section would lie after a move); it reads aloud and types back
+without a 1 taken for an l or a 0 for an o; it is one name on a file system that ignores case, as a voice file is
+named by its id; and no spreadsheet reads it as a number. `tag` makes it without a clock or chance: a hash of the
+line's section, part, place among its section's lines and choices, and words, hashed again until it is unused in
+the story's files, so the same files in the same order always get the same ids. There are 22 × 32⁵ of them, about
+7.4 × 10⁸; a two-hour story of 5,000 lines holds a few in a hundred thousand.
+
+**What the documentation shows, checked.** A package's documentation shows stories that `addCheck` checks in its
+tests, each a whole story under `docs/examples/`, and `addExcerptsTest` holds every ` ```river ` block of its
+Markdown, and every story indented under a Zig file's `//!` comment, to rows of one of those, so an example a
+writer copies is text that checks.
+
+**Its logic is `riverrun-tools`** (`riverrun.tools(dep)`), the model every tool shows: `Manuscript`, a story's files
+read to their trees with every diagnostic, checked and compiled as the build does; `report`, the form above; `tag`,
+the ids (`missing`, `give`); `walk`, a compiled story loaded and told a bounded number of steps; `trial`, a story put
+through all of it, as the whole compiler's property does; and `excerpts`. The program parses its command line and
+reads and writes files, and nothing else: the editor to come holds a `Manuscript` and calls the same functions.
+
+Built: all of it.
 
 ## The compiled format
 
@@ -584,14 +660,16 @@ compile   a checked story → the format, file by file, then linked             
 run       the executor over the format and a store                             story, facts · built
 react     conditions watched as facts change, and rules fired over them        run, story, facts · built
 ffi       the C ABI over run                                                   run
-tools     the program, on ensign                                               all
+tools     the model every tool shows, and the program on ensign                 all · built
 ```
 
-The layers are two modules. `riverrun`, the runtime, is `facts`, `story`, `run` and `react` on std and aegis alone;
+The layers are three modules. `riverrun`, the runtime, is `facts`, `story`, `run` and `react` on std and aegis alone;
 `riverrun-compiler` is `syntax`, `check`, `compile` and the JSON forms, standing on the runtime and adding
 xenoglyph (for widths) and strand (for JSON), both lazy dependencies. A game that only tells stories imports
 `riverrun` and never fetches the compiler's dependencies; its build runs the compiler through `addStory`, and a tool
-asks for it with `riverrun.compiler(dep)`. *Protects:* a small runtime, and compile-time work that stays at build time.
+asks for it with `riverrun.compiler(dep)`. `riverrun-tools` is `tools`, on the compiler and the runtime
+(`riverrun.tools(dep)`), and the program, `tools/riverrun.zig`, is its front, adding ensign, lazily, for its command
+line. *Protects:* a small runtime, and compile-time work that stays at build time.
 
 ## Napkin math
 
