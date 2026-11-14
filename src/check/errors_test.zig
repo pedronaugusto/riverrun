@@ -10,7 +10,13 @@ const Severity = syntax.source.Severity;
 const Outcome = struct {
     arena: std.heap.ArenaAllocator,
     diags: syntax.Diagnostics,
+    files: []const syntax.ast.File = &.{},
     checked: ?check.Checked = null,
+
+    // Where a diagnostic is, as a line and a column.
+    fn at(o: *const Outcome, d: syntax.source.Diagnostic) syntax.Place {
+        return o.files[d.span.file].place(d.span);
+    }
 
     fn deinit(o: *Outcome) void {
         if (o.checked) |*c| c.deinit();
@@ -21,7 +27,7 @@ const Outcome = struct {
     /// The one diagnostic there is, which must be this one.
     fn only(o: *const Outcome, severity: Severity, line: u32, col: u32, message: []const u8) !void {
         if (o.diags.list.items.len != 1) {
-            for (o.diags.list.items) |d| std.debug.print("{d}:{d}: {s}\n", .{ d.span.line, d.span.col, d.message });
+            for (o.diags.list.items) |d| std.debug.print("{d}:{d}: {s}\n", .{ o.at(d).line, o.at(d).col, d.message });
             return error.TestExpectedOneDiagnostic;
         }
         try o.has(severity, line, col, message);
@@ -30,10 +36,10 @@ const Outcome = struct {
     /// A diagnostic with this message, at this place.
     fn has(o: *const Outcome, severity: Severity, line: u32, col: u32, message: []const u8) !void {
         for (o.diags.list.items) |d| {
-            if (d.severity == severity and d.span.line == line and d.span.col == col and std.mem.eql(u8, d.message, message)) return;
+            if (d.severity == severity and o.at(d).line == line and o.at(d).col == col and std.mem.eql(u8, d.message, message)) return;
         }
         std.debug.print("wanted {t} {d}:{d}: {s}\n", .{ severity, line, col, message });
-        for (o.diags.list.items) |d| std.debug.print("  have {t} {d}:{d}: {s}\n", .{ d.severity, d.span.line, d.span.col, d.message });
+        for (o.diags.list.items) |d| std.debug.print("  have {t} {d}:{d}: {s}\n", .{ d.severity, o.at(d).line, o.at(d).col, d.message });
         return error.TestMissingDiagnostic;
     }
 };
@@ -43,6 +49,7 @@ fn checkOne(story: []const u8, options: check.Options) !Outcome {
     errdefer o.deinit();
     const tree = try o.arena.allocator().create(syntax.ast.File);
     tree.* = try syntax.parse(o.arena.allocator(), std.testing.allocator, &o.diags, 0, "a.river", story);
+    o.files = tree[0..1];
     if (o.diags.list.items.len > 0) return error.TestStoryDoesNotRead;
     o.checked = try check.run(std.testing.allocator, &o.diags, tree[0..1], options);
     return o;
@@ -479,6 +486,7 @@ test "another module's names are reached qualified" {
     defer o.deinit();
     const a = o.arena.allocator();
     const files = try a.alloc(syntax.ast.File, 2);
+    o.files = files;
     files[0] = try syntax.parse(a, std.testing.allocator, &o.diags, 0, "harbour.river",
         \\module harbour
         \\facts:
@@ -597,7 +605,7 @@ const Calendar = struct {
             const words = if (tagOf(p.tags, "names")) |n| n.values else &.{};
             const names = try arena.alloc(syntax.ast.Name, words.len);
             for (names, words) |*n, w| n.* = .{ .text = w, .span = place.key.span };
-            try out.append(arena, .{ .scope = "time", .fact = .{ .name = .{ .text = place.values[0], .span = place.key.span }, .type = .{ .one_of = names }, .game = true } });
+            try out.append(arena, .{ .scope = "time", .fact = .{ .span = place.span, .name = .{ .text = place.values[0], .span = place.key.span }, .type = .{ .one_of = names }, .game = true } });
         }
         return out.items;
     }
@@ -614,7 +622,7 @@ pub const quest_kind: check.Kind = .{ .name = "quest", .declare = Quest.declare 
 const Quest = struct {
     fn declare(arena: std.mem.Allocator, s: *const syntax.ast.Section, _: []const syntax.ast.File) error{OutOfMemory}![]const check.Declared {
         const out = try arena.alloc(check.Declared, s.subsections.len);
-        for (out, s.subsections) |*d, p| d.* = .{ .scope = "quests", .fact = .{ .name = p.name, .type = .boolean, .game = true }, .within = true };
+        for (out, s.subsections) |*d, p| d.* = .{ .scope = "quests", .fact = .{ .span = p.name.span, .name = p.name, .type = .boolean, .game = true }, .within = true };
         return out;
     }
 };

@@ -178,7 +178,10 @@ so nothing a package adds shadows another silently. It is Zig, not data, because
 functions; the compiler is built for the machine doing the building, with the vocabulary compiled in, and prints
 every diagnostic as `file:line:col: severity: message`.
 
-1. **Read** each file: a hand-written recursive-descent parser with positions, and a fuzz target for each parser.
+1. **Read** each file: a hand-written recursive-descent parser into a tree that keeps every byte (each row's
+   indentation, words, tags, comment, spaces and line ending, so the tree prints the file back byte for byte), every
+   node and diagnostic carrying the range of bytes it is about; the compiler, the checker and the tools read that
+   one tree. A fuzz target for each parser, and properties that the tree prints back and its ranges nest.
 2. **Resolve** against one index of every file's declarations: speakers, facts, constants, externs, sections, labels
    and modules.
 3. **Check**, reporting every error, not the first:
@@ -400,7 +403,7 @@ Built.
 Each layer is a folder beside its root file, and imports only those before it:
 
 ```
-syntax    files → syntax tree, with positions                                   built
+syntax    files → a syntax tree that keeps every byte, with ranges, and back       built
 facts     types, scopes, the store interface, the default store, snapshots      needs nothing · built
 check     resolve and check the tree against a host's schema → a checked story  syntax · built
 story     the compiled format: builder, writer, validated reader               facts · built

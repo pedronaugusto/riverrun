@@ -24,7 +24,7 @@ const Unit = struct {
 };
 
 pub fn run(c: *Checker) Error!void {
-    for (c.files, 0..) |file, i| for (file.decls) |decl| switch (decl) {
+    for (c.files, 0..) |file, i| for (file.decls) |decl| switch (decl.kind) {
         .cast => |entries| for (entries) |e| try tags.check(c, c.moduleOf(@intCast(i)), null, null, e.tags, .cast), // safe: a FileId numbers the files
         else => {},
     };
@@ -52,8 +52,8 @@ fn section(c: *Checker, id: sym.SectionId) Error!void {
             try exprs.condition(c, watched, w);
             if (never(c, w)) {
                 if (s.kind == .rules) {
-                    try c.warn(exprs.start(w), "the rule `{s}` can never fire: its condition can never hold", .{p.name});
-                } else try c.warn(exprs.start(w), "the candidate `{s}` can never be picked: its condition can never hold", .{p.name});
+                    try c.warn(w.span, "the rule `{s}` can never fire: its condition can never hold", .{p.name});
+                } else try c.warn(w.span, "the candidate `{s}` can never be picked: its condition can never hold", .{p.name});
             }
         }
         if (s.kind == .rules) for (p.node.body) |st| if (st.kind != .effect) {
@@ -64,44 +64,43 @@ fn section(c: *Checker, id: sym.SectionId) Error!void {
 }
 
 fn body(c: *Checker, u: *Unit, stmts: []const ast.Stmt) Error!void {
-    for (stmts) |*s| try stmt(c, u, s, s.tags);
+    for (stmts) |*s| try stmt(c, u, s);
 }
 
-// `tagged` is the statement's tags, or those of the line it was written on.
-fn stmt(c: *Checker, u: *Unit, s: *const ast.Stmt, tagged: []const ast.Tag) Error!void {
+fn stmt(c: *Checker, u: *Unit, s: *const ast.Stmt) Error!void {
     switch (s.kind) {
-        .line => |*l| try line(c, u, s, l, tagged),
-        .choice => |*ch| try choice(c, u, s, ch, tagged),
+        .line => |*l| try line(c, u, s, l),
+        .choice => |*ch| try choice(c, u, s, ch),
         .cond => |*k| {
             try exprs.condition(c, u.scope, &k.cond);
-            if (never(c, &k.cond)) try c.warn(exprs.start(&k.cond), "this condition can never hold: what it gates is never said", .{});
-            if (k.body.len == 1 and k.body[0].span.line == s.span.line) return stmt(c, u, &k.body[0], tagged);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
+            if (never(c, &k.cond)) try c.warn(k.cond.span, "this condition can never hold: what it gates is never said", .{});
+            if (k.on_row) return stmt(c, u, &k.body[0]);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
             try body(c, u, k.body);
             try body(c, u, k.otherwise);
         },
         .gather => |g| {
-            if (g.then) |then| return stmt(c, u, then, tagged);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
+            if (g.then) |then| return stmt(c, u, then);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
         },
         .effect => |*e| {
             try exprs.effect(c, u.scope, e);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
         },
         .flow => |*f| {
             try flow.resolve(c, u.scope, f, s.span);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
         },
         .flow_if => |*f| {
             try exprs.condition(c, u.scope, &f.cond);
             try flow.resolve(c, u.scope, &f.then, s.span);
             try flow.resolve(c, u.scope, &f.otherwise, s.span);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .other);
+            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
         },
     }
 }
 
-fn line(c: *Checker, u: *Unit, s: *const ast.Stmt, l: *const ast.Line, tagged: []const ast.Tag) Error!void {
+fn line(c: *Checker, u: *Unit, s: *const ast.Stmt, l: *const ast.Line) Error!void {
     var key: ?[]const u8 = null;
     if (l.speaker) |*who| {
         const k = try c.lower(who.text);
@@ -112,21 +111,21 @@ fn line(c: *Checker, u: *Unit, s: *const ast.Stmt, l: *const ast.Line, tagged: [
     }
     try exprs.text(c, u.scope, l.text);
     try width.check(c, s.span, l.text, c.options.width.line, "line");
-    try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .line);
-    try ids.give(c, s, tagged, u.path, key, l.text);
+    try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .line);
+    try ids.give(c, s, u.path, key, l.text);
     u.path.ordinal += 1;
-    for (l.effects) |*e| try stmt(c, u, e, e.tags);
+    for (l.effects) |*e| try stmt(c, u, e);
 }
 
-fn choice(c: *Checker, u: *Unit, s: *const ast.Stmt, ch: *const ast.Choice, tagged: []const ast.Tag) Error!void {
+fn choice(c: *Checker, u: *Unit, s: *const ast.Stmt, ch: *const ast.Choice) Error!void {
     if (ch.cond) |*k| {
         try exprs.condition(c, u.scope, k);
-        if (never(c, k)) try c.warn(exprs.start(k), "this choice can never be offered: its condition can never hold", .{});
+        if (never(c, k)) try c.warn(k.span, "this choice can never be offered: its condition can never hold", .{});
     }
     try exprs.text(c, u.scope, ch.text);
     try width.check(c, s.span, ch.text, c.options.width.choice, "choice");
-    try tags.check(c, u.scope.module, u.scope.section, u.scope.part, tagged, .choice);
-    try ids.give(c, s, tagged, u.path, null, ch.text);
+    try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .choice);
+    try ids.give(c, s, u.path, null, ch.text);
     u.path.ordinal += 1;
     try body(c, u, ch.body);
 }

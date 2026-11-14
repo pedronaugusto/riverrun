@@ -41,13 +41,6 @@ pub fn value(c: *Checker, scope: Scope, e: *const ast.Expr, want: sym.Type) Erro
     try c.err(e.span, "this is {s}, where {s} is wanted", .{ try c.describe(t), try c.describe(want) });
 }
 
-/// Where an expression's words start: an operator's node is placed at the operator.
-pub fn start(e: *const ast.Expr) syntax.Span {
-    var at = e;
-    while (at.kind == .binary) at = at.kind.binary.lhs;
-    return at.span;
-}
-
 // A name as `scope` sees it in the expression namespace: what its section declares within it first (`stage` for
 // `quest.stage`), then its module's names and the root's.
 fn lookup(c: *const Checker, scope: Scope, n: []const u8) ?sym.Named {
@@ -557,7 +550,7 @@ fn settable(c: *Checker, scope: Scope, n: *const ast.Name) Error!?sym.FactId {
 /// Text: what `{…}` says must be a fact, a constant or a query's answer that can be said; words chosen by a
 /// condition are checked as both, and every option of alternatives.
 pub fn text(c: *Checker, scope: Scope, t: ast.Text) Error!void {
-    for (t) |*piece| switch (piece.*) {
+    for (t) |*piece| switch (piece.kind) {
         .literal => {},
         .value => |*e| {
             if (e.kind != .name and e.kind != .call) return c.err(e.span, "`{{…}}` says a fact, a constant or a query's answer", .{});

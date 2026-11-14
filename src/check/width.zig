@@ -13,7 +13,7 @@ const ast = syntax.ast;
 /// (none when null), and words chosen by a condition or alternatives count as the widest.
 pub fn measure(text: ast.Text, value: ?u32) usize {
     var n: usize = 0;
-    for (text) |piece| n += switch (piece) {
+    for (text) |piece| n += switch (piece.kind) {
         .literal => |s| xenoglyph.width.string(s, .{}).raw(),
         .value => value orelse 0,
         .choose => |ch| @max(measure(ch.then, value), measure(ch.otherwise, value)),
@@ -39,7 +39,11 @@ pub fn check(c: *Checker, span: syntax.Span, text: ast.Text, limit: ?u32, what: 
 }
 
 test "width counts columns, not bytes" {
-    const text: ast.Text = &.{ .{ .literal = "café " }, .{ .value = .{ .span = .none, .kind = .{ .name = "dies_at" } } }, .{ .literal = " 日本" } };
+    const text: ast.Text = &.{
+        .{ .span = .none, .kind = .{ .literal = "café " } },
+        .{ .span = .none, .kind = .{ .value = .{ .span = .none, .kind = .{ .name = "dies_at" } } } },
+        .{ .span = .none, .kind = .{ .literal = " 日本" } },
+    };
     try std.testing.expectEqual(@as(usize, 10), measure(text, null));
     try std.testing.expectEqual(@as(usize, 18), measure(text, 8));
 }

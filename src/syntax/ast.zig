@@ -1,34 +1,107 @@
 //! The syntax tree: a story's files as the reader understood them, before
-//! any name is resolved. Every node keeps its span, so the checker and the
-//! tools can point back at the text. The reader allocates all of it in one
-//! arena the caller owns.
+//! any name is resolved, and as they are written. Every node keeps its span,
+//! the range of bytes it is written in, so the checker and the tools can
+//! point back at the text; a file's rows keep every byte of it, comments,
+//! blank lines and layout included, so the file prints back as it was
+//! (`print.zig`) and a tool that edits the tree writes the text. The reader
+//! allocates all of it in one arena the caller owns.
 
-const Span = @import("source.zig").Span;
+const source = @import("source.zig");
+const Span = source.Span;
 
-/// One file: its declarations and its sections, in the order written.
+/// One file: its declarations and its sections, in the order written, over the rows they are written on.
 pub const File = struct {
     path: []const u8,
+    /// The whole file, from its first byte to its last.
+    span: Span,
+    /// The file begins with a UTF-8 byte-order mark, which comes before its first row.
+    bom: bool = false,
+    /// Every row of the file, in order: with `bom`, the file byte for byte.
+    rows: []const Row = &.{},
     /// `module name` at the top: what the file declares is `name.x` to other modules. Null is the root module.
     module: ?Name = null,
     decls: []const Decl,
     sections: []const Section,
+
+    /// Where `span` starts, as a line and a column: its row, and its byte in the row.
+    pub fn place(f: *const File, span: Span) source.Place {
+        if (span.start > f.span.end) return .{ .line = 0, .col = 0 };
+        if (f.rows.len == 0) return .{ .line = 1, .col = 1 };
+        // the last row starting at or before it
+        var lo: usize = 0;
+        var hi: usize = f.rows.len;
+        while (hi - lo > 1) {
+            const mid = lo + (hi - lo) / 2;
+            if (f.rows[mid].start <= span.start) lo = mid else hi = mid;
+        }
+        const row = f.rows[lo];
+        return .{ .line = @intCast(lo + 1), .col = span.start + 1 - @min(span.start, row.start) }; // safe: rows are at most max_bytes
+    }
+};
+
+/// One line of a file as it is written: what it says and how it is laid out. A row is printed as its indentation,
+/// its words, its tags and its comment, each after the spaces before it, the spaces at its end and its line
+/// ending, so the rows of a file print it back byte for byte.
+pub const Row = struct {
+    /// Where the row starts in its file.
+    start: u32,
+    /// The spaces before its words.
+    indent: u32 = 0,
+    /// Its words: a heading, an entry or a statement, without its tags or comment. Empty on a blank row.
+    text: []const u8 = "",
+    /// The spaces between its words and its tags.
+    before_tags: u32 = 0,
+    /// `#` and the tags after it, up to its comment or its end, without the spaces after them; empty without tags.
+    tags: []const u8 = "",
+    /// The spaces between what comes before its comment and the comment.
+    before_comment: u32 = 0,
+    /// `//` and what follows it, without the spaces at the row's end; empty without a comment.
+    comment: []const u8 = "",
+    /// The spaces at the row's end.
+    trailing: u32 = 0,
+    ending: Ending,
+
+    pub const Ending = enum {
+        lf,
+        crlf,
+        /// The file's last row, with no line ending after it.
+        none,
+
+        pub fn bytes(e: Ending) []const u8 {
+            return switch (e) {
+                .lf => "\n",
+                .crlf => "\r\n",
+                .none => "",
+            };
+        }
+    };
+
+    /// How many bytes the row is, its line ending included.
+    pub fn len(r: Row) u32 {
+        return @intCast(r.indent + r.text.len + r.before_tags + r.tags.len + r.before_comment + r.comment.len + r.trailing + r.ending.bytes().len); // safe: a row is a part of its file
+    }
 };
 
 // ---------------------------------------------------------------- declarations
 
-pub const Decl = union(enum) {
-    /// `version: 3`: which version of the story this is, which migration rules count from.
-    version: struct { number: u32, span: Span },
-    cast: []const CastEntry,
-    extras: []const Name,
-    facts: Facts,
-    consts: []const Const,
-    externs: []const Extern,
+/// A declaration: its heading and the entries under it.
+pub const Decl = struct {
+    span: Span,
+    kind: union(enum) {
+        /// `version: 3`: which version of the story this is, which migration rules count from.
+        version: u32,
+        cast: []const CastEntry,
+        extras: []const Name,
+        facts: Facts,
+        consts: []const Const,
+        externs: []const Extern,
+    },
 };
 
 pub const Name = struct { text: []const u8, span: Span };
 
 pub const CastEntry = struct {
+    span: Span,
     id: Name,
     /// How the character is shown: "Mum".
     display: []const u8,
@@ -38,12 +111,14 @@ pub const CastEntry = struct {
 };
 
 pub const Facts = struct {
+    span: Span,
     /// The scope the host names: `life`, `player`, `world`… Null is the story's default scope.
     scope: ?Name,
     entries: []const Fact,
 };
 
 pub const Fact = struct {
+    span: Span,
     name: Name,
     /// `opinion(person): int`: a value for each of the things of a kind, or each value of an enumeration.
     key: ?Type = null,
@@ -73,9 +148,10 @@ pub const Type = union(enum) {
 
 pub const Bounds = struct { min: i64, max: i64 };
 
-pub const Const = struct { name: Name, value: Expr };
+pub const Const = struct { span: Span, name: Name, value: Expr };
 
 pub const Extern = struct {
+    span: Span,
     name: Name,
     params: []const Param,
     /// Null for an action; a type for a query, or for an action's outcome.
@@ -86,13 +162,14 @@ pub const Extern = struct {
     reads: ?Stamp = null,
 };
 
-pub const Param = struct { name: ?Name, type: Type };
+pub const Param = struct { span: Span, name: ?Name, type: Type };
 
-pub const Stamp = struct { family: Name, keys: []const Name };
+pub const Stamp = struct { span: Span, family: Name, keys: []const Name };
 
 // ---------------------------------------------------------------- sections
 
 pub const Section = struct {
+    span: Span,
     name: Name,
     kind: Kind,
     tags: []const Tag,
@@ -114,6 +191,7 @@ pub const Section = struct {
 };
 
 pub const Subsection = struct {
+    span: Span,
     name: Name,
     /// A pool candidate's condition.
     when: ?Expr,
@@ -123,6 +201,7 @@ pub const Subsection = struct {
 
 /// A tag: `# key value, value · key value`. riverrun carries it and never reads it.
 pub const Tag = struct {
+    span: Span,
     key: Name,
     values: []const []const u8,
     /// Where each value is written, one for each of `values`: what is wrong with a value is said there.
@@ -135,7 +214,10 @@ pub const Tag = struct {
 };
 
 pub const Stmt = struct {
+    /// From its first word to the end of the last thing under it.
     span: Span,
+    /// The tags at the end of its row. A statement written on a row after a condition (`{ met } Go.`) or a gather
+    /// (`- (ask) * Run.`) has the row's tags, and the condition or the gather has none.
     tags: []const Tag,
     kind: union(enum) {
         line: Line,
@@ -164,20 +246,26 @@ pub const Line = struct {
 /// Text: literal runs, interpolated facts, and words chosen by a condition.
 pub const Text = []const Piece;
 
-pub const Piece = union(enum) {
-    literal: []const u8,
-    /// `{fact}`
-    value: Expr,
-    /// `{ condition: these words | those words }`
-    choose: struct { cond: Expr, then: Text, otherwise: Text },
-    /// `{seq: a | b | c}`, `{cycle: …}`, `{once: …}`, `{shuffle: …}`
-    alternatives: struct { kind: Alternatives, options: []const Text },
-    /// `{count -> one: pelt | other: pelts}`, `{marta -> feminine: she | other: they}`: words chosen by a
-    /// plural category or a gender, each branch labelled by one.
-    select: struct { operand: Expr, branches: []const Branch },
+pub const Piece = struct {
+    /// Where the piece is written: a literal run with its escapes, or the braces and what is between them.
+    span: Span,
+    kind: Kind,
+
+    pub const Kind = union(enum) {
+        literal: []const u8,
+        /// `{fact}`
+        value: Expr,
+        /// `{ condition: these words | those words }`
+        choose: struct { cond: Expr, then: Text, otherwise: Text },
+        /// `{seq: a | b | c}`, `{cycle: …}`, `{once: …}`, `{shuffle: …}`
+        alternatives: struct { kind: Alternatives, options: []const Text },
+        /// `{count -> one: pelt | other: pelts}`, `{marta -> feminine: she | other: they}`: words chosen by a
+        /// plural category or a gender, each branch labelled by one.
+        select: struct { operand: Expr, branches: []const Branch },
+    };
 };
 
-pub const Branch = struct { label: Name, text: Text };
+pub const Branch = struct { span: Span, label: Name, text: Text };
 
 pub const Alternatives = enum {
     /// Each in turn, then the last for ever.
@@ -191,7 +279,13 @@ pub const Alternatives = enum {
 };
 
 /// `{ condition }` with what it gates, and what `{ else }` gates after it.
-pub const Cond = struct { cond: Expr, body: []const Stmt, otherwise: []const Stmt = &.{} };
+pub const Cond = struct {
+    cond: Expr,
+    body: []const Stmt,
+    otherwise: []const Stmt = &.{},
+    /// `{ met } Go.`: the condition and the one statement it gates written on one row, which has the row's tags.
+    on_row: bool = false,
+};
 
 pub const Choice = struct {
     sticky: bool,

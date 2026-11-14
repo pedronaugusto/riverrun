@@ -303,15 +303,17 @@ pub fn knowsThing(c: *const Checker, kind: sym.KindId, id: []const u8) bool {
 
 /// A span as `file:line:col`, for a message that points at a second place.
 pub fn place(c: *const Checker, span: Span) Place {
-    return .{ .path = if (span.file < c.files.len) c.files[span.file].path else "?", .span = span };
+    if (span.file >= c.files.len) return .{ .path = "?", .at = .{ .line = 0, .col = 0 } };
+    const f = &c.files[span.file];
+    return .{ .path = f.path, .at = f.place(span) };
 }
 
 pub const Place = struct {
     path: []const u8,
-    span: Span,
+    at: syntax.Place,
 
     pub fn format(p: Place, w: *std.Io.Writer) std.Io.Writer.Error!void {
-        try w.print("{s}:{d}:{d}", .{ p.path, p.span.line, p.span.col });
+        try w.print("{s}:{d}:{d}", .{ p.path, p.at.line, p.at.col });
     }
 };
 

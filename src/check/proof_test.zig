@@ -87,7 +87,9 @@ const Proof = struct {
 
     fn print(p: *const Proof) void {
         for (p.diags.list.items) |d| {
-            std.debug.print("{s}:{d}:{d}: {t}: {s}\n", .{ p.trees[d.span.file].path, d.span.line, d.span.col, d.severity, d.message });
+            const tree = &p.trees[d.span.file];
+            const at = tree.place(d.span);
+            std.debug.print("{s}:{d}:{d}: {t}: {s}\n", .{ tree.path, at.line, at.col, d.severity, d.message });
         }
     }
 };

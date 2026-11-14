@@ -245,7 +245,7 @@ test "a pass that refuses the story says where, and one that fails saying nothin
         try std.testing.expectError(error.PassFailed, compile.run(gpa, &diags, &checked, .{ .passes = &.{.{ .name = "cairn", .run = case[0] }} }));
         try std.testing.expectEqual(@as(usize, 1), diags.errors());
         const d = diags.list.items[diags.list.items.len - 1];
-        try std.testing.expectEqual(@as(u32, case[1]), d.span.line);
+        try std.testing.expectEqual(@as(u32, case[1]), tree.place(d.span).line);
         try std.testing.expectEqualStrings(case[2], d.message);
     }
 }

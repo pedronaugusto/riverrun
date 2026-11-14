@@ -1,32 +1,28 @@
 //! The reader's promises over any input: every file reads to a tree or to
-//! diagnostics, never a crash; every diagnostic names a line and column that
-//! are in the file; and every name and expression in the tree is placed
-//! where its word starts, however many spaces stand before it.
+//! diagnostics, never a crash; the tree prints the file back byte for byte;
+//! every node's range lies inside its parent's and apart from its siblings',
+//! the root's is the whole file and every diagnostic's lies inside it; and
+//! every name in the tree is the range its word is written in.
 const std = @import("std");
 const shakedown = @import("shakedown");
 const ast = @import("ast.zig");
 const source = @import("source.zig");
 const parse = @import("parse.zig");
+const print = @import("print.zig");
+const lines = @import("lines.zig");
 
 const testing = std.testing;
 const gen = shakedown.gen;
-
-/// The file's lines, as the reader numbers them.
-fn lineOf(text: []const u8, number: u32) ?[]const u8 {
-    var it = std.mem.splitScalar(u8, text, '\n');
-    var n: u32 = 1;
-    while (it.next()) |l| : (n += 1) if (n == number) return l;
-    return null;
-}
+const Span = source.Span;
 
 /// Checks every name and leading word of an expression in `value` against
-/// the text at its span.
+/// the text in its range.
 fn visit(comptime T: type, value: T, text: []const u8) error{TestUnexpectedResult}!void {
-    if (T == ast.Name) return expectAt(text, value.span, value.text);
+    if (T == ast.Name) return expectAt(text, value.span, value.text, .whole);
     if (T == ast.Expr) switch (value.kind) {
-        .name => |n| try expectAt(text, value.span, n),
-        .call => |c| try expectAt(text, value.span, c.name.text),
-        .boolean => |b| try expectAt(text, value.span, if (b) "true" else "false"),
+        .name => |n| try expectAt(text, value.span, n, .whole),
+        .call => |c| try expectAt(text, value.span, c.name.text, .starts),
+        .boolean => |b| try expectAt(text, value.span, if (b) "true" else "false", .whole),
         else => {},
     };
     switch (@typeInfo(T)) {
@@ -44,14 +40,90 @@ fn visit(comptime T: type, value: T, text: []const u8) error{TestUnexpectedResul
     }
 }
 
-fn expectAt(text: []const u8, span: source.Span, word: []const u8) error{TestUnexpectedResult}!void {
-    if (span.line == 0) return;
-    const line = lineOf(text, span.line) orelse return error.TestUnexpectedResult;
-    const col: usize = span.col - 1;
-    if (col > line.len or !std.mem.startsWith(u8, line[col..], word)) {
-        std.debug.print("`{s}` placed at {d}:{d}, where the line reads `{s}`\n", .{ word, span.line, span.col, line[@min(col, line.len)..] });
+fn expectAt(text: []const u8, span: Span, word: []const u8, how: enum { whole, starts }) error{TestUnexpectedResult}!void {
+    const ok = span.start <= span.end and span.end <= text.len and switch (how) {
+        .whole => std.mem.eql(u8, text[span.start..span.end], word),
+        .starts => std.mem.startsWith(u8, text[span.start..span.end], word),
+    };
+    if (!ok) {
+        std.debug.print("`{s}` placed at {d}..{d}, where the text reads `{s}`\n", .{ word, span.start, span.end, text[@min(span.start, text.len)..@min(@max(span.start, span.end), text.len)] });
         return error.TestUnexpectedResult;
     }
+}
+
+/// Checks that each node under `value` lies inside `parent` and that the nodes beside one another, `siblings`, do
+/// not overlap. A node is a value with a `span`, or a span of its own (a tag's values).
+fn nest(comptime T: type, value: T, parent: Span, siblings: *std.ArrayList(Span), a: std.mem.Allocator) error{ OutOfMemory, TestUnexpectedResult }!void {
+    if (T == Span) return placeIn(value, parent, siblings, a);
+    switch (@typeInfo(T)) {
+        .@"struct" => |s| {
+            if (@hasField(T, "span") and @FieldType(T, "span") == Span) {
+                try placeIn(value.span, parent, siblings, a);
+                var own: std.ArrayList(Span) = .empty;
+                inline for (s.field_names, s.field_types) |name, F| {
+                    if (comptime !std.mem.eql(u8, name, "span")) try nest(F, @field(value, name), value.span, &own, a);
+                }
+                return apart(own.items);
+            }
+            inline for (s.field_names, s.field_types) |name, F| try nest(F, @field(value, name), parent, siblings, a);
+        },
+        .@"union" => |u| if (u.tag_type != null) switch (value) {
+            inline else => |payload| try nest(@TypeOf(payload), payload, parent, siblings, a),
+        },
+        .pointer => |p| switch (p.size) {
+            .one => if (p.child != u8) try nest(p.child, value.*, parent, siblings, a),
+            .slice => if (p.child != u8) for (value) |item| try nest(p.child, item, parent, siblings, a),
+            else => {},
+        },
+        .optional => |o| if (value) |v| try nest(o.child, v, parent, siblings, a),
+        else => {},
+    }
+}
+
+fn placeIn(span: Span, parent: Span, siblings: *std.ArrayList(Span), a: std.mem.Allocator) error{ OutOfMemory, TestUnexpectedResult }!void {
+    if (span.start > span.end or !parent.holds(span)) {
+        std.debug.print("a node at {d}..{d} is outside its parent at {d}..{d}\n", .{ span.start, span.end, parent.start, parent.end });
+        return error.TestUnexpectedResult;
+    }
+    try siblings.append(a, span);
+}
+
+fn apart(spans: []Span) error{TestUnexpectedResult}!void {
+    if (spans.len < 2) return;
+    std.mem.sort(Span, spans, {}, struct {
+        fn less(_: void, x: Span, y: Span) bool {
+            return x.start < y.start or (x.start == y.start and x.end < y.end);
+        }
+    }.less);
+    for (spans[1..], 1..) |s, i| if (spans[i - 1].end > s.start) {
+        std.debug.print("nodes beside one another overlap: {d}..{d} and {d}..{d}\n", .{ spans[i - 1].start, spans[i - 1].end, s.start, s.end });
+        return error.TestUnexpectedResult;
+    };
+}
+
+/// The spans property over a file read from `text`: every node inside its parent and apart from its siblings, the
+/// root the whole input, every diagnostic inside the input.
+fn expectSpans(a: std.mem.Allocator, file: ast.File, diags: *const source.Diagnostics, text: []const u8) !void {
+    try testing.expectEqual(Span{ .file = 0, .start = 0, .end = @intCast(text.len) }, file.span);
+    var top: std.ArrayList(Span) = .empty;
+    try nest(ast.File, file, file.span, &top, a);
+    for (diags.list.items) |d| {
+        try testing.expectEqual(@as(source.FileId, 0), d.span.file);
+        try testing.expect(d.span.start <= d.span.end and d.span.end <= text.len);
+    }
+}
+
+/// The print-back property over a file read from `text`: printed, its tree is `text`, unless the reader refused
+/// the file whole, and then it said so.
+fn expectPrintBack(file: ast.File, diags: *const source.Diagnostics, text: []const u8) !void {
+    var out: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    try print.print(&out.writer, &file);
+    if (std.mem.eql(u8, out.written(), text)) return;
+    const refused = !std.unicode.utf8ValidateSlice(text) or text.len > lines.max_bytes;
+    if (refused and diags.errors() > 0) return;
+    std.debug.print("read:    {any}\nprinted: {any}\n", .{ text, out.written() });
+    return error.TestUnexpectedResult;
 }
 
 fn spaces(s: *shakedown.Source, out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
@@ -96,13 +168,67 @@ fn story(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
     return out.items;
 }
 
-test "any story reads with every name placed where its word starts" {
+/// A story laid out as writers lay them out: comments on rows and rows of comments, blank rows with and without
+/// spaces, tags, spaces at rows' ends, LF and CRLF, a byte-order mark, and no newline at the end.
+fn laidOut(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
+    const rows = [_][]const u8{
+        "cast:",
+        "  mum   \"Mum\"   — her mother   # gender feminine",
+        "facts (life):",
+        "  spot: one of stairs, piano,",
+        "        door",
+        "  met: bool   (game)",
+        "== kitchen   # talk · picture \"a · b\"",
+        "MUM: Go.",
+        "  ~ met = true",
+        "- (ask)",
+        "* { met } Stay.",
+        "  -> ask",
+        "+ Run.   # side go",
+        "{ met } Go.   # id k7f3a2",
+        "{ met }",
+        "  He waits.",
+        "{ else }",
+        "  -> end",
+        "- (back) Home.",
+        "{ met: -> kitchen | -> end }",
+        "->> kitchen",
+        "<-",
+    };
+    var out: std.ArrayList(u8) = .empty;
+    if (gen.intRange(s, u8, 0, 7) == 0) try out.appendSlice(a, source.byte_order_mark);
+    const crlf = gen.intRange(s, u8, 0, 3) == 0;
+    const n = gen.intRange(s, usize, 1, rows.len);
+    const from = gen.intRange(s, usize, 0, rows.len - n);
+    for (rows[from .. from + n], 0..) |row, i| {
+        switch (gen.intRange(s, u8, 0, 7)) {
+            0 => try out.appendSlice(a, "// a writer's note\n"),
+            1 => {
+                try spaces(s, &out, a);
+                try out.append(a, '\n');
+            },
+            else => {},
+        }
+        try out.appendSlice(a, row);
+        if (gen.intRange(s, u8, 0, 3) == 0) {
+            try spaces(s, &out, a);
+            try out.appendSlice(a, " // why");
+        }
+        try spaces(s, &out, a);
+        const last = i + 1 == n;
+        if (last and gen.boolean(s)) break;
+        try out.appendSlice(a, if (crlf or gen.intRange(s, u8, 0, 9) == 0) "\r\n" else "\n");
+    }
+    return out.items;
+}
+
+test "any story reads with every name the range its word is written in" {
     try shakedown.check(testing.allocator, {}, struct {
         fn one(_: void, case: *shakedown.Case) anyerror!void {
             var state: std.heap.ArenaAllocator = .init(testing.allocator);
             defer state.deinit();
             const a = state.allocator();
-            const text = try story(case.source, a);
+            const text = if (gen.boolean(case.source)) try story(case.source, a) else try laidOut(case.source, a);
             var diags: source.Diagnostics = .{};
             defer diags.deinit(testing.allocator);
             const file = try parse.parseFile(a, testing.allocator, &diags, 0, "story.river", text);
@@ -114,35 +240,103 @@ test "any story reads with every name placed where its word starts" {
     }.one, .{ .cases = 2000, .seed = 0x225bc });
 }
 
-test "any bytes read to a tree or diagnostics, each at a line and column in the file" {
+/// What the properties over any bytes read: a story of either kind, its bytes changed, cut and spliced with the
+/// seeds.
+fn anyBytes(s: *shakedown.Source, a: std.mem.Allocator, buffer: []u8) ![]const u8 {
+    const seed = if (gen.boolean(s)) try story(s, a) else try laidOut(s, a);
+    return gen.mutated(s, buffer, &.{
+        seed,
+        "== a\n{ x }\n  ~ y = 1\n-> a\n",
+        "cast:\n  mum: Mum # role\n",
+        "== q\n= a   when { met }\n  * Run.\n= b   when { a > 1 }   -> q\n",
+        "extern:\n  f(x: int) -> int (action) (reads s)\n  g()\n",
+        "== q\n  * Run.\n    # stage\n    ~ x = 1\n",
+        "\u{FEFF}== q   // the start\r\n\r\n  \r\n- (x) * Go.   # id a1  \r\n{ a } -> q",
+    });
+}
+
+test "any bytes read to a tree that prints them back, or are refused whole and said to be" {
     try shakedown.check(testing.allocator, {}, struct {
         fn one(_: void, case: *shakedown.Case) anyerror!void {
             var state: std.heap.ArenaAllocator = .init(testing.allocator);
             defer state.deinit();
             const a = state.allocator();
             var buffer: [512]u8 = undefined;
-            const seed = try story(case.source, a);
-            const text = gen.mutated(case.source, &buffer, &.{
-                seed,
-                "== a\n{ x }\n  ~ y = 1\n-> a\n",
-                "cast:\n  mum: Mum # role\n",
-                "== q\n= a   when { met }\n  * Run.\n= b   when { a > 1 }   -> q\n",
-                "extern:\n  f(x: int) -> int (action) (reads s)\n  g()\n",
-                "== q\n  * Run.\n    # stage\n    ~ x = 1\n",
-            });
+            const text = try anyBytes(case.source, a, &buffer);
             var diags: source.Diagnostics = .{};
             defer diags.deinit(testing.allocator);
-            _ = try parse.parseFile(a, testing.allocator, &diags, 0, "story.river", text);
-            const lines = std.mem.countScalar(u8, text, '\n') + 1;
+            const file = try parse.parseFile(a, testing.allocator, &diags, 0, "story.river", text);
+            try expectPrintBack(file, &diags, text);
+        }
+    }.one, .{ .cases = 3000, .seed = 0x9e1b });
+}
+
+test "any bytes read to a tree whose every node lies inside its parent and apart from its siblings" {
+    try shakedown.check(testing.allocator, {}, struct {
+        fn one(_: void, case: *shakedown.Case) anyerror!void {
+            var state: std.heap.ArenaAllocator = .init(testing.allocator);
+            defer state.deinit();
+            const a = state.allocator();
+            var buffer: [512]u8 = undefined;
+            const text = try anyBytes(case.source, a, &buffer);
+            var diags: source.Diagnostics = .{};
+            defer diags.deinit(testing.allocator);
+            const file = try parse.parseFile(a, testing.allocator, &diags, 0, "story.river", text);
             try testing.expect(diags.list.items.len <= source.max_diagnostics + 1);
-            for (diags.list.items) |d| {
-                if (d.span.line == 0) continue;
-                try testing.expect(d.span.line <= lines);
-                const line = lineOf(text, d.span.line).?;
-                try testing.expect(d.span.col >= 1 and d.span.col <= line.len + 1);
-            }
+            expectSpans(a, file, &diags, text) catch |err| {
+                std.debug.print("{any}\n", .{text});
+                return err;
+            };
         }
     }.one, .{ .cases = 3000, .seed = 0xb17e5 });
+}
+
+test "a file's layout prints back: comments, blank rows, spaces, CRLF, a byte-order mark, no final newline" {
+    const gpa = testing.allocator;
+    const texts = [_][]const u8{
+        "",
+        "\n",
+        "\u{FEFF}",
+        "\u{FEFF}== a\r\n-> end",
+        "// only a comment",
+        "== a   // why   \r\n\r\n   \nMUM: Go.   # id k1 · at 2   // note  \n  ~ x = 1  \n",
+        "== a\n{ met } Go.   # id k2\n- (ask) * Run.   # side go\n",
+    };
+    for (texts) |text| {
+        var arena: std.heap.ArenaAllocator = .init(gpa);
+        defer arena.deinit();
+        var diags: source.Diagnostics = .{};
+        defer diags.deinit(gpa);
+        const file = try parse.parseFile(arena.allocator(), gpa, &diags, 0, "a.river", text);
+        try expectPrintBack(file, &diags, text);
+        try expectSpans(arena.allocator(), file, &diags, text);
+    }
+}
+
+test "every node of the proof lies inside its parent and apart from its siblings, and every name is its word" {
+    inline for (.{ "cast", "1969", "1985", "1998", "years", "wake", "back", "rest" }) |name| {
+        var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        var diags: source.Diagnostics = .{};
+        defer diags.deinit(testing.allocator);
+        const text = @embedFile("testdata/proof/" ++ name ++ ".river");
+        const file = try parse.parseFile(arena.allocator(), testing.allocator, &diags, 0, name ++ ".river", text);
+        try expectSpans(arena.allocator(), file, &diags, text);
+        try visit(ast.File, file, text);
+    }
+}
+
+test "a place is a line and a column worked out from a range, by rows, a byte-order mark aside" {
+    const gpa = testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(gpa);
+    const text = "\u{FEFF}== a\r\n// note\nDAD: Go.\n  ~ x = 1";
+    const file = try parse.parseFile(arena.allocator(), gpa, &diags, 0, "a.river", text);
+    try testing.expectEqual(source.Place{ .line = 1, .col = 4 }, file.place(file.sections[0].name.span));
+    try testing.expectEqual(source.Place{ .line = 3, .col = 1 }, file.place(file.sections[0].body[0].span));
+    try testing.expectEqual(source.Place{ .line = 4, .col = 3 }, file.place(file.sections[0].body[0].kind.line.effects[0].span));
 }
 
 test "a part's `when` with no braces, a word after an extern's marks and a line of tags alone are read, not trapped" {
@@ -151,6 +345,7 @@ test "a part's `when` with no braces, a word after an extern's marks and a line 
         .{ .text = "== q\n= a   when { met\n", .refused = true },
         .{ .text = "extern:\n  f() -> int (action) x\n", .refused = true },
         .{ .text = "== q\n  * Run.\n    # stage\n", .refused = false },
+        .{ .text = "== q\n{ a | b: -> q }\n", .refused = true },
     };
     for (cases) |case| {
         var state: std.heap.ArenaAllocator = .init(testing.allocator);

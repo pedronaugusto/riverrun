@@ -27,11 +27,11 @@ pub const riverrun_builtins = [_][]const u8{ "seen", "since_changed", "happened"
 pub fn run(c: *Checker) Error!void {
     for (c.files, 0..) |*file, i| {
         const module = c.moduleOf(@intCast(i)); // safe: a FileId numbers the files
-        for (file.decls) |*decl| switch (decl.*) {
+        for (file.decls) |*decl| switch (decl.kind) {
             .version => |v| {
-                if (c.version != 0) try c.err(v.span, "the story's version is declared twice: first at {f}", .{c.place(c.version_span)});
-                c.version = v.number;
-                c.version_span = v.span;
+                if (c.version != 0) try c.err(decl.span, "the story's version is declared twice: first at {f}", .{c.place(c.version_span)});
+                c.version = v;
+                c.version_span = decl.span;
             },
             .cast => |entries| for (entries) |*e| try castEntry(c, module, e),
             .extras => |extras| for (extras) |*n| try extra(c, module, n),

@@ -30,7 +30,7 @@ pub fn text(c: *Compiler, id: []const u8, t: ast.Text) Error!story.TextId {
 }
 
 fn pieces(c: *Compiler, w: *Writing, t: ast.Text) Error!void {
-    for (t) |*piece| switch (piece.*) {
+    for (t) |*piece| switch (piece.kind) {
         .literal => |s| for (s) |ch| {
             if (ch == '\\' or ch == '{' or ch == '}' or ch == '|') try w.template.append(c.arena, '\\');
             try w.template.append(c.arena, ch);

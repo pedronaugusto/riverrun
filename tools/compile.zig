@@ -70,7 +70,9 @@ fn report(io: std.Io, diags: *const syntax.Diagnostics, trees: []const syntax.as
             .err => "error",
             .warning => "warning",
         };
-        try err.interface.print("{s}:{d}:{d}: {s}: {s}\n", .{ trees[d.span.file].path, d.span.line, d.span.col, severity, d.message });
+        const tree = &trees[d.span.file];
+        const at = tree.place(d.span);
+        try err.interface.print("{s}:{d}:{d}: {s}: {s}\n", .{ tree.path, at.line, at.col, severity, d.message });
     }
     try err.interface.flush();
     return @intFromBool(diags.errors() > 0);

@@ -24,9 +24,9 @@ pub const Path = struct {
     ordinal: u32,
 };
 
-/// Gives the line or choice `stmt` its id, from `tagged` (its own tags, or those of the line it stands on).
-pub fn give(c: *Checker, stmt: *const ast.Stmt, tagged: []const ast.Tag, path: Path, speaker: ?[]const u8, text: ast.Text) Error!void {
-    const id: sym.LineId = if (try written(c, tagged)) |w| .{ .text = w, .written = true } else switch (c.options.mode) {
+/// Gives the line or choice `stmt` its id, from its tags.
+pub fn give(c: *Checker, stmt: *const ast.Stmt, path: Path, speaker: ?[]const u8, text: ast.Text) Error!void {
+    const id: sym.LineId = if (try written(c, stmt.tags)) |w| .{ .text = w, .written = true } else switch (c.options.mode) {
         .release => return c.err(stmt.span, "a release needs every line's `# id`: `riverrun tag` writes them", .{}),
         .development => .{ .text = try derive(c, path, speaker, text), .written = false },
     };
@@ -79,7 +79,7 @@ pub fn derive(c: *Checker, path: Path, speaker: ?[]const u8, text: ast.Text) Err
 }
 
 fn words(h: *std.hash.Wyhash, text: ast.Text) void {
-    for (text) |piece| switch (piece) {
+    for (text) |piece| switch (piece.kind) {
         .literal => |s| h.update(s),
         .value => h.update("{}"),
         .choose => |ch| {
@@ -106,9 +106,9 @@ test "a derived id is stable and moves with the words" {
     defer diags.deinit(std.testing.allocator);
     var c: Checker = .{ .gpa = std.testing.allocator, .arena = arena.allocator(), .diags = &diags, .files = &.{}, .options = .{} };
     const path: Path = .{ .section = "kitchen_1985", .part = null, .ordinal = 2 };
-    const go: ast.Text = &.{.{ .literal = "Go." }};
+    const go: ast.Text = &.{.{ .span = .none, .kind = .{ .literal = "Go." } }};
     const a = try derive(&c, path, "dad", go);
     try std.testing.expectEqualStrings(a, try derive(&c, path, "dad", go));
-    try std.testing.expect(!std.mem.eql(u8, a, try derive(&c, path, "dad", &.{.{ .literal = "Go on." }})));
+    try std.testing.expect(!std.mem.eql(u8, a, try derive(&c, path, "dad", &.{.{ .span = .none, .kind = .{ .literal = "Go on." } }})));
     try std.testing.expectEqual(@as(usize, 17), a.len);
 }

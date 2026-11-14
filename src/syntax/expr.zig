@@ -18,10 +18,10 @@ pub const max_depth = 32;
 
 pub const Error = error{ OutOfMemory, Invalid };
 
-/// Reads `text`, which sits at `at` in its file, into an expression in `arena`.
-/// A problem is reported to `diags` and returns `error.Invalid`.
-pub fn parse(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagnostics, text: []const u8, at: source.Span) Error!*const ast.Expr {
-    var p: Parser = .{ .arena = arena, .gpa = gpa, .diags = diags, .text = text, .at = at };
+/// Reads `words`, of file `file`, into an expression in `arena`. A problem is reported to `diags` and returns
+/// `error.Invalid`. Each node's span is the range it is written in, an operator's from its left side to its right.
+pub fn parse(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagnostics, file: source.FileId, words: source.Placed) Error!*const ast.Expr {
+    var p: Parser = .{ .arena = arena, .gpa = gpa, .diags = diags, .file = file, .text = words.text, .at = words.at };
     const e = try p.orExpr(0);
     p.space();
     if (p.i != p.text.len) return p.fail("unexpected `{s}` after the expression", .{p.text[p.i..]});
@@ -32,16 +32,21 @@ const Parser = struct {
     arena: std.mem.Allocator,
     gpa: std.mem.Allocator,
     diags: *source.Diagnostics,
+    file: source.FileId,
     text: []const u8,
-    at: source.Span,
+    /// Where `text` starts in its file.
+    at: u32,
     i: usize = 0,
 
-    fn span(p: *const Parser) source.Span {
-        return .{ .file = p.at.file, .line = p.at.line, .col = p.at.col + @as(u32, @intCast(p.i)) };
+    // Where the parser stands in the file.
+    fn here(p: *const Parser) u32 {
+        return p.at + @as(u32, @intCast(p.i)); // safe: the text is a part of a file of at most lines.max_bytes
     }
 
+    // A problem with what is left, from where the parser stands.
     fn fail(p: *Parser, comptime fmt: []const u8, args: anytype) Error {
-        try p.diags.add(p.gpa, p.span(), .err, fmt, args);
+        const end = p.at + @as(u32, @intCast(p.text.len)); // safe: as `here`
+        try p.diags.add(p.gpa, .{ .file = p.file, .start = p.here(), .end = end }, .err, fmt, args);
         return error.Invalid;
     }
 
@@ -49,9 +54,10 @@ const Parser = struct {
         while (p.i < p.text.len and p.text[p.i] == ' ') p.i += 1;
     }
 
-    fn node(p: *Parser, at: source.Span, kind: @FieldType(ast.Expr, "kind")) Error!*const ast.Expr {
+    // A node from `start` to where the parser stands, past all it is made of.
+    fn node(p: *Parser, start: u32, kind: @FieldType(ast.Expr, "kind")) Error!*const ast.Expr {
         const e = try p.arena.create(ast.Expr);
-        e.* = .{ .span = at, .kind = kind };
+        e.* = .{ .span = .{ .file = p.file, .start = start, .end = p.here() }, .kind = kind };
         return e;
     }
 
@@ -76,7 +82,7 @@ const Parser = struct {
         var lhs = try p.andExpr(depth + 1);
         while (true) {
             if (!p.keyword("or")) return lhs;
-            lhs = try p.node(lhs.span, .{ .binary = .{ .op = .@"or", .lhs = lhs, .rhs = try p.andExpr(depth + 1) } });
+            lhs = try p.node(lhs.span.start, .{ .binary = .{ .op = .@"or", .lhs = lhs, .rhs = try p.andExpr(depth + 1) } });
         }
     }
 
@@ -84,13 +90,14 @@ const Parser = struct {
         var lhs = try p.notExpr(depth + 1);
         while (true) {
             if (!p.keyword("and")) return lhs;
-            lhs = try p.node(lhs.span, .{ .binary = .{ .op = .@"and", .lhs = lhs, .rhs = try p.notExpr(depth + 1) } });
+            lhs = try p.node(lhs.span.start, .{ .binary = .{ .op = .@"and", .lhs = lhs, .rhs = try p.notExpr(depth + 1) } });
         }
     }
 
     fn notExpr(p: *Parser, depth: usize) Error!*const ast.Expr {
         if (depth > max_depth) return p.fail("the expression nests deeper than {d}", .{max_depth});
-        const at = p.span();
+        p.space();
+        const at = p.here();
         if (p.keyword("not")) return p.node(at, .{ .not = try p.notExpr(depth + 1) });
         return p.relExpr(depth + 1);
     }
@@ -100,8 +107,7 @@ const Parser = struct {
         p.space();
         const op: ?ast.Expr.Op = if (p.eat("!=")) .ne else if (p.eat("<=")) .le else if (p.eat(">=")) .ge else if (p.eat("<")) .lt else if (p.eat(">")) .gt else if (p.eat("=")) .eq else if (p.keyword("hasnt")) .hasnt else if (p.keyword("has")) .has else null;
         const o = op orelse return lhs;
-        // an expression is placed where it starts, so a diagnostic about it points at its first word
-        return p.node(lhs.span, .{ .binary = .{ .op = o, .lhs = lhs, .rhs = try p.atom(depth + 1) } });
+        return p.node(lhs.span.start, .{ .binary = .{ .op = o, .lhs = lhs, .rhs = try p.atom(depth + 1) } });
     }
 
     fn eat(p: *Parser, s: []const u8) bool {
@@ -114,7 +120,7 @@ const Parser = struct {
     fn atom(p: *Parser, depth: usize) Error!*const ast.Expr {
         if (depth > max_depth) return p.fail("the expression nests deeper than {d}", .{max_depth});
         p.space();
-        const at = p.span();
+        const at = p.here();
         if (p.i == p.text.len) return p.fail("an expression is missing here", .{});
         const c = p.text[p.i];
         if (c == '(') {
@@ -151,7 +157,8 @@ const Parser = struct {
                     if (!p.eat(",")) return p.fail("expected `,` or `)` in the call to `{s}`", .{word});
                 }
             }
-            return p.node(at, .{ .call = .{ .name = .{ .text = word, .span = at }, .args = try args.toOwnedSlice(p.arena) } });
+            const name: ast.Name = .{ .text = word, .span = .{ .file = p.file, .start = at, .end = at + @as(u32, @intCast(word.len)) } }; // safe: as `here`
+            return p.node(at, .{ .call = .{ .name = name, .args = try args.toOwnedSlice(p.arena) } });
         }
         return p.node(at, .{ .name = word });
     }
@@ -166,7 +173,7 @@ pub fn isWord(c: u8) bool {
 fn testParse(text: []const u8) !struct { arena: std.heap.ArenaAllocator, diags: source.Diagnostics, expr: ?*const ast.Expr } {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     var diags: source.Diagnostics = .{};
-    const e = parse(arena.allocator(), std.testing.allocator, &diags, text, .{ .file = 0, .line = 1, .col = 1 }) catch |err| switch (err) {
+    const e = parse(arena.allocator(), std.testing.allocator, &diags, 0, .{ .text = text, .at = 0 }) catch |err| switch (err) {
         error.Invalid => null,
         else => return err,
     };
@@ -194,7 +201,7 @@ test "a broken expression is reported where it breaks" {
     try std.testing.expectEqual(@as(usize, 1), r.diags.errors());
 }
 
-test "ints are ordered, and an expression is placed where it starts" {
+test "ints are ordered, and an expression is placed where it is written" {
     var r = try testParse("since(asked, day) >= 3 and hour < 6");
     defer r.arena.deinit();
     defer r.diags.deinit(std.testing.allocator);
@@ -202,8 +209,9 @@ test "ints are ordered, and an expression is placed where it starts" {
     try std.testing.expectEqual(ast.Expr.Op.@"and", e.kind.binary.op);
     try std.testing.expectEqual(ast.Expr.Op.ge, e.kind.binary.lhs.kind.binary.op);
     try std.testing.expectEqual(ast.Expr.Op.lt, e.kind.binary.rhs.kind.binary.op);
-    try std.testing.expectEqual(@as(u32, 1), e.span.col);
-    try std.testing.expectEqual(@as(u32, 28), e.kind.binary.rhs.span.col);
+    try std.testing.expectEqual(source.Span{ .file = 0, .start = 0, .end = 35 }, e.span);
+    try std.testing.expectEqual(source.Span{ .file = 0, .start = 27, .end = 35 }, e.kind.binary.rhs.span);
+    try std.testing.expectEqual(source.Span{ .file = 0, .start = 0, .end = 5 }, e.kind.binary.lhs.kind.binary.lhs.kind.call.name.span);
 }
 
 test "a name may be qualified by its module" {
@@ -230,7 +238,7 @@ test "any bytes are read or refused, never crash" {
             defer arena.deinit();
             var diags: source.Diagnostics = .{};
             defer diags.deinit(std.testing.allocator);
-            _ = parse(arena.allocator(), std.testing.allocator, &diags, bytes, .{ .file = 0, .line = 1, .col = 1 }) catch |err| switch (err) {
+            _ = parse(arena.allocator(), std.testing.allocator, &diags, 0, .{ .text = bytes, .at = 0 }) catch |err| switch (err) {
                 error.OutOfMemory => return err,
                 else => {},
             };
