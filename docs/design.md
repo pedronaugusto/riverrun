@@ -163,10 +163,11 @@ row, and a row of brackets holds brackets and nothing else (a comment aside):
 
 - **a tag,** `[key]` or `[key value, value]`: a key and its values, separated by commas. A quoted value is words,
   and holds `,`, `]` and `//` as words: `[line "the scholarship · the city"]`.
-- **an effect:** `[fact = value]`, `[set += item]`, `[set -= item]`, `[int += n]` and `[int -= n]` (a number or an
-  int constant, never an expression: approval, bonds, reputation), `[action(args)]` and `[fact = action(args)]`. In
-  brackets `=`, `+=` and `-=` tell; in braces `=` asks. `=` means "equals" in both, and the delimiter says whether
-  it is asked or told.
+- **an effect:** `[fact = value]`, `[set += item]`, `[set -= item]`, `[int += n]` and `[int -= n]` (any int: a
+  number, a constant, a fact, a query's answer or a sum of them, `[trust += favour]`: approval, bonds, reputation),
+  `[action(args)]` and `[fact = action(args)]`. In brackets `=`, `+=` and `-=` tell; in braces `=` asks. `=` means
+  "equals" in both, and the delimiter says whether it is asked or told. The left of `=`, `+=` and `-=` is the one
+  fact the effect writes, never a sum: `[a + b = 3]` is an error saying so.
 
 What a bracket is, the reader decides by its form: a name followed by `(`, or by `=`, `+=` or `-=`, is an effect;
 any other name is a tag's key. So `[cutscene x]` is a tag and `[cutscene(x)]` an action. The host's vocabulary
@@ -218,9 +219,42 @@ the package that defines the key (`[every week]` names one of a calendar's units
   Nesting is by indentation alone.
 - **Conditions:** `{ condition } line` for one line; `{ condition }` above an indented block, with `{ else }` after
   it. Inline conditions are for words, blocks for whole lines.
-- **Expressions:** `=`, `!=`, `<`, `<=`, `>`, `>=` on ints, `has` and `hasnt` on sets, `and`, `or`, `not`, queries,
-  `seen(name)`, the visits of a section, part or label (an int; true when above zero), and in rules
-  `since_changed(fact, clock)`. No arithmetic and nothing that loops: the host computes, through its queries.
+- **Expressions:** `=`, `!=`, `<`, `<=`, `>`, `>=` on ints, `+` and `-` between them (below), `has` and `hasnt`
+  on sets, `and`, `or`, `not`, queries, `seen(name)`, the visits of a section, part or label (an int; true when
+  above zero), and in rules `since_changed(fact, clock)`. No multiplication, division or loops: the host computes,
+  through its queries.
+
+### Counting: `+` and `-`
+
+A story counts and compares its own state with integer addition and subtraction: `{ coins >= fee + tip }`,
+`{ day >= promised_on + tolerance }`, `[trust += favour]`, `DAD: That's {owed - paid} you still owe me.` A number
+the writer wants named is a constant or a fact, so `promised_on + tolerance` rather than `promised_on + 3`.
+
+- **Between ints:** int facts (a bounded one, a clock, one kept per thing read for a key), int constants, numbers,
+  the answers of queries that return an int, `seen(name)`, `since_changed(…)` and a package's int builtins. Anything
+  else beside `+` or `-` is an error naming what it is.
+- **Where an int stands:** either side of a comparison in a condition, `{ … }`; the right of an effect, `[fact = …]`,
+  `[int += …]`, `[int -= …]`; a value a line says, `{owed - paid}`, or chooses its words by, `{owed - paid as one: …
+  | other: …}`; an argument of a query that takes an int. A sum is never a condition on its own, never a
+  constant (a constant is a value written), and never the fact an effect writes.
+- **How it binds:** tighter than the comparisons, left to right: `a - b + c >= d` is `((a - b) + c) >= d`. Parentheses
+  group, as they group conditions: `a - (b + c)`. A number may be written negative, `-3`; a `-` before a name is an
+  error, which `0 - x` writes.
+- **What stays the game's:** `*`, `/` and `%` are errors that name the boundary: a formula (a rate, a scaling, a
+  percentage, a price with its discount) is the game's, asked for by name through a query in `extern:`. So is
+  anything that loops: the story's flow already loops, through `-> ask`, sticky choices, rules and calls.
+- **Exact:** an int is 64 bits, and a sum or a difference that leaves them is a named error at run time,
+  `Overflow`, never a wrap. A change, `+=` or `-=`, that would carry a bounded fact past its range stops at the
+  nearer end, and a set, `=`, past it is refused, whatever the value is written as. A sum is worked out from the
+  facts each time it is read and kept nowhere but in the fact an effect writes, so saves and replays hold what they
+  held.
+- **What the checker proves:** each int expression's least and most. A number and a constant are themselves; a
+  bounded fact is its bounds and 0, which it holds until it is first set; any other int is anything 64 bits hold;
+  a sum adds its sides' least and most, a difference takes the other side's most from its least and its least from
+  its most. A comparison whose sides cannot meet is decided: `{ a + b > 300 }` with `a` and `b` from 0 to 100 can
+  never hold, so a choice gated on it is reported as never offered. A sum that lies wholly past 64 bits is an
+  error, since it always overflows; one made of bounded facts, constants and numbers is proved never to. Where an
+  int is unbounded the checker decides less, and it never decides wrongly.
 
 ### Flow
 
@@ -276,8 +310,9 @@ A conversation with several speakers needs no construct of its own:
 ## Facts
 
 - **Bounded ints,** `honor: int from -100 to 100`: a change stops at the nearer end, a set past the bounds is
-  refused (by the checker where the value is a number or a constant, by the store at run time), and a save restored
-  under tighter bounds holds its value at the nearer end and reports it. Honor, karma, approval, reputation.
+  refused (by the checker where every value the expression can have lies past them, by the store at run time), and
+  a save restored under tighter bounds holds its value at the nearer end and reports it. Honor, karma, approval,
+  reputation.
 - **Types:** `bool`, `int`, `one of …`, `set of …`, text (only for names the player types), and `ref of kind`,
   the host's handle for one of its things. A story names things by stable text ids, resolved to handles once at
   load; a snapshot saves a named thing by its id, so a host may renumber its handles, and any other ref by its
@@ -319,7 +354,8 @@ every diagnostic as `file:line:col: severity: message`.
    - every section reachable from where the host starts the story (its `entries`) and from every section of a
      registered kind, which its package runs and no vocabulary lists, a section a tag names counting as an edge;
    - no path that runs off a scene without `-> end`, a return, a jump or a tag that leads on;
-   - no choice whose condition can never hold, where that is decidable;
+   - no choice whose condition can never hold, where that is decidable: from constants, enumerations, and the
+     least and most of ints ("Counting");
    - `(game)` facts never set by the story, and a story fact nothing sets;
    - tags against the host's schema, so a typo fails with a file and a line;
    - text width against the host's limit, measured by xenoglyph;
@@ -471,8 +507,9 @@ saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapsho
   every step, so a step allocates nothing once the arena has grown; what a step hands over is valid until that
   flow's next step.
 - **Every bound is a named error:** call depth 64 (calls, interruptions and pools together), choices at a point 32,
-  candidates given at once 8, outcomes owed by one step 8, facts 65,535, flows 16, and a step walking 100,000 nodes
-  without saying anything (`NoProgress`, a loop of jumps).
+  candidates given at once 8, outcomes owed by one step 8, facts 65,535, flows 16, a sum or a difference past what
+  64 bits hold (`Overflow`), and a step walking 100,000 nodes without saying anything (`NoProgress`, a loop of
+  jumps).
 
 Built.
 
@@ -492,9 +529,12 @@ What happens when facts change, rather than when a flow is told, is the `react` 
 
 - **`Watch` evaluates a condition only when what it reads may have changed.** A condition is filed under every
   fact it reads, under the stamp of every query it asks (by the query's keyed arguments where they are constants in
-  the condition, else by the stamp's family), and, where it compares a `(clock)` fact, a `since_changed` or a
-  builtin whose answer moves with a clock (`Builtin.moves`, cairn's `since` over a day) with a number, under the
-  clock's value where that comparison can next flip, in a heap per clock. A condition may be watched for a thing
+  the condition, else by the stamp's family), and, where a comparison reads a `(clock)` fact, a `since_changed` or a
+  builtin whose answer moves with a clock (`Builtin.moves`, cairn's `since` over a day) once, added or subtracted
+  among anything else, under the clock's value where that comparison can next flip, in a heap per clock:
+  `hour >= arrived + 3` waits for `hour` to reach `arrived + 3`, and is filed anew each time it is evaluated, so
+  when `arrived` changes it waits for the new value. A comparison that reads two clocks, or one clock twice, is
+  filed under each clock and wakes when either moves. A condition may be watched for a thing
   (`this`, a quest's instance) and given roles, constants to it, so `alive(giver)` is filed under its giver's key
   alone; one removed is taken out of all it was filed under, and its id is the next one's. A step takes what
   changed (the store's stamps, the stamps the host bumped, the clocks' moves) and evaluates what was filed there,
