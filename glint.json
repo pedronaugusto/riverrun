@@ -5,7 +5,7 @@
       "rules": [
         "A009"
       ],
-      "reason": "the program's one read: the .river files a writer or the build names, each under the reader's limit, for the parser, which takes any bytes"
+      "reason": "the program's reads: the .river files and a play's script a writer or the build names, each under the reader's limit, for the parser and the play's reader, which take any bytes; and the rows a player types into `riverrun play` or a script gives on standard input, each read as text by the play's reader, which refuses what it cannot take"
     },
     {
       "file": "src/run/host.zig",
