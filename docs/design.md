@@ -14,7 +14,9 @@ it.
 
 ## The language
 
-A `.river` file is plain UTF-8 a writer reads top to bottom, indented by spaces:
+A `.river` file is plain UTF-8 a writer reads top to bottom, indented by spaces. Words stand bare; what is for the
+game falls into three delimiters, each with one meaning: `{ … }` the story asks, `[ … ]` the game is told, `( … )`
+qualifies what stands before it. `->` is flow and nothing else, and the structure is Ink's weave on indentation.
 
 ```
 cast:
@@ -25,10 +27,13 @@ facts (player):
 facts (life):
   spot: one of stairs, piano, door, landing   (game)
 
-== hide_1969                                 # listen · count 20
-MUM: You could still play, Frank.            # id k7f3a2 · at 9.5 · heard piano, door, landing
-  ~ carried += play
-DAD: Who'd listen?                           # id m2c9qd · at 12.5 · heard piano
+== hide_1969
+  [listen] [count 20]
+MUM: You could still play, Frank. ^k7f3a2
+  [at 9.5] [heard piano, door, landing]
+  [carried += play]
+DAD (quietly): Who'd listen? ^m2c9qd
+  [at 12.5] [heard piano]
 
 == kitchen_1985
 DAD: Go.
@@ -36,57 +41,178 @@ DAD: Go.
 * Who'll run the shop?
   DAD: I ran it before you could walk.
 * { carried has play } You could still play, Dad.
+  [known play]
   DAD: Who'd listen?
   -> ask
 * Pick up the case.
   -> fork_1985
 ```
 
-- **Declarations**, seen by every file of the story:
-  - `cast:` ids with a display name, a note after `—` and tags; `extras:` people who speak once and need no name. A
-    speaker that is neither is an error.
-  - `facts (scope):` typed facts in a scope the host names; `(game)` marks a fact only the host writes,
-    `(clock)` an int it only advances, and `(moment)` what happened (a lever pulled, a shot heard), held until rules
-    and quests have seen it and never saved. Only they read a moment; `happened(m)` asks whether one happened at
-    all, its value aside.
-  - `ref of kind` is a type for one of the host's things (a person, an item kind, a place), named in the story by
-    its stable id (`wolf_pelt`) and checked against the host's manifest.
-  - **A fact kept per thing,** `opinion(person): int` or `mood(one of calm, angry): bool`, holds a value for each
-    thing of a kind, or each value of an enumeration: read `opinion(marta) < 0`, written `~ opinion(wife) -= 50`,
-    its key a thing's id, a ref fact or a value. It is stored sparsely, a value only for the keys set, each with its
-    own stamp, so a rule reading `killed(hank)` wakes when hank's value moves and no other's. It is never a clock, a
-    moment or text.
-  - `const:` fixed points every run shares (`dies_at = "ten past nine"`).
-  - `extern:` the host's vocabulary. `name(params) -> type` is a **query**, pure and callable anywhere; `name(params)`
-    is an **action**, run when its line is reached; `name(params) -> type (action)` is an action with an **outcome**
-    the host decides (a roll, a check, a fight). Parameters may be named (`kind: ref of item_kind, n: int`); a
-    query declares the stamp of what it reads, keyed by its parameters, `(reads stock(kind))`, so whatever
-    evaluates it can be woken when that changes.
+### Rows
+
+A file is rows. A row's words are what follows its indentation, up to its comment; a row is one of these, by how
+its words begin:
+
+- **a declaration** at indentation zero: `version:`, `cast:`, `extras:`, `facts:` or `facts (scope):`, `const:`,
+  `extern:`, and `module name` on the first row;
+- **a heading:** `== name` a section, `= name` a part of one;
+- **a row of brackets,** words that begin with `[`: direction for the game (below);
+- **a statement:** a line, a choice (`*`, `+`), a gather (`-`), a condition (`{ … }`, `{ else }`) or a flow (`->`,
+  `<-`).
+
+Indentation is spaces. What is indented under a row, deeper than it, belongs to it. `//` after a space, or at the
+start of the words, begins a comment, which runs to the row's end; inside a bracket's quotes it is words. A row's
+line ending is LF or CRLF. A control character in a row (a carriage return on its own, a NUL, any C0 or C1 control
+but a tab, or DEL) is an error over that byte; the row is kept as it is written.
+
+### Declarations
+
+Seen by every file of the story:
+
+- `cast:` ids with a display name, a note after `—`, and tags in brackets on rows indented under the entry:
+  ```
+  cast:
+    marta  "Marta"  — the merchant
+      [gender feminine]
+  ```
+  `extras:` people who speak once and need no name, separated by commas: `extras: a student, the youngest`. A
+  speaker that is neither is an error. A cast entry takes tags, never effects.
+- `facts (scope):` typed facts in a scope the host names; `(game)` marks a fact only the host writes,
+  `(clock)` an int it only advances, and `(moment)` what happened (a lever pulled, a shot heard), held until rules
+  and quests have seen it and never saved. Only they read a moment; `happened(m)` asks whether one happened at
+  all, its value aside.
+- `ref of kind` is a type for one of the host's things (a person, an item kind, a place), named in the story by
+  its stable id (`wolf_pelt`) and checked against the host's manifest.
+- **A fact kept per thing,** `opinion(person): int` or `mood(one of calm, angry): bool`, holds a value for each
+  thing of a kind, or each value of an enumeration: read `opinion(marta) < 0`, written `[opinion(wife) -= 50]`,
+  its key a thing's id, a ref fact or a value. It is stored sparsely, a value only for the keys set, each with its
+  own stamp, so a rule reading `killed(hank)` wakes when hank's value moves and no other's. It is never a clock, a
+  moment or text.
+- `const:` fixed points every run shares (`dies_at = "ten past nine"`).
+- `extern:` the host's vocabulary. `name(params) -> type` is a **query**, pure and callable anywhere; `name(params)`
+  is an **action**, run when its line is reached; `name(params) -> type (action)` is an action with an **outcome**
+  the host decides (a roll, a check, a fight). Parameters may be named (`kind: ref of item_kind, n: int`); a
+  query declares the stamp of what it reads, keyed by its parameters, `(reads stock(kind))`, so whatever
+  evaluates it can be woken when that changes.
+- A list, of a type's values, an extern's parameters, a stamp's keys or `extras:`, is separated by commas.
 - **Modules.** A file may begin `module name`; what it declares is `name.x` to other modules, and an unqualified
   name resolves in its own module first, then the root; in a section whose kind declares names within it, the
   section's own come before both. *Protects:* hundreds of files and many writers without clashes.
 - **A story's version,** `version: 3`, which migration rules count from.
-- **Sections:** `== name`, with nested `= name`. A section may have a kind: `(pool)`, `(pool N)`, or a kind a
-  package registers with the compiler, such as a quest package's `(quest)`. Under its heading a section may declare
-  facts of its own, `facts:` or `facts (scope):`, named within it: `asked` inside, `the_stranger.asked` to the rest
-  of the story. Among them `(role)` marks one of the things the section is about, given to it when it starts (a
-  quest's stranger), which the story reads and never sets. A registered kind may keep its sections per thing
-  (`Kind.per`: a quest that runs many times, one instance a thing): every fact such a section declares within it is
-  kept per that kind of thing, and read and written inside it for the one it is evaluated for, so `asked` there is
-  this instance's, and `bounty.asked(lead)` names another's.
-- **Lines:** `SPEAKER: text`, or narration with no speaker. The text is the whole line, never assembled from pieces at
-  run time; it holds:
-  - `{fact}`, a value;
-  - `{ condition: these words | those words }`, words chosen by a condition;
-  - `{seq: a | b | c}`, `{cycle: …}`, `{once: …}` and `{shuffle: …}`, alternatives, each keeping its own
-    state in the `story` scope (a shuffle needs more than a count);
-  - `{pelts -> one: a pelt | other: {pelts} pelts}`, words chosen by a number's plural category, and
-    `{marta -> feminine: she | other: they}` by a gender: a cast member's, from its `# gender` tag, or a thing's,
-    which the host answers. The labels are CLDR's (`zero`, `one`, `two`, `few`, `many`, `other`) or the genders
-    (`masculine`, `feminine`, `neuter`, `other`), each language's string table labels its own, and `other`,
-    which every language falls back to, is required.
-- **A line's own effects** are indented under it and happen when the host delivers the line. A host that does not
-  deliver it does not apply them: a memory overheard in hide and seek is carried only if the line is heard.
+
+### Sections and parts
+
+`== name`, with nested `= name`. A section may have a kind in parentheses after its name: `(pool)`, `(pool N)`,
+`(rules)`, or a kind a package registers with the compiler, such as a quest package's `(quest)`. Its tags stand
+in brackets on rows indented under its heading:
+
+```
+== the_stranger (quest)
+  [title "Who was he?"] [scope player]
+facts (player):
+  asked: set of margaret, tom, danny
+
+= noticed      when { met }
+  [stage] [active spawn_stranger]
+  A man nobody knows stood at the foot of the coffin. ^q1a9
+```
+
+Under its heading a section may declare facts of its own, `facts:` or `facts (scope):`, named within it: `asked`
+inside, `the_stranger.asked` to the rest of the story. Among them `(role)` marks one of the things the section is
+about, given to it when it starts (a quest's stranger), which the story reads and never sets. A registered kind
+may keep its sections per thing (`Kind.per`: a quest that runs many times, one instance a thing): every fact such a
+section declares within it is kept per that kind of thing, and read and written inside it for the one it is
+evaluated for, so `asked` there is this instance's, and `bounty.asked(lead)` names another's.
+
+A part's body is indented under its heading. A part may be written on one row, `= ruth  when { kept has ruth }  She
+sat up with whoever was ill.`, and then what is indented under that row belongs to its statement.
+
+### Lines
+
+`SPEAKER: text`, or narration with no speaker. A speaker is capitals, digits, `_` and spaces before `:`, and may
+carry a **delivery** in parentheses, the screenwriter's parenthetical: `DAD (quietly): I'd do it again.` The
+line's text is exactly what follows `:`, never assembled from pieces at run time; it holds:
+
+- `{fact}`, a value;
+- `{ condition: these words | those words }`, words chosen by a condition;
+- `{seq: a | b | c}`, `{cycle: …}`, `{once: …}` and `{shuffle: …}`, alternatives, each keeping its own state in the
+  `story` scope (a shuffle needs more than a count);
+- `{pelts as one: a pelt | other: {pelts} pelts}`, words chosen by a number's plural category, and
+  `{marta as feminine: she | other: they}` by a gender: a cast member's, from its `[gender …]` tag, or a thing's,
+  which the host answers. The labels are CLDR's (`zero`, `one`, `two`, `few`, `many`, `other`) or the genders
+  (`masculine`, `feminine`, `neuter`, `other`), each language's string table labels its own, and `other`, which
+  every language falls back to, is required.
+
+`\{`, `\}`, `\[`, `\^` and `\#` write the mark itself, so a narration row that begins with a bracket is written
+`\[`, and words that end in `^word` are written `\^word`.
+
+**A line's id** is `^` and the id at the end of its row, after one space or more: `MUM: You could still play,
+Frank. ^k7f3a2`. Letters, digits, `_` and `-`. It is riverrun's reserved `id` tag, which `riverrun tag` writes and
+nobody types; a choice takes one the same way. An id anywhere else is an error.
+
+**The delivery** fills one tag of the line: of the key the host's `Options.delivery` names, typed by the host's
+schema like any key. A closed list (`(laughing)`, `(whisper)`) is checked, so a typo fails the build, and the game
+animates or voices it; a key typed as text puts the words (`(laughing manically)`) in the string table beside the
+line, for actors, captioners and translators. The words in the parentheses are the tag's one value, commas and all.
+A delivery where the host names no key is an error.
+
+### Brackets: what the game is told
+
+`[ … ]` holds one thing for the game: a **tag** or an **effect**. Brackets stand on rows of their own, several to a
+row, and a row of brackets holds brackets and nothing else (a comment aside):
+
+- **a tag,** `[key]` or `[key value, value]`: a key and its values, separated by commas. A quoted value is words,
+  and holds `,`, `]` and `//` as words: `[line "the scholarship · the city"]`.
+- **an effect:** `[fact = value]`, `[set += item]`, `[set -= item]`, `[int += n]` and `[int -= n]` (a number or an
+  int constant, never an expression: approval, bonds, reputation), `[action(args)]` and `[fact = action(args)]`. In
+  brackets `=`, `+=` and `-=` tell; in braces `=` asks. `=` means "equals" in both, and the delimiter says whether
+  it is asked or told.
+
+What a bracket is, the reader decides by its form: a name followed by `(`, or by `=`, `+=` or `-=`, is an effect;
+any other name is a tag's key. So `[cutscene x]` is a tag and `[cutscene(x)]` an action. The host's vocabulary
+declares each name one or the other, never both: an extern action whose name is a key of the host's schema, or of
+a registered kind's, is an error at the extern; a tag whose key is an action's name, and an effect that calls a
+key's name, are errors naming the form that was meant.
+
+**Whose a bracket is.** The rows of brackets indented directly under a row, before anything else under it, belong
+to that row:
+
+- under a **section's heading,** its tags. An effect there is an error: a section's effects are steps, written at
+  its level.
+- under a **part's heading,** its tags, and its effects are the part's first step (a rule's body is its effects).
+- under a **line,** its tags, and its effects, which happen when the host delivers the line: a host that does not
+  deliver it does not apply them, so a memory overheard in hide and seek is carried only if the line is heard.
+  Nothing but brackets stands under a line. A statement written on the row of a condition or a gather
+  (`{ met } Go.`, `- In the morning.`) is the row's, and the brackets under the row are its.
+- under a **choice,** its tags, and its effects, which are its first step once it is chosen.
+- under a **cast entry,** its tags; an effect there is an error.
+
+Anywhere else, at a section's level, inside a condition's block, under a choice after a line, a row of brackets
+is an **effects step,** its effects in order, and a tag there is an error: indent it under the line, the choice or
+the heading it describes. Nothing is indented under a row of brackets.
+
+```
+== courier_day12
+  [at day 12 evening] [courier]
+[cutscene(courier_at_the_gate)]
+A COURIER: Letter for you. Signed L. There's a fee on it, mind.
+* Pay the fee.
+  [paid = pay_fee(5)]
+  { paid }
+    A COURIER: Pleasure doing business.
+    [give(letter_from_l)]
+    [letter = carried]
+```
+
+`id` is riverrun's: a line's id, written `^id`, never `[id …]`; so are `gender` on a cast entry, `weight` on a
+pool's candidate and `migrate` on a rule. Every other key is the host's or a package's, typed by its schema; a key
+the schema marks `leads` carries the flow on into the host's mechanic; a value it types as text (a quest's
+`[title "…"]`) is words a player reads, which go into the string table under an id made of where the tag stands,
+so a translation carries them and a typo fixed keeps them; and a value it leaves to a judge is held to the story by
+the package that defines the key (`[every week]` names one of a calendar's units).
+
+### Choices, gathers and conditions
+
 - **Choices:** `*` is offered once, `+` stays; `{ condition }` before the text gates one. A gated choice is still
   returned, marked closed, so a host can show it locked. A gather `-` joins the branches; `- (label)` names it.
   Nesting is by indentation alone.
@@ -94,40 +220,44 @@ DAD: Go.
   it. Inline conditions are for words, blocks for whole lines.
 - **Expressions:** `=`, `!=`, `<`, `<=`, `>`, `>=` on ints, `has` and `hasnt` on sets, `and`, `or`, `not`, queries,
   `seen(name)`, the visits of a section, part or label (an int; true when above zero), and in rules
-  `since_changed(fact, clock)`. No arithmetic and nothing
-  that loops: the host computes, through its queries.
-- **Effects:** `~ fact = value`, `~ set += item`, `~ set -= item`, `~ int += n` and `~ int -= n` (a number or an int
-  constant, never an expression: approval, bonds, reputation), `~ action(args)` and `~ fact = action(args)`.
-- **Flow:** `-> name` jumps (a section, a part or a label), `->> name` calls and `<-` returns, `-> end` ends, and
-  `{ condition } -> name` jumps on a condition.
+  `since_changed(fact, clock)`. No arithmetic and nothing that loops: the host computes, through its queries.
+
+### Flow
+
+`-> name` jumps (a section, a part or a label), `-> name ->` calls it and comes back to the row after, `<-`
+returns, `-> end` ends, and `{ condition: -> a | -> b }` goes one way or the other, each way a jump, a call or a
+return.
+
+### Pools and rules
+
 - **Pools:** a `(pool)` section's candidates are parts with `when { condition }`. riverrun picks the most specific
   candidate that holds (the most comparisons joined by `and`), the least recently seen among equals, with a seed
-  that lives in the facts. `(pool N)` gives up to N. A candidate may carry `# weight n`, riverrun's own: a pool
+  that lives in the facts. `(pool N)` gives up to N. A candidate may carry `[weight n]`, riverrun's own: a pool
   where any does draws among its most specific matching candidates by weight (1 for one with none), from the seed
   and the turn, recency set aside, so "the merchant mentions the rumour three times in ten" is the writer's and a
   replay draws the same.
-- **Rules:** a `(rules)` section's parts are rules, each `= name when { condition }` with effects under it and
-  nothing else. A rule fires when its condition becomes true: false when last evaluated, true now; it does not fire
-  again until its condition has been false and become true again. Each time a rules section is evaluated it fires
-  at most one rule, the first in the order written whose condition just became true; the others that became true
-  with it wait to become true again. Nothing goes to a rules section and nothing reaches it by flow: what its rules
-  read reaches it. A puzzle with an order, honor that drifts back, a reaction to a crime, a threshold a faction
-  acts on: rules over facts, and a state machine is an enumeration fact and the rules that move it.
-  A rule tagged `# migrate n` is a migration: it runs once, when a save from a version before `n` is first restored
-  under a story of version `n` or later, for a change of meaning healing cannot derive (two facts merged, a scale
-  rescaled); it needs no condition, and is never watched.
+- **Rules:** a `(rules)` section's parts are rules, each `= name when { condition }` with its effects in brackets
+  under it and nothing else. A rule fires when its condition becomes true: false when last evaluated, true now; it
+  does not fire again until its condition has been false and become true again. Each time a rules section is
+  evaluated it fires at most one rule, the first in the order written whose condition just became true; the others
+  that became true with it wait to become true again. Nothing goes to a rules section and nothing reaches it by
+  flow: what its rules read reaches it. A puzzle with an order, honor that drifts back, a reaction to a crime, a
+  threshold a faction acts on: rules over facts, and a state machine is an enumeration fact and the rules that move
+  it. A rule tagged `[migrate n]` is a migration: it runs once, when a save from a version before `n` is first
+  restored under a story of version `n` or later, for a change of meaning healing cannot derive (two facts merged,
+  a scale rescaled); it needs no condition, and is never watched.
   `since_changed(fact, clock)` reads how far a `(clock)` fact has moved since `fact` last changed, and
   `happened(moment)` whether a moment happened, in rules and in what a package watches; a condition reading a fact
   kept per thing by a key written as a constant is filed under that key alone; a query a watched condition asks
   (a rule's, a quest's stage's) must declare its stamp, so the condition wakes when its answer may change, while
   one asked in words or effects is asked when they are said.
-- **Tags:** `# key value · key value` at the end of a line, a choice or a heading. `id` is riverrun's: a line's
-  stable id; so is `gender` on a cast entry. Every other key is the host's or a package's, typed by its schema; a
-  key the schema marks `leads` carries the flow on into the host's mechanic, a value it types as text (a quest's
-  `# title`) is words a player reads, which go into the string table under an id made of where the tag stands, so a
-  translation carries them and a typo fixed keeps them, and a value it leaves to a judge is held to the story by the
-  package that defines the key (`every week` names one of a calendar's units).
-- **Comments:** `//`.
+
+### One way to write each thing
+
+The reader reads this syntax and no other. Where it costs nothing, a mark of riverrun's earlier syntax is an error
+that names the form that replaced it: `~ x` (write `[x]`), `# key` after a line's words (write `[key]` under the
+line, or `\#` for the mark), `->> x` (write `-> x ->`), `{n -> one: …}` (write `{n as one: …}`), `·` between tags or
+names (a bracket each, or commas), `[id x]` (write `^x` at the line's end).
 
 Built: the reader and the checker, all of the above.
 
@@ -135,12 +265,12 @@ Built: the reader and the checker, all of the above.
 
 A conversation with several speakers needs no construct of its own:
 
-- **Interjections** are calls into a pool: `->> barks` after a line, whose candidates are conditioned on who is
+- **Interjections** are calls into a pool: `-> barks ->` after a line, whose candidates are conditioned on who is
   present (a `(game)` fact). A pool where nothing holds says nothing.
 - **Interruptions** are the host's: it calls a section into a running flow, which says it and returns to the line
   after the one being delivered, or ends with `-> end`.
 - **Flows:** several cursors over the same facts, for conversations held at once.
-- **Checks with outcomes:** `~ persuaded = persuade(margaret, 12)` stops the flow at an action; the host decides the
+- **Checks with outcomes:** `[persuaded = persuade(margaret, 12)]` stops the flow at an action; the host decides the
   outcome, sets the fact, and the story branches on it. riverrun never rolls.
 
 ## Facts
@@ -179,7 +309,7 @@ functions; the compiler is built for the machine doing the building, with the vo
 every diagnostic as `file:line:col: severity: message`.
 
 1. **Read** each file: a hand-written recursive-descent parser into a tree that keeps every byte (each row's
-   indentation, words, tags, comment, spaces and line ending, so the tree prints the file back byte for byte), every
+   indentation, words, id, comment, spaces and line ending, so the tree prints the file back byte for byte), every
    node and diagnostic carrying the range of bytes it is about; the compiler, the checker and the tools read that
    one tree. A fuzz target for each parser, and properties that the tree prints back and its ranges nest.
 2. **Resolve** against one index of every file's declarations: speakers, facts, constants, externs, sections, labels
@@ -201,7 +331,7 @@ then compiles each file's sections against it alone, then runs each package's pa
 the graph, reads it back and validates it, and writes the string table for its hash. A file's steps depend only on
 the index and its own tree, so a cache keyed by both can keep a file's steps between builds; that cache is not built
 yet, and every build compiles every file. Facts declared without a scope are kept in riverrun's scope `default`.
-**Line ids:** `riverrun tag` writes an `id` into every line that has none; a development build derives missing ones
+**Line ids:** `riverrun tag` writes an id, `^id`, at the end of every line that has none; a development build derives missing ones
 (`~` and a hash of the section, the part, the position, the speaker and the words). *Protects:* translations,
 recorded voices and model characters keyed on a line and surviving a typo fix.
 
