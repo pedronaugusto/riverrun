@@ -520,9 +520,9 @@ DAD: Go on. Go.
 ? lived(go) = false (not set)
 ? lived(stay) = false (not set)
 * 1 Get on
-  [side go] [picture fork_go] [line "the scholarship · the city · whoever she'd be"]
+  [side go] [picture fork_go] [line the scholarship · the city · whoever she'd be]
 * 2 Stay
-  [side stay] [picture fork_stay] [line "her father · the shop · whoever she already is"]
+  [side stay] [picture fork_stay] [line her father · the shop · whoever she already is]
 > 2
 [life = stay]
 == day_1998
@@ -532,11 +532,11 @@ DAD: Go on. Go.
 Each row says what it is by how it begins: `==` a section the flow came to (`=` a part), its tags indented under
 it; `NAME (delivery): words` a line, words alone narration (`\` before narration that begins with one of these
 marks), ` ^id` at its end where it has one; `[…]` rows indented under a line or a choice its tags and then its
-effects, at the margin effects reached on their own (actions among them, `[give(letter)]`); `* N` a choice, `* N
-(closed)` one that cannot be taken; `? query(args) = value` a query and its answer, `(not set)` where the player
-set none, and `? action(args) -> kind` an outcome waited for; `!` what fired or happened (`! rule section.rule`,
-`! reached the_stranger.noticed` with the journal's words under it, `! due ramen`); `> row` an input as given;
-`-> end` the end; and a run-time error in the diagnostics' one form, placed at the step it is about
+effects (a value in quotes only where it holds a comma, a bracket, a quote or `//`), at the margin effects
+reached on their own (actions among them, `[give(letter)]`); `* N` a choice, `* N (closed)` one that cannot be
+taken; `? query(args) = value` a query and its answer, `(not set)` where the player set none, and `? action(args)
+-> kind` an outcome waited for; `!` what fired or happened (`! rule section.rule`, `! reached the_stranger.noticed`
+with the journal's words under it, `! due ramen`); `> row` an input as given; `-> end` the end; and a run-time error in the diagnostics' one form, placed at the step it is about
 (`story/kitchen.river:12:1-12:30: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)`). The
 same script, start and story always give the same transcript: it holds no handle, address or time. It is what a
 test pins and what an AI reads back. The exit status says how it ended: 0 the story came to its end; 3 it waits

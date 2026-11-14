@@ -468,9 +468,12 @@ fn itemName(s: *const story.Story, e: story.EnumId, i: u16) []const u8 {
     return s.item(r.start + i);
 }
 
-// A tag's value: bare where it is a word or a number, in quotes where it holds anything else.
+// A tag's value as a story writes it: bare, and in quotes only where it holds what would end it or another value
+// (a comma, a bracket, a quote, `//`) or begins or ends with a space.
 fn tagValue(w: *Writer, text: []const u8) Writer.Error!void {
-    for (text) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_' or c == '.' or c == '-')) return w.print("\"{s}\"", .{text});
+    const quoted = std.mem.findAny(u8, text, ",[]\"") != null or std.mem.find(u8, text, "//") != null or
+        (text.len > 0 and (text[0] == ' ' or text[text.len - 1] == ' '));
+    if (quoted) return w.print("\"{s}\"", .{text});
     try w.writeAll(text);
 }
 

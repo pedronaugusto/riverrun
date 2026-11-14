@@ -61,9 +61,9 @@ DAD: Go on. Go.
 ? lived(go) = false (not set)
 ? lived(stay) = false (not set)
 * 1 Get on
-  [side go] [picture fork_go] [line "the scholarship · the city · whoever she'd be"]
+  [side go] [picture fork_go] [line the scholarship · the city · whoever she'd be]
 * 2 Stay
-  [side stay] [picture fork_stay] [line "her father · the shop · whoever she already is"]
+  [side stay] [picture fork_stay] [line her father · the shop · whoever she already is]
 > 2
 [life = stay]
 == day_1998
@@ -73,7 +73,7 @@ Six things want her today. There is time for four.
 * 1 Ruth's fever
   [at morning] [who Ruth]
 * 2 The stocktake at the shop
-  [at morning, noon] [who "the shop"]
+  [at morning, noon] [who the shop]
 * 3 Visit Dad at St Anne's
   [at noon, afternoon] [who Dad] [marked]
 * 4 Tom's football final
@@ -143,7 +143,7 @@ Everything she didn't do also happened.
 Ruth spends the morning at the neighbour's, watching the door.
   [who Ruth]
 The stocktake waits. The bank doesn't.
-  [who "the shop"]
+  [who the shop]
 Tom looks for her in the stand until half-time.
   [who Tom]
 Danny eats at the table alone and wraps her plate in foil.
@@ -181,9 +181,9 @@ Iris died on a Tuesday.
 The front room. Everyone she ever kept is here.
 A man nobody knows stands at the foot of the coffin. He has been there since eight.
 MARGARET: Who is he?
-  [who "her sister"]
+  [who her sister]
 TOM: Mum never said anything about a cousin.
-  [who "her eldest"]
+  [who her eldest]
 GOT_ON: you know exactly who he is.
 == dawn
   [card]
@@ -206,7 +206,7 @@ That's it. That's Mum. There isn't a better version of her somewhere. There's th
 * 2 Let her rest here
 > 1
 == her_life
-  [tree] [forks "1969 locked", "1985 open", "1998 locked"]
+  [tree] [forks 1969 locked, 1985 open, 1998 locked]
 Go back to a fork and live it the other way. The life you leave goes on without you.
   [hint]
 * 1 Go back to 1985
