@@ -617,3 +617,30 @@ test "a delivery reaches the host as a tag of the key it names, its words in the
     try std.testing.expectEqualStrings("laughing manically", t.words.template(words.line.?).?);
     try std.testing.expectEqualStrings("k1", t.story.tagValue(t.story.tagNamed(step.line.tags, "id").?.values.start).text);
 }
+
+test "what the compiled format cannot hold is refused where it is written: a name past its length" {
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const long: []const u8 = &@as([300]u8, @splat('a'));
+    const cases = .{
+        // a fact's, a section's, and a line's id that names the state its alternatives keep
+        .{ "facts:\n  " ++ long ++ ": bool\n== s\n{ " ++ long ++ " } Go.\n-> end\n", 2 },
+        .{ "== " ++ long ++ "\nGo.\n-> end\n", 1 },
+        .{ "== s\n{seq: a | b} ^" ++ long ++ "\n-> end\n", 2 },
+    };
+    inline for (cases) |case| {
+        var diags: syntax.Diagnostics = .{};
+        defer diags.deinit(gpa);
+        const tree = try a.create(syntax.ast.File);
+        tree.* = try syntax.parse(a, gpa, &diags, 0, "a.river", case[0]);
+        var checked = try check.run(gpa, &diags, tree[0..1], .{});
+        defer checked.deinit();
+        try std.testing.expectEqual(@as(usize, 0), diags.errors());
+        try std.testing.expectError(error.StoryHasErrors, compile.run(gpa, &diags, &checked, .{}));
+        try std.testing.expectEqual(@as(usize, 1), diags.errors());
+        const d = diags.list.items[diags.list.items.len - 1];
+        try std.testing.expectEqual(@as(u32, case[1]), tree.place(d.span).line);
+        try std.testing.expectEqualStrings("this name, with the names it is written within, is longer than a compiled story holds (256 bytes): shorten it", d.message);
+    }
+}

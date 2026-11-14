@@ -5,7 +5,7 @@
 // that holds wins, so a line that also needs what the day kept beats a plain one.
 
 == wake
-  [rooms] [rooms front, kitchen, stairs] [hours 20, 22, 0, 2, 4, 6] [pool wake_night] [then dawn]
+  [rooms front, kitchen, stairs] [hours 20, 22, 0, 2, 4, 6] [pool wake_night] [then dawn]
 { life = stay: The front room. Everyone she ever kept is here. | The front room of the flat by the river. Everyone she ever met on purpose is here. }
 { life = stay: A man | A woman } nobody knows stands at the foot of the coffin. { life = stay: He | She } has been there since eight.
 { life = stay }

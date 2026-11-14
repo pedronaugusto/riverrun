@@ -40,6 +40,7 @@ pub fn chain(c: *Compiler, stmts: []const ast.Stmt, next: Next) Error!Next {
 }
 
 fn stmt(c: *Compiler, s: *const ast.Stmt, after: Next) Error!Next {
+    c.at = s.span;
     switch (s.kind) {
         .line => |*l| return try line(c, s, l, after),
         .cond => |*k| {
@@ -81,6 +82,7 @@ fn choices(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeI
         const ch = &s.kind.choice;
         const id = c.lineId(s);
         const target = try chain(c, ch.body, after) orelse try c.back();
+        c.at = s.span;
         out.* = .{
             .text = try text.text(c, id, ch.text),
             .cond = if (ch.cond) |*k| try exprs.condition(c, k) else .empty,
@@ -90,10 +92,12 @@ fn choices(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeI
             .target = target,
         };
     }
+    c.at = stmts[0].span;
     return c.b.node(.{ .step = .{ .choices = .{ .choices = try c.b.choiceList(list), .next = after } } });
 }
 
 fn effectRun(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeId {
+    c.at = stmts[0].span.join(stmts[stmts.len - 1].span);
     return c.b.node(.{ .step = .{ .effects = .{ .effects = try effectList(c, stmts), .next = after } } });
 }
 

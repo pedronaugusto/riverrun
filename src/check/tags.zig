@@ -20,7 +20,13 @@ const id_key = schema_file.id_key;
 /// null for the cast, and for a section's own body.
 pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, part: ?u16, tags: []const ast.Tag, at: Schema.Place) Error!void {
     const where: Where = .{ .module = module, .section = from, .part = part, .beside = tags, .place = at };
-    for (tags) |*tag| {
+    for (tags, 0..) |*tag, i| {
+        // a key stands once where it is, every value in its one bracket: so each of its values has one place, and
+        // words a player reads one line id
+        if (firstOf(tags[0..i], tag.key.text)) |first| {
+            try c.err(tag.key.span, "`{s}` is already given here, at {f}: write all its values in that one bracket", .{ tag.key.text, c.place(first.key.span) });
+            continue;
+        }
         if (std.mem.eql(u8, tag.key.text, id_key)) {
             if (at != .line and at != .choice) try c.err(tag.key.span, "only a line or a choice has an `id`", .{});
             continue;
@@ -65,6 +71,11 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, part: ?u16
         };
         try values(c, where, tag, key);
     }
+}
+
+fn firstOf(before: []const ast.Tag, key: []const u8) ?*const ast.Tag {
+    for (before) |*t| if (std.mem.eql(u8, t.key.text, key)) return t;
+    return null;
 }
 
 // A tag whose key names an action, `[cutscene x]` for `[cutscene(x)]`, refused with the form that runs it; false

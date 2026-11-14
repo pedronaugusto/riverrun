@@ -275,6 +275,31 @@ test "a tag is one the host knows, where it may stand, with values of its type" 
     try std.testing.expectEqual(@as(usize, 4), o.diags.list.items.len);
 }
 
+test "a key stands once where it is, all its values in its one bracket" {
+    const schema: check.Schema = .{ .keys = &.{
+        .{ .name = "card", .on = .{ .section = true } },
+        .{ .name = "forks", .on = .{ .section = true }, .value = .text, .count = .many },
+        .{ .name = "heard", .on = .{ .line = true }, .value = .word, .count = .many },
+        .{ .name = "how", .on = .{ .line = true }, .value = .text },
+    } };
+    var o = try checkOne(
+        \\cast:
+        \\  dad  "Dad"
+        \\== tree
+        \\  [card] [forks 1969 locked, 1985 open] [card]
+        \\  [forks 1998 locked]
+        \\DAD (quietly): Who'd listen?
+        \\  [heard piano] [heard door] [how loud]
+        \\-> end
+    , .{ .schema = &schema, .delivery = "how" });
+    defer o.deinit();
+    try o.has(.err, 4, 42, "`card` is already given here, at a.river:4:4: write all its values in that one bracket");
+    try o.has(.err, 5, 4, "`forks` is already given here, at a.river:4:11: write all its values in that one bracket");
+    try o.has(.err, 7, 18, "`heard` is already given here, at a.river:7:4: write all its values in that one bracket");
+    try o.has(.err, 7, 31, "`how` is already given here, at a.river:6:5: write all its values in that one bracket");
+    try std.testing.expectEqual(@as(usize, 4), o.diags.list.items.len);
+}
+
 test "a line wider than the host allows is refused" {
     var o = try checkOne(
         \\const:

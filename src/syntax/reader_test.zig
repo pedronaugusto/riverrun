@@ -408,3 +408,23 @@ test "a part's `when` with no braces, a word after an extern's marks and a row o
         if (case.refused) try testing.expect(diags.errors() > 0);
     }
 }
+
+test "every name a story declares is a name: a fact's, a cast id, an extern's and an enumeration's values" {
+    const cases = [_]struct { text: []const u8, message: []const u8 }{
+        .{ .text = "facts:\n  : int\n", .message = "a fact is `name: type`" },
+        .{ .text = "facts:\n  a b: int\n", .message = "`a b` is not a name: a fact's name is letters, digits and `_`" },
+        .{ .text = "cast:\n  $$ \"X\"\n", .message = "`$$` is not a name: a cast entry's id is letters, digits and `_`" },
+        .{ .text = "extern:\n  (int)\n", .message = "`` is not a name: an extern's name is letters, digits and `_`, then its parameters" },
+        .{ .text = "facts:\n  m: one of ,\n", .message = "`one of` lists its values, separated by commas: `one of calm, angry`" },
+        .{ .text = "facts:\n  m: set of a b, c\n", .message = "`a b` is not a name: a value is letters, digits and `_`" },
+    };
+    for (cases) |case| {
+        var state: std.heap.ArenaAllocator = .init(testing.allocator);
+        defer state.deinit();
+        var diags: source.Diagnostics = .{};
+        defer diags.deinit(testing.allocator);
+        _ = try parse.parseFile(state.allocator(), testing.allocator, &diags, 0, "story.river", case.text);
+        try testing.expectEqual(@as(usize, 1), diags.list.items.len);
+        try testing.expectEqualStrings(case.message, diags.list.items[0].message);
+    }
+}

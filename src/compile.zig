@@ -81,14 +81,28 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, checked: *const c
         .parts = try a.alloc([]?story.SectionId, checked.sections.len),
         .labels = try a.alloc(story.NodeId, checked.labels.len),
     };
-    b.version = std.math.cast(u16, checked.version) orelse return error.TooLarge;
-    try declare.run(&c);
-    for (0..checked.files.len) |f| try file(&c, @intCast(f)); // safe: a FileId numbers the files
-    for (options.passes) |p| try pass(&c, p);
-    const graph = try b.bytes(gpa);
-    errdefer gpa.free(graph);
+    return build(&c, options) catch |e| switch (e) {
+        error.PassFailed, error.StoryHasErrors => |refused| refused,
+        else => |limit| {
+            try c.refuse(limit);
+            return error.StoryHasErrors;
+        },
+    };
+}
+
+// The index, each file, each package's pass, then the graph linked and its string table, as `run` says.
+fn build(c: *Compiler, options: Options) Error!Compiled {
+    const b = c.b;
+    c.at = .none;
+    b.version = std.math.cast(u16, c.checked.version) orelse return error.TooLarge;
+    try declare.run(c);
+    for (0..c.checked.files.len) |f| try file(c, @intCast(f)); // safe: a FileId numbers the files
+    for (options.passes) |p| try pass(c, p);
+    c.at = .none;
+    const graph = try b.bytes(c.gpa);
+    errdefer c.gpa.free(graph);
     const written: story.Story = try .init(graph, .{ .verify_hash = false });
-    return .{ .graph = graph, .words = try b.stringBytes(gpa, options.locale, written.hash()) };
+    return .{ .graph = graph, .words = try b.stringBytes(c.gpa, options.locale, written.hash()) };
 }
 
 // A package's pass, which never fails silently: an error it reports refuses the story, and a failure it does not
@@ -119,6 +133,7 @@ fn file(c: *Compiler, f: syntax.FileId) Compiler.Error!void {
 }
 
 fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Section) Compiler.Error!void {
+    c.at = s.node.name.span;
     const to = c.section(id);
     c.where = try c.qualified(s.module, s.name);
     c.places = 0;
@@ -128,13 +143,17 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
             const opens = s.node.body.len == 0 and s.parts.len > 0;
             const entry = if (opens) try c.b.node(.{ .step = .{ .jump = c.parts[id.raw()][0].? } }) else try body.chain(c, s.node.body, null) orelse try c.back();
             c.b.enter(to, entry);
-            for (s.parts, c.parts[id.raw()]) |p, ps| c.b.enter(ps.?, try body.chain(c, p.node.body, null) orelse try c.back());
+            for (s.parts, c.parts[id.raw()]) |p, ps| {
+                c.at = p.node.name.span;
+                c.b.enter(ps.?, try body.chain(c, p.node.body, null) orelse try c.back());
+            }
         },
         .rules => {
             const base = try c.qualified(s.module, s.name);
             for (s.parts) |p| {
                 // a rule's body is its effects, fired as one step; one with none fires nothing
                 const entry = try body.chain(c, p.node.body, null) orelse try c.b.node(.{ .step = .end });
+                c.at = p.node.name.span;
                 try c.b.candidate(to, .{
                     .name = p.name,
                     .when = if (p.node.when) |*w| try exprs.condition(c, w) else .empty,
@@ -150,6 +169,7 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
             const base = try c.qualified(s.module, s.name);
             for (s.parts) |p| {
                 const entry = try body.chain(c, p.node.body, null) orelse try c.back();
+                c.at = p.node.name.span;
                 try c.b.candidate(to, .{
                     .name = p.name,
                     .when = if (p.node.when) |*w| try exprs.condition(c, w) else .empty,

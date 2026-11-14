@@ -13,12 +13,26 @@ const ExternId = @import("riverrun").facts.ExternId;
 
 pub fn run(c: *Compiler) Error!void {
     const k = c.checked;
-    for (k.enums, c.enums) |e, *out| out.* = try c.b.enumeration(e.values);
+    for (k.enums, c.enums, 0..) |e, *out, i| {
+        c.at = enumAt(c, i);
+        out.* = try c.b.enumeration(e.values);
+    }
+    c.at = .none;
     for (k.kinds, c.kinds) |name, *out| out.* = try c.b.refKind(name);
-    for (k.facts, c.facts) |*f, *out| out.* = try fact(c, f);
-    for (k.externs, c.externs) |*x, *out| out.* = try external(c, x);
-    for (k.visits, c.visits) |v, *out| out.* = if (kept(c, v)) try c.b.visits(try visitName(c, v)) else null;
+    for (k.facts, c.facts) |*f, *out| {
+        c.at = f.span;
+        out.* = try fact(c, f);
+    }
+    for (k.externs, c.externs) |*x, *out| {
+        c.at = x.span;
+        out.* = try external(c, x);
+    }
+    for (k.visits, c.visits) |v, *out| {
+        c.at = visitAt(c, v);
+        out.* = if (kept(c, v)) try c.b.visits(try visitName(c, v)) else null;
+    }
     for (k.sections, c.sections, c.parts) |*s, *out, *parts| {
+        c.at = s.node.name.span;
         out.* = try section(c, s);
         parts.* = try partSections(c, s, out.*);
     }
@@ -28,7 +42,10 @@ pub fn run(c: *Compiler) Error!void {
         c.b.sectionTags(id, try c.tags(s.node.tags, name));
         for (s.parts, parts) |p, ps| if (ps) |pid| c.b.sectionTags(pid, try c.tags(p.node.tags, try c.arena.print("{s}.{s}", .{ name, p.name })));
     }
-    for (k.speakers, c.cast) |*s, *out| out.* = try speaker(c, s);
+    for (k.speakers, c.cast) |*s, *out| {
+        c.at = s.span;
+        out.* = try speaker(c, s);
+    }
     for (k.labels, c.labels) |_, *out| out.* = try c.b.reserve();
 }
 
@@ -83,6 +100,37 @@ pub fn escaped(c: *Compiler, words: []const u8) Error![]const u8 {
 
 // Whether a visit count is kept: always, but for a registered kind's section or part nothing reads `seen` of,
 // which its package runs and no session counts.
+// Where an enumeration is written: the type of the first fact or extern that declares it.
+fn enumAt(c: *const Compiler, i: usize) @import("../syntax.zig").Span {
+    const k = c.checked;
+    for (k.facts) |f| {
+        if (enumOf(f.type) == i) return f.span;
+        if (f.key) |t| if (enumOf(t) == i) return f.span;
+    }
+    for (k.externs) |x| {
+        for (x.params) |t| if (enumOf(t) == i) return x.span;
+        if (x.returns) |t| if (enumOf(t) == i) return x.span;
+    }
+    return .none;
+}
+
+fn enumOf(t: sym.Type) ?usize {
+    return switch (t) {
+        .one_of, .set_of => |e| e.raw(),
+        else => null,
+    };
+}
+
+// Where what a visit count counts is written: a section's or a part's name, or a label's statement.
+fn visitAt(c: *const Compiler, v: sym.Visit) @import("../syntax.zig").Span {
+    const k = c.checked;
+    return switch (v.of) {
+        .section => |id| k.sections[id.raw()].node.name.span,
+        .part => |p| k.sections[p.section.raw()].parts[p.index].node.name.span,
+        .label => |id| k.labels[id.raw()].stmt.span,
+    };
+}
+
 fn kept(c: *const Compiler, v: sym.Visit) bool {
     if (v.read) return true;
     const s = switch (v.of) {

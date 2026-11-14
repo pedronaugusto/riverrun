@@ -262,6 +262,10 @@ const Reader = struct {
             }
             const t = l.text;
             const sp = std.mem.findScalar(u8, t.text, ' ') orelse t.text.len;
+            if (!isName(t.text[0..sp])) {
+                try r.report(l, "`{s}` is not a name: a cast entry's id is letters, digits and `_`", .{t.text[0..sp]});
+                continue;
+            }
             const rest = t.from(sp).trim().text;
             if (rest.len < 2 or rest[0] != '"') {
                 try r.report(l, "a cast entry is `id \"Name\"`, with an optional `— who they are`", .{});
@@ -318,6 +322,14 @@ const Reader = struct {
             const n = if (std.mem.findScalar(u8, head.text, '(')) |p| head.to(p).trim() else head;
             if (text_mod.alternativesOf(n.text) != null) {
                 try r.report(l, "`{s}` names alternatives in text, so it cannot name a fact", .{n.text});
+                continue;
+            }
+            if (n.text.len == 0) {
+                try r.report(l, "a fact is `name: type`", .{});
+                continue;
+            }
+            if (!isName(n.text)) {
+                try r.report(l, "`{s}` is not a name: a fact's name is letters, digits and `_`", .{n.text});
                 continue;
             }
             const bounds = if (segments.items.len > 1) null else r.boundsOf(l, last) catch |err| switch (err) {
@@ -398,6 +410,14 @@ const Reader = struct {
             var names: std.ArrayList(ast.Name) = .empty;
             try r.listInto(&names, t.from("one of ".len));
             for (more) |m| try r.listInto(&names, m);
+            if (names.items.len == 0) {
+                try r.report(l, "`{s}` lists its values, separated by commas: `one of calm, angry`", .{t.text[0.."one of".len]});
+                return error.Invalid;
+            }
+            for (names.items) |n| if (!isName(n.text)) {
+                try r.reportAt(n.span, "`{s}` is not a name: a value is letters, digits and `_`", .{n.text});
+                return error.Invalid;
+            };
             const all = try names.toOwnedSlice(r.arena);
             return if (t.text[0] == 'o') .{ .one_of = all } else .{ .set_of = all };
         }
@@ -468,7 +488,12 @@ const Reader = struct {
             try r.report(l, "after the parameters comes `-> type`, or nothing", .{});
             return error.Invalid;
         }
-        var e: ast.Extern = .{ .span = l.span(r.file), .name = r.name(t.to(open).trim()), .params = ps, .returns = returns, .returns_span = returns_span };
+        const n = t.to(open).trim();
+        if (!isName(n.text)) {
+            try r.report(l, "`{s}` is not a name: an extern's name is letters, digits and `_`, then its parameters", .{n.text});
+            return error.Invalid;
+        }
+        var e: ast.Extern = .{ .span = l.span(r.file), .name = r.name(n), .params = ps, .returns = returns, .returns_span = returns_span };
         while (marks.text.len > 0) {
             if (marks.text[0] != '(') {
                 try r.report(l, "after the parameters and the type come marks, each `(action)` or `(reads stamp)`, or nothing", .{});

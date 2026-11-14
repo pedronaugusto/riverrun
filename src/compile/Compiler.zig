@@ -47,10 +47,33 @@ labels: []story.NodeId,
 /// The section or part being compiled, for `place`.
 where: []const u8 = "",
 places: u32 = 0,
+/// Where the declaration or the statement being compiled is written: where a limit of the compiled format it
+/// meets is reported (`refuse`).
+at: syntax.Span = .none,
 
 /// Reports an error where the story is written; the story is then refused.
 pub fn err(c: *Compiler, span: syntax.Span, comptime fmt: []const u8, args: anytype) Error!void {
     try c.diags.add(c.gpa, span, .err, fmt, args);
+}
+
+/// Reports that the compiled format cannot hold what is being compiled, where it is written (`at`), in words a
+/// writer acts on: a limit of the format, which the checker cannot see, since it is met only as names are joined
+/// and things are counted.
+pub fn refuse(c: *Compiler, e: story.BuildError) Error!void {
+    const max_name = @import("riverrun").facts.max_name;
+    return switch (e) {
+        error.OutOfMemory => error.OutOfMemory,
+        error.NameTooLong => c.err(c.at, "this name, with the names it is written within, is longer than a compiled story holds ({d} bytes): shorten it", .{max_name}),
+        error.TooManyFacts => c.err(c.at, "the story declares more facts than a compiled story holds ({d}), counting the visits and the state it keeps", .{@import("riverrun").facts.max_facts}),
+        error.TooManyItems => c.err(c.at, "this lists more values than a compiled story holds ({d})", .{@import("riverrun").facts.max_items}),
+        error.TooManyScopes => c.err(c.at, "the story keeps facts in more scopes than a compiled story holds ({d})", .{@import("riverrun").facts.max_scopes}),
+        error.TooManyChoices => c.err(c.at, "this offers more choices at once than a compiled story holds ({d})", .{story.max_choices}),
+        error.TooManySlots => c.err(c.at, "these words hold more values and choices of words than a line holds ({d})", .{story.max_slots}),
+        error.TooManyCast => c.err(c.at, "the story has more speakers than a compiled story holds", .{}),
+        error.TooManyParams => c.err(c.at, "this takes more parameters than a compiled story holds", .{}),
+        error.TooLarge => c.err(c.at, "the story is larger than a compiled story holds", .{}),
+        else => c.err(c.at, "the compiled story cannot hold this ({t}): riverrun's checker should have said why; please report it", .{e}),
+    };
 }
 
 /// A name as the format keeps it: qualified by its module, the root module's bare.
@@ -95,6 +118,7 @@ pub fn tags(c: *Compiler, list: []const ast.Tag, at: ?[]const u8) Error!story.Ra
     if (list.len == 0) return .empty;
     const out = try c.arena.alloc(story.TagIn, list.len);
     for (list, out) |*t, *o| {
+        c.at = t.span;
         const named = c.checked.tags.get(t);
         const words = c.checked.text_tags.contains(t);
         const where: []const u8 = if (!words) "" else at orelse try c.place();
