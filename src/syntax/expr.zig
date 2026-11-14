@@ -43,10 +43,11 @@ const Parser = struct {
         return p.at + @as(u32, @intCast(p.i)); // safe: the text is a part of a file of at most lines.max_bytes
     }
 
-    // A problem with what is left, from where the parser stands.
+    // A problem with what is left, from where the parser stands; with nothing left, with what was written.
     fn fail(p: *Parser, comptime fmt: []const u8, args: anytype) Error {
         const end = p.at + @as(u32, @intCast(p.text.len)); // safe: as `here`
-        try p.diags.add(p.gpa, .{ .file = p.file, .start = p.here(), .end = end }, .err, fmt, args);
+        const start = if (p.here() < end) p.here() else p.at;
+        try p.diags.add(p.gpa, .{ .file = p.file, .start = start, .end = end }, .err, fmt, args);
         return error.Invalid;
     }
 
