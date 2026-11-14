@@ -237,6 +237,8 @@ fn laidOut(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
         "\\[sic\\] she said.",
         "= candidate   when { met }",
         "  [weight 2]",
+        "= inline   when { met }   Words. ^w1",
+        "  [pause 1] [met = true]",
         "<-",
     };
     var out: std.ArrayList(u8) = .empty;
@@ -347,6 +349,7 @@ test "a file's layout prints back: comments, blank rows, spaces, CRLF, a byte-or
         "== a   // why   \r\n\r\n   \nMUM: Go.   ^k1   // note  \n  [at 2]  [x = 1]  \n",
         "== a\n{ met } Go. ^k2\n- (ask) * Run. ^r2\n  [side go]\n",
         "== a\n  [title \"a ] // b\"]   // c\r\nDAD (quietly): \\[x\\] \\^k ^k3\n",
+        "== p (pool)\n= one   when { met }   Words. ^w1\n  [pause 1] [met = true]\n= two\n  [weight 2]\n  Two.\n",
     };
     for (texts) |text| {
         var arena: std.heap.ArenaAllocator = .init(gpa);
