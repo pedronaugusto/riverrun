@@ -25,7 +25,7 @@ pub const Meta = extern struct {
 };
 
 pub const Entry = extern struct {
-    /// The `# id` text the id is the hash of, for tools and voice scripts.
+    /// The id text the id is the hash of, for tools and voice scripts.
     id_text: format.Str,
     template: format.Str,
 };
@@ -184,7 +184,7 @@ fn span(gpa: std.mem.Allocator, text: *std.ArrayList(u8), s: []const u8) error{ 
     return .{ .offset = at, .len = @intCast(s.len) }; // safe: below max_bytes
 }
 
-/// A line's id: XxHash64, seed 0, of its `# id` text.
+/// A line's id: XxHash64, seed 0, of its id text.
 pub fn lineId(id_text: []const u8) error{LineIdZero}!model.LineId {
     return model.LineId.fromRaw(std.hash.XxHash64.hash(0, id_text)) catch error.LineIdZero;
 }

@@ -1,19 +1,33 @@
 // The years from 1998 to her death, built from what the day kept.
 
-== years                                         # years
+== years
+  [years]
 { life = stay }
-  { kept has tom: Tom rings every Sunday. Football, mostly. She learns the offside rule out of love. | Tom stops ringing on Sundays. Then starts again, years later, about nothing. }   # year 1999
-  { kept has stock: The shop has its best year. Nobody can say why. She says peaches. | The bank takes the shop. She says it was the stocktake. It wasn't the stocktake. }   # year 2003
-  { kept has ruth: Ruth trains as a nurse. She sits on the ends of beds. | Ruth moves to Toronto. She rings at odd hours and never says why. }   # year 2007
-  { kept has piano: She plays eight bars at Ellie's wedding. Badly. Everyone cries. | She sells the piano to the primary school and goes once to hear the children. She leaves at the interval. }   # year 2016
-  { kept has danny: Danny's birthday cake sinks for the twenty-sixth year running. | Danny starts eating earlier. She starts eating later. They meet in the middle at the sink. }   # year 2024
-  { said has gave: She takes the lid off the piano at the school, once, at night. Then she puts it back. | A grandchild finds middle C on her own. }   # year 2035
+  { kept has tom: Tom rings every Sunday. Football, mostly. She learns the offside rule out of love. | Tom stops ringing on Sundays. Then starts again, years later, about nothing. }
+    [year 1999]
+  { kept has stock: The shop has its best year. Nobody can say why. She says peaches. | The bank takes the shop. She says it was the stocktake. It wasn't the stocktake. }
+    [year 2003]
+  { kept has ruth: Ruth trains as a nurse. She sits on the ends of beds. | Ruth moves to Toronto. She rings at odd hours and never says why. }
+    [year 2007]
+  { kept has piano: She plays eight bars at Ellie's wedding. Badly. Everyone cries. | She sells the piano to the primary school and goes once to hear the children. She leaves at the interval. }
+    [year 2016]
+  { kept has danny: Danny's birthday cake sinks for the twenty-sixth year running. | Danny starts eating earlier. She starts eating later. They meet in the middle at the sink. }
+    [year 2024]
+  { said has gave: She takes the lid off the piano at the school, once, at night. Then she puts it back. | A grandchild finds middle C on her own. }
+    [year 2035]
 { life = go }
-  { kept has premiere: The piece is played in four countries. Her name gets smaller on each poster, then larger. | Someone else is thanked for her piece in the programme notes, in a small typeface. }   # year 1999
-  { kept has leo: Leo is a tree again, then a king, then quits the stage. He keeps the crown. | Leo stops telling her when the plays are. }   # year 2002
-  { kept has radio: The radio rings twice a year. She always says a kitchen. | The radio stops ringing. She doesn't notice for a long time, then does. }   # year 2006
-  Martin and she part, kindly. They post each other recordings of rain.   # year 2015
-  { kept has walk: She walks by the river every morning. You could set the bridge by her. | She is never alone and never quite with anyone. }   # year 2027
-  { said has gave: She keeps a clipping in the drawer, the one he kept of her. | She writes a piece called Ward Four and never lets it be played. }   # year 2035
-Iris died on a Tuesday.                          # year 2039 · pause 1.2 · bold
+  { kept has premiere: The piece is played in four countries. Her name gets smaller on each poster, then larger. | Someone else is thanked for her piece in the programme notes, in a small typeface. }
+    [year 1999]
+  { kept has leo: Leo is a tree again, then a king, then quits the stage. He keeps the crown. | Leo stops telling her when the plays are. }
+    [year 2002]
+  { kept has radio: The radio rings twice a year. She always says a kitchen. | The radio stops ringing. She doesn't notice for a long time, then does. }
+    [year 2006]
+  Martin and she part, kindly. They post each other recordings of rain.
+    [year 2015]
+  { kept has walk: She walks by the river every morning. You could set the bridge by her. | She is never alone and never quite with anyone. }
+    [year 2027]
+  { said has gave: She keeps a clipping in the drawer, the one he kept of her. | She writes a piece called Ward Four and never lets it be played. }
+    [year 2035]
+Iris died on a Tuesday.
+  [year 2039] [pause 1.2] [bold]
 { lived(stay) and lived(go): -> second_wake | -> wake }

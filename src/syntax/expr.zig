@@ -159,7 +159,7 @@ const Parser = struct {
                 }
             }
             const name: ast.Name = .{ .text = word, .span = .{ .file = p.file, .start = at, .end = at + @as(u32, @intCast(word.len)) } }; // safe: as `here`
-            return p.node(at, .{ .call = .{ .name = name, .args = try args.toOwnedSlice(p.arena) } });
+            return p.node(at, .{ .call = .{ .span = .{ .file = p.file, .start = at, .end = p.here() }, .name = name, .args = try args.toOwnedSlice(p.arena) } });
         }
         return p.node(at, .{ .name = word });
     }

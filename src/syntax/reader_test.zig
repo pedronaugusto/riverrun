@@ -16,9 +16,10 @@ const gen = shakedown.gen;
 const Span = source.Span;
 
 /// Checks every name and leading word of an expression in `value` against
-/// the text in its range.
+/// the text in its range. A line's id is the tag `id`, its key the `^`.
 fn visit(comptime T: type, value: T, text: []const u8) error{TestUnexpectedResult}!void {
     if (T == ast.Name) return expectAt(text, value.span, value.text, .whole);
+    if (T == ast.Tag and std.mem.eql(u8, value.key.text, "id")) return expectAt(text, value.key.span, "^", .whole);
     if (T == ast.Expr) switch (value.kind) {
         .name => |n| try expectAt(text, value.span, n, .whole),
         .call => |c| try expectAt(text, value.span, c.name.text, .starts),
@@ -52,20 +53,19 @@ fn expectAt(text: []const u8, span: Span, word: []const u8, how: enum { whole, s
 }
 
 /// Checks that each node under `value` lies inside `parent` and that the nodes beside one another, `siblings`, do
-/// not overlap. A node is a value with a `span`, or a span of its own (a tag's values).
+/// not overlap. A node is a value with a `span`, or a span of its own (a tag's values). A field named `x_span` is
+/// where field `x` is written: it is a node beside the others, and what `x` holds lies inside it.
 fn nest(comptime T: type, value: T, parent: Span, siblings: *std.ArrayList(Span), a: std.mem.Allocator) error{ OutOfMemory, TestUnexpectedResult }!void {
     if (T == Span) return placeIn(value, parent, siblings, a);
     switch (@typeInfo(T)) {
-        .@"struct" => |s| {
+        .@"struct" => {
             if (@hasField(T, "span") and @FieldType(T, "span") == Span) {
                 try placeIn(value.span, parent, siblings, a);
                 var own: std.ArrayList(Span) = .empty;
-                inline for (s.field_names, s.field_types) |name, F| {
-                    if (comptime !std.mem.eql(u8, name, "span")) try nest(F, @field(value, name), value.span, &own, a);
-                }
+                try fields(T, value, value.span, &own, a);
                 return apart(own.items);
             }
-            inline for (s.field_names, s.field_types) |name, F| try nest(F, @field(value, name), parent, siblings, a);
+            try fields(T, value, parent, siblings, a);
         },
         .@"union" => |u| if (u.tag_type != null) switch (value) {
             inline else => |payload| try nest(@TypeOf(payload), payload, parent, siblings, a),
@@ -77,6 +77,28 @@ fn nest(comptime T: type, value: T, parent: Span, siblings: *std.ArrayList(Span)
         },
         .optional => |o| if (value) |v| try nest(o.child, v, parent, siblings, a),
         else => {},
+    }
+}
+
+// The fields of a struct nested in `parent` beside `siblings`, its own `span` aside, each `x` inside its `x_span`
+// where it has one.
+fn fields(comptime T: type, value: T, parent: Span, siblings: *std.ArrayList(Span), a: std.mem.Allocator) error{ OutOfMemory, TestUnexpectedResult }!void {
+    const s = @typeInfo(T).@"struct";
+    inline for (s.field_names, s.field_types) |name, F| {
+        if (comptime std.mem.eql(u8, name, "span") or std.mem.endsWith(u8, name, "_span")) continue;
+        const where: ?Span = if (comptime @hasField(T, name ++ "_span")) @field(value, name ++ "_span") else null;
+        if (where) |w| {
+            try placeIn(w, parent, siblings, a);
+            var inside: std.ArrayList(Span) = .empty;
+            try nest(F, @field(value, name), w, &inside, a);
+            try apart(inside.items);
+        } else try nest(F, @field(value, name), parent, siblings, a);
+    }
+    // a range whose value holds nothing to nest, `{ else }`'s braces
+    inline for (s.field_names) |name| {
+        if (comptime !std.mem.endsWith(u8, name, "_span") or @hasField(T, name[0 .. name.len - "_span".len])) continue;
+        const where: ?Span = @field(value, name);
+        if (where) |w| try placeIn(w, parent, siblings, a);
     }
 }
 
@@ -130,14 +152,17 @@ fn spaces(s: *shakedown.Source, out: *std.ArrayList(u8), a: std.mem.Allocator) !
     for (0..gen.intRange(s, usize, 0, 3)) |_| try out.append(a, ' ');
 }
 
-/// A story of sections, conditions and effects, with spaces where a writer
-/// may leave them.
+/// A story of sections, conditions, lines, choices, brackets and flows, with spaces where a writer may leave
+/// them.
 fn story(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
     const words = [_][]const u8{ "alpha", "beta", "seen", "night", "kept" };
     var out: std.ArrayList(u8) = .empty;
     for (0..gen.intRange(s, usize, 1, 3)) |n| {
-        try out.print(a, "== part_{d}\n", .{n});
-        for (0..gen.intRange(s, usize, 1, 5)) |_| switch (gen.intRange(s, u8, 0, 4)) {
+        try out.print(a, "== part_{d}", .{n});
+        if (gen.boolean(s)) try out.appendSlice(a, " (pool 2)");
+        try out.append(a, '\n');
+        if (gen.boolean(s)) try out.print(a, "  [card] [count {d}]\n", .{n});
+        for (0..gen.intRange(s, usize, 1, 6)) |_| switch (gen.intRange(s, u8, 0, 7)) {
             0 => {
                 try out.append(a, '{');
                 try spaces(s, &out, a);
@@ -146,22 +171,32 @@ fn story(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
                 try out.appendSlice(a, "}\n  A line said.\n");
             },
             1 => {
-                try out.print(a, "  ~ {s} =", .{gen.oneOf(s, []const u8, &words)});
+                try out.print(a, "[{s} =", .{gen.oneOf(s, []const u8, &words)});
                 try spaces(s, &out, a);
                 try out.appendSlice(a, gen.oneOf(s, []const u8, &.{ "true", "false", "3", "other" }));
-                try out.append(a, '\n');
+                try out.append(a, ']');
+                try spaces(s, &out, a);
+                try out.print(a, "[{s} += {s}]\n", .{ gen.oneOf(s, []const u8, &words), gen.oneOf(s, []const u8, &words) });
             },
             2 => {
-                try out.print(a, "  ~ {s} +=", .{gen.oneOf(s, []const u8, &words)});
+                try out.append(a, '[');
                 try spaces(s, &out, a);
-                try out.appendSlice(a, gen.oneOf(s, []const u8, &words));
-                try out.append(a, '\n');
+                try out.print(a, "{s}({s})]\n", .{ gen.oneOf(s, []const u8, &.{ "rest", "wait" }), gen.oneOf(s, []const u8, &words) });
             },
             3 => {
-                try out.appendSlice(a, "  ~");
-                try spaces(s, &out, a);
-                try out.print(a, "{s}({s})\n", .{ gen.oneOf(s, []const u8, &.{ "rest", "wait" }), gen.oneOf(s, []const u8, &words) });
+                try out.appendSlice(a, gen.oneOf(s, []const u8, &.{ "MUM: Something said.", "DAD (quietly): Go.", "Narration, {alpha}." }));
+                if (gen.boolean(s)) {
+                    try spaces(s, &out, a);
+                    try out.print(a, " ^k{d}", .{gen.intRange(s, u8, 0, 9)});
+                }
+                try out.append(a, '\n');
+                if (gen.boolean(s)) try out.print(a, "  [at 2.5] [heard {s}, {s}]\n", .{ gen.oneOf(s, []const u8, &words), gen.oneOf(s, []const u8, &words) });
+                if (gen.boolean(s)) try out.print(a, "  [{s} -= 1]\n", .{gen.oneOf(s, []const u8, &words)});
             },
+            4 => {
+                try out.print(a, "* {{ {s} }} Choose it.\n  [side go]\n  -> part_0 ->\n", .{gen.oneOf(s, []const u8, &words)});
+            },
+            5 => try out.appendSlice(a, gen.oneOf(s, []const u8, &.{ "-> end\n", "<-\n", "- (back) Home.\n", "{ alpha: -> part_0 | <- }\n" })),
             else => try out.appendSlice(a, "MUM: Something said.\n"),
         };
     }
@@ -169,30 +204,39 @@ fn story(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
 }
 
 /// A story laid out as writers lay them out: comments on rows and rows of comments, blank rows with and without
-/// spaces, tags, spaces at rows' ends, LF and CRLF, a byte-order mark, and no newline at the end.
+/// spaces, brackets, ids, spaces at rows' ends, LF and CRLF, a byte-order mark, and no newline at the end.
 fn laidOut(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
     const rows = [_][]const u8{
         "cast:",
-        "  mum   \"Mum\"   — her mother   # gender feminine",
+        "  mum   \"Mum\"   — her mother",
+        "    [gender feminine]",
+        "extras: a cellist, the youngest",
         "facts (life):",
         "  spot: one of stairs, piano,",
         "        door",
         "  met: bool   (game)",
-        "== kitchen   # talk · picture \"a · b\"",
+        "== kitchen (pool 2)",
+        "  [talk] [picture \"a · b // c\"]",
         "MUM: Go.",
-        "  ~ met = true",
+        "  [met = true]",
         "- (ask)",
         "* { met } Stay.",
+        "  [side go]",
         "  -> ask",
-        "+ Run.   # side go",
-        "{ met } Go.   # id k7f3a2",
+        "+ Run. ^r1",
+        "{ met } Go. ^k7f3a2",
         "{ met }",
         "  He waits.",
         "{ else }",
         "  -> end",
         "- (back) Home.",
+        "  [pause 0.5]",
         "{ met: -> kitchen | -> end }",
-        "->> kitchen",
+        "-> kitchen ->",
+        "ASTRO (laughing manically): Not {n as one: once | other: twice}.",
+        "\\[sic\\] she said.",
+        "= candidate   when { met }",
+        "  [weight 2]",
         "<-",
     };
     var out: std.ArrayList(u8) = .empty;
@@ -246,12 +290,13 @@ fn anyBytes(s: *shakedown.Source, a: std.mem.Allocator, buffer: []u8) ![]const u
     const seed = if (gen.boolean(s)) try story(s, a) else try laidOut(s, a);
     return gen.mutated(s, buffer, &.{
         seed,
-        "== a\n{ x }\n  ~ y = 1\n-> a\n",
-        "cast:\n  mum: Mum # role\n",
+        "== a\n{ x }\n  [y = 1]\n-> a\n",
+        "cast:\n  mum: Mum\n    [role] [x = 1]\n",
         "== q\n= a   when { met }\n  * Run.\n= b   when { a > 1 }   -> q\n",
         "extern:\n  f(x: int) -> int (action) (reads s)\n  g()\n",
-        "== q\n  * Run.\n    # stage\n    ~ x = 1\n",
-        "\u{FEFF}== q   // the start\r\n\r\n  \r\n- (x) * Go.   # id a1  \r\n{ a } -> q",
+        "== q\n  * Run.\n    [stage]\n    [x = 1]\n",
+        "\u{FEFF}== q   // the start\r\n\r\n  \r\n- (x) * Go. ^a1  \r\n{ a } -> q",
+        "== a\n  [t \"q] //\" x] [u]\nASTRO (manic): Hi. ^k\n  [cut(x)] [a · b] [id k]\n~ x\n->> y\n{n -> one: a}\n",
     });
 }
 
@@ -299,8 +344,9 @@ test "a file's layout prints back: comments, blank rows, spaces, CRLF, a byte-or
         "\u{FEFF}",
         "\u{FEFF}== a\r\n-> end",
         "// only a comment",
-        "== a   // why   \r\n\r\n   \nMUM: Go.   # id k1 · at 2   // note  \n  ~ x = 1  \n",
-        "== a\n{ met } Go.   # id k2\n- (ask) * Run.   # side go\n",
+        "== a   // why   \r\n\r\n   \nMUM: Go.   ^k1   // note  \n  [at 2]  [x = 1]  \n",
+        "== a\n{ met } Go. ^k2\n- (ask) * Run. ^r2\n  [side go]\n",
+        "== a\n  [title \"a ] // b\"]   // c\r\nDAD (quietly): \\[x\\] \\^k ^k3\n",
     };
     for (texts) |text| {
         var arena: std.heap.ArenaAllocator = .init(gpa);
@@ -332,19 +378,19 @@ test "a place is a line and a column worked out from a range, by rows, a byte-or
     defer arena.deinit();
     var diags: source.Diagnostics = .{};
     defer diags.deinit(gpa);
-    const text = "\u{FEFF}== a\r\n// note\nDAD: Go.\n  ~ x = 1";
+    const text = "\u{FEFF}== a\r\n// note\nDAD: Go.\n  [x = 1]";
     const file = try parse.parseFile(arena.allocator(), gpa, &diags, 0, "a.river", text);
     try testing.expectEqual(source.Place{ .line = 1, .col = 4 }, file.place(file.sections[0].name.span));
     try testing.expectEqual(source.Place{ .line = 3, .col = 1 }, file.place(file.sections[0].body[0].span));
     try testing.expectEqual(source.Place{ .line = 4, .col = 3 }, file.place(file.sections[0].body[0].kind.line.effects[0].span));
 }
 
-test "a part's `when` with no braces, a word after an extern's marks and a line of tags alone are read, not trapped" {
+test "a part's `when` with no braces, a word after an extern's marks and a row of tags alone are read, not trapped" {
     const cases = [_]struct { text: []const u8, refused: bool }{
         .{ .text = "== q\n= a   when met\n", .refused = true },
         .{ .text = "== q\n= a   when { met\n", .refused = true },
         .{ .text = "extern:\n  f() -> int (action) x\n", .refused = true },
-        .{ .text = "== q\n  * Run.\n    # stage\n", .refused = false },
+        .{ .text = "== q\n  * Run.\n    [stage]\n", .refused = false },
         .{ .text = "== q\n{ a | b: -> q }\n", .refused = true },
     };
     for (cases) |case| {

@@ -3,85 +3,118 @@
 // The day mechanic offers the acts whose `at` holds the slot it is in, four slots, and the
 // two-slot act takes two. Each act is offered once: its condition is that it is not yet kept.
 // When the slots run out the mechanic goes on to `then`.
-== day_1998                                      # day · slots morning, noon, afternoon, evening · then day_end_1998
-Six things want her today. There is time for four.   # prompt
+== day_1998
+  [day] [slots morning, noon, afternoon, evening] [then day_end_1998]
+Six things want her today. There is time for four.
+  [prompt]
 { life = stay }
-  + { kept hasnt ruth } Ruth's fever             # at morning · who Ruth
+  + { kept hasnt ruth } Ruth's fever
+    [at morning] [who Ruth]
     She sits on the end of Ruth's bed with a flannel and the radio. Ruth is asleep by eleven, holding her sleeve.
-    ~ kept += ruth
-  + { kept hasnt stock } The stocktake at the shop   # at morning, noon · who the shop
+    [kept += ruth]
+  + { kept hasnt stock } The stocktake at the shop
+    [at morning, noon] [who the shop]
     Four hundred and twelve tins of peaches. Nobody buys peaches. She counts them anyway, because Dad would have.
-    ~ kept += stock
-  + { kept hasnt dad } Visit Dad at St Anne's    # at noon, afternoon · who Dad · marked
+    [kept += stock]
+  + { kept hasnt dad } Visit Dad at St Anne's
+    [at noon, afternoon] [who Dad] [marked]
     St Anne's is a bus and a walk. She runs the walk.
-    ~ kept += dad
-    ->> deathbed_1998
-  + { kept hasnt tom } Tom's football final      # at afternoon · who Tom
+    [kept += dad]
+    -> deathbed_1998 ->
+  + { kept hasnt tom } Tom's football final
+    [at afternoon] [who Tom]
     Tom scores in the second half and looks straight up at the stand. She is on her feet. She is the only one on her feet.
-    ~ kept += tom
-  + { kept hasnt danny } Danny's birthday dinner # at evening · who Danny
+    [kept += tom]
+  + { kept hasnt danny } Danny's birthday dinner
+    [at evening] [who Danny]
     The cake sinks in the middle. Danny eats two slices of the crater and says it's the best part.
-    ~ kept += danny
-  + { kept hasnt piano } An hour at the piano, alone   # at noon, evening · who herself
+    [kept += danny]
+  + { kept hasnt piano } An hour at the piano, alone
+    [at noon, evening] [who herself]
     Thirteen years since she played. Her hands remember the first eight bars of something and nothing after. She plays the eight bars until it's dark.
-    ~ kept += piano
+    [kept += piano]
 { life = go }
-  + { kept hasnt rehearsal } The last rehearsal  # at morning · who the music
+  + { kept hasnt rehearsal } The last rehearsal
+    [at morning] [who the music]
     The orchestra takes her second movement too fast. She stops them with one hand, and for a second the whole hall waits on her.
-    ~ kept += rehearsal
-  + { kept hasnt leo } Leo's school play         # at noon · who Leo
+    [kept += rehearsal]
+  + { kept hasnt leo } Leo's school play
+    [at noon] [who Leo]
     Leo is a tree. He doesn't move for forty minutes. She has never seen anything so brave.
-    ~ kept += leo
-  + { kept hasnt radio } The radio interview     # at morning, afternoon · who her name
+    [kept += leo]
+  + { kept hasnt radio } The radio interview
+    [at morning, afternoon] [who her name]
     They ask where her music comes from. She says a kitchen. They laugh. She doesn't.
-    ~ kept += radio
-  + { kept hasnt dad } The train north to Dad    # at noon, afternoon · cost 2 · while on the train · who Dad · marked
+    [kept += radio]
+  + { kept hasnt dad } The train north to Dad
+    [at noon, afternoon] [cost 2] [while on the train] [who Dad] [marked]
     Three hours north on the slow train. She reads the same page the whole way.
-    ~ kept += dad
-    ->> deathbed_1998
-  + { kept hasnt premiere } The premiere         # at evening · who the music
+    [kept += dad]
+    -> deathbed_1998 ->
+  + { kept hasnt premiere } The premiere
+    [at evening] [who the music]
     Her piece is played. The applause starts late, the way it does when people mean it. She takes the bow and walks straight out of the building.
-    ~ kept += premiere
-  + { kept hasnt walk } An hour by the river, alone   # at morning, afternoon, evening · who herself
+    [kept += premiere]
+  + { kept hasnt walk } An hour by the river, alone
+    [at morning, afternoon, evening] [who herself]
     She walks by the river and thinks of nothing at all. It is the best hour of the year.
-    ~ kept += walk
+    [kept += walk]
 // a slot with nothing it can hold
-- (idle) There is nothing she can do with the {slot}. She sits in the kitchen and lets it pass.   # idle
+- (idle) There is nothing she can do with the {slot}. She sits in the kitchen and lets it pass.
+  [idle]
 
 // What she didn't do also happened.
-== day_end_1998                                  # card
-Everything she didn't do also happened.          # pause 0.2
+== day_end_1998
+  [card]
+Everything she didn't do also happened.
+  [pause 0.2]
 { life = stay }
-  { kept hasnt ruth }  Ruth spends the morning at the neighbour's, watching the door.    # who Ruth
-  { kept hasnt stock } The stocktake waits. The bank doesn't.                                 # who the shop
-  { kept hasnt dad }   Frank Marlowe died at {dies_at} that night. The nurse said he asked for her twice.   # who Dad · marked
-  { kept hasnt tom }   Tom looks for her in the stand until half-time.                         # who Tom
-  { kept hasnt danny } Danny eats at the table alone and wraps her plate in foil.              # who Danny
-  { kept hasnt piano } The piano stays shut. It has been shut for thirteen years.             # who herself
+  { kept hasnt ruth }  Ruth spends the morning at the neighbour's, watching the door.
+    [who Ruth]
+  { kept hasnt stock } The stocktake waits. The bank doesn't.
+    [who the shop]
+  { kept hasnt dad }   Frank Marlowe died at {dies_at} that night. The nurse said he asked for her twice.
+    [who Dad] [marked]
+  { kept hasnt tom }   Tom looks for her in the stand until half-time.
+    [who Tom]
+  { kept hasnt danny } Danny eats at the table alone and wraps her plate in foil.
+    [who Danny]
+  { kept hasnt piano } The piano stays shut. It has been shut for thirteen years.
+    [who herself]
 { life = go }
-  { kept hasnt rehearsal } They rehearse without her. The second movement stays too fast.     # who the music
-  { kept hasnt leo }       Leo is a tree. He watches the empty chair the whole time and stays very still, so she'd be proud anyway.   # who Leo
-  { kept hasnt radio }     The interview goes to someone else. So, slowly, does the next commission.   # who her name
-  { kept hasnt dad }       Frank Marlowe died at {dies_at} that night, three hundred miles north. The nurse said he asked for her twice.   # who Dad · marked
-  { kept hasnt premiere }  The premiere goes ahead without her. The conductor takes her bow.   # who the music
-  { kept hasnt walk }      There isn't an hour that's hers. There hasn't been for years.      # who herself
+  { kept hasnt rehearsal } They rehearse without her. The second movement stays too fast.
+    [who the music]
+  { kept hasnt leo }       Leo is a tree. He watches the empty chair the whole time and stays very still, so she'd be proud anyway.
+    [who Leo]
+  { kept hasnt radio }     The interview goes to someone else. So, slowly, does the next commission.
+    [who her name]
+  { kept hasnt dad }       Frank Marlowe died at {dies_at} that night, three hundred miles north. The nurse said he asked for her twice.
+    [who Dad] [marked]
+  { kept hasnt premiere }  The premiere goes ahead without her. The conductor takes her bow.
+    [who the music]
+  { kept hasnt walk }      There isn't an hour that's hers. There hasn't been for years.
+    [who herself]
 -> found_1998
 
 // After his death each life finds the same fact its own way.
-== found_1998                                    # card
+== found_1998
+  [card]
 { life = stay }
   A week after the funeral she clears the till drawer at the shop. Under the float, an envelope, soft from being opened and folded and opened.
-  Royal College of Music, 1958: “…pleased to offer Mr F. Marlowe a place, beginning in the autumn term…”   # quoted
+  Royal College of Music, 1958: “…pleased to offer Mr F. Marlowe a place, beginning in the autumn term…”
+    [quoted]
 { life = go }
   A letter comes two days after the funeral, posted the day before he died. His handwriting has got very large.
   DAD: I had a place at the conservatory in '58. I gave it up when your mother was expecting Margaret. I'd do it again. Don't you dare.
 { carried has gave }
-  She already knew. It doesn't help.             # pause 0.3
-~ carried += gave
+  She already knew. It doesn't help.
+    [pause 0.3]
+[carried += gave]
 -> years
 
 // The deathbed: what she knows from anywhere opens a line.
-== deathbed_1998                                 # talk · picture deathbed_1998
+== deathbed_1998
+  [talk] [picture deathbed_1998]
 He is very thin. He knows her straight away.
 DAD: { life = go: You came all this way. | You came. }
 - (ask)
@@ -91,14 +124,17 @@ DAD: { life = go: You came all this way. | You came. }
 * How are you feeling?
   DAD: Like a man in a bed.
   -> ask
-* { carried has play } Play something for me, Dad.       # known play
-  ~ said += play
+* { carried has play } Play something for me, Dad.
+  [known play]
+  [said += play]
   He lifts his hands off the blanket. His fingers move on nothing, slow and sure, the way they must have once.
   DAD: There. Did you hear it?
   -> ask
-* { carried has gave } You gave it up for me.            # known gave
-  ~ said += gave
-  DAD: I'd do it again.                                  # pause 0.2
+* { carried has gave } You gave it up for me.
+  [known gave]
+  [said += gave]
+  DAD: I'd do it again.
+    [pause 0.2]
   DAD: Don't you dare give yours up.
   { life = go }
     * I didn't.
@@ -111,5 +147,6 @@ DAD: { life = go: You came all this way. | You came. }
   -> ask
 * Sleep, Dad. I'm here.
   He sleeps. She stays.
-  Frank Marlowe died at {dies_at} that night, with the radio on and her hand on the blanket.   # pause 0.4
+  Frank Marlowe died at {dies_at} that night, with the radio on and her hand on the blanket.
+    [pause 0.4]
   <-

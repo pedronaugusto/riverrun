@@ -76,6 +76,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
         .lines = c.lines,
         .tags = c.tags,
         .text_tags = c.text_tags,
+        .line_tags = c.line_tags,
     };
     for (options.passes) |p| try p.run(p.user, &c, &out);
     return out;
@@ -97,4 +98,5 @@ test {
     _ = @import("check/never.zig");
     _ = @import("check/proof_test.zig");
     _ = @import("check/errors_test.zig");
+    _ = @import("check/excerpts_test.zig");
 }

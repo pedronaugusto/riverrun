@@ -326,7 +326,7 @@ test "two flows tell over the same facts" {
     try t.expectLine(0, "three");
 }
 
-// `~ persuaded = persuade(12)` between two effects, then a branch on it.
+// `[persuaded = persuade(12)]` between two effects, then a branch on it.
 fn persuasion() !testing.Built {
     var b: Builder = try .init(gpa);
     defer b.deinit();

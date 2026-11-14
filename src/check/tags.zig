@@ -48,7 +48,10 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, part: ?u16
             },
             .unknown => {},
         };
-        const schema = c.options.schema orelse continue;
+        const schema = c.options.schema orelse {
+            _ = try notAction(c, module, tag);
+            continue;
+        };
         const key = switch (schema.find(tag.key.text, at)) {
             .found => |k| k,
             .elsewhere => {
@@ -56,12 +59,20 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, part: ?u16
                 continue;
             },
             .unknown => {
-                try c.err(tag.key.span, "`{s}` is not a tag the host knows", .{tag.key.text});
+                if (!try notAction(c, module, tag)) try c.err(tag.key.span, "`{s}` is not a tag the host knows", .{tag.key.text});
                 continue;
             },
         };
         try values(c, where, tag, key);
     }
+}
+
+// A tag whose key names an action, `[cutscene x]` for `[cutscene(x)]`, refused with the form that runs it; false
+// when its key names none.
+fn notAction(c: *Checker, module: sym.ModuleId, tag: *const ast.Tag) Error!bool {
+    if (!c.isAction(module, tag.key.text)) return false;
+    try c.err(tag.key.span, "`{s}` is an action, not a tag: run it with `[{s}(…)]`", .{ tag.key.text, tag.key.text });
+    return true;
 }
 
 // Where a tag stands, as a judge is told.
@@ -80,7 +91,6 @@ fn placeName(at: Schema.Place) []const u8 {
         .part => "part",
         .line => "line",
         .choice => "choice",
-        .other => "statement",
     };
 }
 

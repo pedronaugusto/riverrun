@@ -4,11 +4,11 @@
 //! `migrate`. Every other key is the host's or a package's, held to a
 //! `Checker.Schema`.
 
-/// The key riverrun reserves for a line's id: `# id k7f3a2`.
+/// The key riverrun reserves for a line's id, written `^k7f3a2` at the end of its row.
 pub const id_key = "id";
-/// The key riverrun reserves on a cast entry for the gender its words are chosen by: `# gender feminine`.
+/// The key riverrun reserves on a cast entry for the gender its words are chosen by: `[gender feminine]`.
 pub const gender_key = "gender";
-/// The key riverrun reserves on a pool's candidate for its weight in a draw: `# weight 3`.
+/// The key riverrun reserves on a pool's candidate for its weight in a draw: `[weight 3]`.
 pub const weight_key = "weight";
-/// The key riverrun reserves on a rule that migrates a save: `# migrate 2`.
+/// The key riverrun reserves on a rule that migrates a save: `[migrate 2]`.
 pub const migrate_key = "migrate";

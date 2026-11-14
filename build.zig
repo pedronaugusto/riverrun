@@ -175,20 +175,6 @@ pub fn dev(b: *std.Build, tools: type) void {
     compiler_tests.root_module.addImport("shakedown", b.dependency("shakedown", .{ .target = target, .optimize = optimize }).module("shakedown"));
     test_step.dependOn(&b.addRunArtifact(compiler_tests).step);
     test_step.dependOn(&b.addRunArtifact(storyTests(b, target, optimize, filters) orelse return).step);
-    // The one-shot rewriter from the first syntax to design B, on the reader of the first.
-    const rewrite = b.addExecutable(.{
-        .name = "riverrun-rewrite",
-        .root_module = b.createModule(.{
-            .root_source_file = p.path("tools/rewrite.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "riverrun-compiler", .module = compiler(package) orelse return },
-                .{ .name = "aegis", .module = p.dependency("aegis", .{ .target = target, .optimize = optimize }).module("aegis") },
-            },
-        }),
-    });
-    b.step("rewrite", "Build the one-shot rewriter to design B").dependOn(&b.addInstallArtifact(rewrite, .{}).step);
     tools.preflight.addCi(b, p, .{ .tests = test_step });
 }
 

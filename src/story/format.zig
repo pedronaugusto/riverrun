@@ -274,7 +274,7 @@ pub const SlotKind = enum(u8) {
     once = 4,
     /// Alternatives: in an order the seed shuffles.
     shuffle = 5,
-    /// Words chosen by the plural category of an int, in the table's language: `{n -> one: pelt | other: pelts}`.
+    /// Words chosen by the plural category of an int, in the table's language: `{n as one: pelt | other: pelts}`.
     plural = 6,
     /// Words chosen by the grammatical gender of a cast member (an int, its index) or a thing (a ref, which the
     /// host answers for).

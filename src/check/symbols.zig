@@ -132,7 +132,7 @@ pub const Extern = struct {
     /// Null for an action, which runs as an effect; a type for a query, which an expression asks,
     /// or for an action's outcome.
     returns: ?Type,
-    /// An action with an outcome the host decides: `~ fact = name(…)`.
+    /// An action with an outcome the host decides: `[fact = name(…)]`.
     action: bool = false,
     /// The stamp the host bumps when what the query reads changes.
     reads: ?Stamp = null,
@@ -165,7 +165,7 @@ pub const Section = struct {
     visit: VisitId,
     /// A tag hands the section's end to the host, which goes on to a section it names.
     leads: bool = false,
-    /// Something calls it with `->>`.
+    /// Something calls it with `-> name ->`.
     called: bool = false,
     /// It declares facts within it, its own or its kind's, which its own conditions name without the section's name.
     declares: bool = false,
@@ -287,7 +287,7 @@ pub const BuiltinArg = union(enum) { part: PartRef, section: SectionId, fact: Fa
 /// An expression's type, and what it names when it is a name or a call.
 pub const Typed = struct { type: Type, ref: ?Ref = null };
 
-/// A line's or a choice's id: written as `# id …`, or derived in a development build.
+/// A line's or a choice's id: written as `^…` at the end of its row, or derived in a development build.
 pub const LineId = struct { text: []const u8, written: bool };
 
 /// A flow from one section to another: what reachability walks.

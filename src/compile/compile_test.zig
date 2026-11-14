@@ -31,7 +31,7 @@ test "a kitchen: lines, choices open and closed, a gather, a jump and the end" {
         \\  DAD: Who'd listen?
         \\  -> ask
         \\+ Pick up the case.
-        \\  ~ carried += gave
+        \\  [carried += gave]
         \\  -> fork
         \\== fork
         \\{ carried has gave } Gone.
@@ -64,11 +64,11 @@ test "a line says the section and the part it is in, however the flow came to it
         \\-> hall
         \\== hall
         \\In the hall.
-        \\->> barks
+        \\-> barks ->
         \\-> door
         \\= door
         \\  At the door.
-        \\  ->> aside
+        \\  -> aside ->
         \\  -> end
         \\== aside
         \\An aside.
@@ -105,14 +105,14 @@ test "conditions with else, ints changed by an amount, alternatives and a pool" 
         \\const:
         \\  penalty = 5
         \\== a
-        \\~ points += 2
-        \\~ points -= penalty
+        \\[points += 2]
+        \\[points -= penalty]
         \\{ points < 0 }
         \\  Below zero.
         \\{ else }
         \\  Above.
         \\Margaret {cycle: counts | hums}.
-        \\->> night
+        \\-> night ->
         \\-> end
         \\== night (pool)
         \\= plain   when { hour >= 0 }
@@ -172,7 +172,7 @@ test "an outcome, the host's things and another module's names" {
         \\extern:
         \\  persuade(against: int) -> one of yes, no   (action)
         \\== start
-        \\~ persuaded = persuade(12)
+        \\[persuaded = persuade(12)]
         \\{ persuaded = yes } She agrees.
         \\-> harbour.letter
     }, .{}, &.{}, Persuasion{});
@@ -293,12 +293,13 @@ test "a section kept per thing is evaluated for one, its roles given or read as 
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
     var out = try testing.compiled(gpa, arena.allocator(), &.{
-        \\== bounty (quest)   # repeat
+        \\== bounty (quest)
+        \\  [repeat]
         \\facts:
         \\  target: ref of person   (role)
         \\  asked: set of tom, danny
         \\= ask   when { asked has tom and target = danny }
-        \\  ~ asked += danny
+        \\  [asked += danny]
     }, .{ .kinds = &.{@import("../check/errors_test.zig").repeat_kind} }, &.{.{ .name = "cairn", .run = Pass.conditions }});
     defer out.deinit(gpa);
     const s: story.Story = try .init(out.graph, .{});
@@ -340,9 +341,9 @@ test "rules from the text: a slight lowers honor, and time alone brings it back"
         \\  insulted: bool   (game)
         \\== honor (rules)
         \\= slight   when { insulted }
-        \\  ~ honor -= 5
+        \\  [honor -= 5]
         \\= drift    when { since_changed(honor, seconds) >= 10 and honor < 0 }
-        \\  ~ honor += 1
+        \\  [honor += 1]
     }, .{}, &.{}, testing.NoHost{});
     defer t.deinit();
     var owners: [facts.max_scopes]u64 = @splat(0);
@@ -383,16 +384,16 @@ test "a lever puzzle: in order it opens, a wrong lever or a slow hand starts it 
         \\  door:    bool
         \\== chapel (rules)
         \\= first    when { levers = idle and pulled = a }
-        \\  ~ levers = one
+        \\  [levers = one]
         \\= second   when { levers = one and pulled = c }
-        \\  ~ levers = two
+        \\  [levers = two]
         \\= third    when { levers = two and pulled = b }
-        \\  ~ levers = open
-        \\  ~ door = true
+        \\  [levers = open]
+        \\  [door = true]
         \\= wrong    when { levers != open and happened(pulled) }
-        \\  ~ levers = idle
+        \\  [levers = idle]
         \\= slow     when { (levers = one or levers = two) and since_changed(levers, seconds) > 10 }
-        \\  ~ levers = idle
+        \\  [levers = idle]
     }, .{}, &.{}, testing.NoHost{});
     defer t.deinit();
     var owners: [facts.max_scopes]u64 = @splat(0);
@@ -454,9 +455,9 @@ test "facts kept per person: kill him, and his wife's opinion of you falls, and 
         \\  furious:          bool
         \\== village (rules)
         \\= grief    when { killed(hank) }
-        \\  ~ opinion(marta) -= 50
+        \\  [opinion(marta) -= 50]
         \\= furor    when { opinion(marta) < 0 }
-        \\  ~ furious = true
+        \\  [furious = true]
         \\== talk
         \\{ opinion(marta) < 0 }
         \\  She will not look at you.
@@ -487,10 +488,10 @@ test "honor is bounded: it stops at its ends however much it changes" {
         \\facts (world):
         \\  honor: int from -100 to 100
         \\== a
-        \\~ honor += 80
-        \\~ honor += 80
+        \\[honor += 80]
+        \\[honor += 80]
         \\{ honor = 100 } At the top.
-        \\~ honor -= 500
+        \\[honor -= 500]
         \\{ honor = -100 } At the bottom.
         \\-> end
     }, .{}, &.{}, testing.NoHost{});
@@ -509,12 +510,14 @@ const quest_schema: check.Schema = .{ .keys = &.{.{ .name = "title", .on = .{ .s
 test "translation: a title in the string table, a plural that falls back to other, a cast member's gender" {
     const t = try Told.init(gpa, &.{
         \\cast:
-        \\  marta  "Marta"   # gender feminine
+        \\  marta  "Marta"
+        \\    [gender feminine]
         \\facts (world):
         \\  pelts: int
-        \\== a          # title "The pelts"
-        \\MARTA: You have {pelts -> one: a pelt | other: {pelts} pelts}.
-        \\{marta -> feminine: She | masculine: He | other: They} takes them.
+        \\== a
+        \\  [title "The pelts"]
+        \\MARTA: You have {pelts as one: a pelt | other: {pelts} pelts}.
+        \\{marta as feminine: She | masculine: He | other: They} takes them.
         \\-> end
     }, .{ .schema = &quest_schema }, &.{}, testing.NoHost{});
     defer t.deinit();
@@ -539,12 +542,14 @@ test "translation: a title in the string table, a plural that falls back to othe
 test "a weighted pool draws by weight, the same draws in a replay" {
     const t = try Told.init(gpa, &.{
         \\== talk
-        \\->> merchant
+        \\-> merchant ->
         \\-> talk
         \\== merchant (pool)
-        \\= rumour    when { true }   # weight 3
+        \\= rumour    when { true }
+        \\  [weight 3]
         \\  They say the mill burned.
-        \\= weather   when { true }   # weight 7
+        \\= weather   when { true }
+        \\  [weight 7]
         \\  Rain again.
     }, .{}, &.{}, testing.NoHost{});
     defer t.deinit();
@@ -565,10 +570,11 @@ test "a migration runs once, when an older save loads, and never in a new game" 
         \\  honor:  int from -100 to 100
         \\  karma:  int
         \\== fixes (rules)
-        \\= karma_is_honor    # migrate 2
-        \\  ~ honor += 10
+        \\= karma_is_honor
+        \\  [migrate 2]
+        \\  [honor += 10]
         \\= noticed   when { honor > 50 }
-        \\  ~ karma += 1
+        \\  [karma += 1]
     }, .{}, &.{}, testing.NoHost{});
     defer t.deinit();
     var owners: [facts.max_scopes]u64 = @splat(0);
@@ -585,4 +591,29 @@ test "a migration runs once, when an older save loads, and never in a new game" 
     try t.memory.set(t.story.versionFact(), .{ .int = 0 });
     try rules.start();
     try std.testing.expectEqual(@as(usize, 0), (try rules.migrate()).len);
+}
+
+const delivery_schema: check.Schema = .{ .keys = &.{
+    .{ .name = "delivery", .on = .{ .line = true }, .value = .text },
+    .{ .name = "pause", .on = .{ .line = true }, .value = .number },
+} };
+
+test "a delivery reaches the host as a tag of the key it names, its words in the string table beside the line" {
+    const t = try Told.init(gpa, &.{
+        \\cast:
+        \\  astro  "Astro"
+        \\== a
+        \\ASTRO (laughing manically): Not even close. ^k1
+        \\  [pause 2]
+        \\-> end
+    }, .{ .schema = &delivery_schema, .delivery = "delivery" }, &.{}, testing.NoHost{});
+    defer t.deinit();
+    try t.session.start(.fromRaw(0), t.section("a"));
+    const step = try t.session.next(.fromRaw(0));
+    try std.testing.expectEqualStrings("Not even close.", step.line.text);
+    const d = t.story.tagNamed(step.line.tags, "delivery").?;
+    const words = t.story.tagValue(d.values.start);
+    try std.testing.expectEqualStrings("laughing manically", words.text);
+    try std.testing.expectEqualStrings("laughing manically", t.words.template(words.line.?).?);
+    try std.testing.expectEqualStrings("k1", t.story.tagValue(t.story.tagNamed(step.line.tags, "id").?.values.start).text);
 }

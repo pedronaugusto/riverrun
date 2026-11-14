@@ -1,4 +1,4 @@
-//! Flow: where `->`, `->>` and `<-` go, and whether the story holds
+//! Flow: where `->`, `-> name ->` and `<-` go, and whether the story holds
 //! together as a graph.
 //!
 //! - A target is, nearest first, `end`, a label of the body it is in, a part
@@ -26,12 +26,12 @@ const exprs = @import("exprs.zig");
 const ast = syntax.ast;
 const Error = Checker.Error;
 
-/// Resolves a flow written at `span` in `scope`.
-pub fn resolve(c: *Checker, scope: exprs.Scope, f: *const ast.Flow, span: syntax.Span) Error!void {
-    switch (f.*) {
+/// Resolves a flow written in `scope`.
+pub fn resolve(c: *Checker, scope: exprs.Scope, f: *const ast.Flow) Error!void {
+    switch (f.kind) {
         .ret => {
             const first = try c.returns.getOrPut(c.arena, scope.section);
-            if (!first.found_existing) first.value_ptr.* = span;
+            if (!first.found_existing) first.value_ptr.* = f.span;
         },
         .jump => |*n| try go(c, scope, n, .jump),
         .call => |*n| try go(c, scope, n, .call),
@@ -44,7 +44,7 @@ fn go(c: *Checker, scope: exprs.Scope, n: *const ast.Name, how: enum { jump, cal
     };
     switch (t) {
         .end => if (how == .call) return c.err(n.span, "`end` is gone to, `-> end`; it cannot be called", .{}),
-        .label => if (how == .call) return c.err(n.span, "`{s}` is a label: go to it with `->`; `->>` calls a section", .{n.text}),
+        .label => if (how == .call) return c.err(n.span, "`{s}` is a label: go to it with `-> {s}`; `-> name ->` calls a section", .{ n.text, n.text }),
         .part => |p| {
             const s = c.section(p.section);
             if (s.kind == .pool) return c.err(n.span, "`{s}` is a candidate of the pool `{s}`, which picks it", .{ n.text, s.name });
@@ -53,7 +53,7 @@ fn go(c: *Checker, scope: exprs.Scope, n: *const ast.Name, how: enum { jump, cal
         },
         .section => |id| {
             const s = c.section(id);
-            if (how == .jump and s.kind == .pool) return c.err(n.span, "`{s}` is a pool: call it, `->> {s}`, and it gives its lines and comes back", .{ n.text, n.text });
+            if (how == .jump and s.kind == .pool) return c.err(n.span, "`{s}` is a pool: call it, `-> {s} ->`, and it gives its lines and comes back", .{ n.text, n.text });
             if (s.kind == .rules) return c.err(n.span, "`{s}` holds rules: they fire when their conditions become true, and nothing goes to them", .{n.text});
             if (how == .call) s.called = true;
             try c.edge(scope.section, id, if (how == .call) .call else .jump);
@@ -83,7 +83,7 @@ pub fn run(c: *Checker) Error!void {
     var it = c.returns.iterator();
     while (it.next()) |r| {
         const s = c.section(r.key_ptr.*);
-        if (!s.called) try c.warn(r.value_ptr.*, "`<-` goes back to a caller, but nothing calls `{s}` with `->>`", .{s.name});
+        if (!s.called) try c.warn(r.value_ptr.*, "`<-` goes back to a caller, but nothing calls `{s}` with `-> {s} ->`", .{ s.name, s.name });
     }
     for (c.sections.items) |s| if (s.kind == .scene) for (s.parts) |p| {
         if (!p.reached) try c.warn(p.node.name.span, "nothing goes to the part `{s}` of `{s}`", .{ p.name, s.name });
@@ -150,8 +150,8 @@ fn stmtGone(c: *Checker, s: *const ast.Stmt) Error!bool {
             return try gone(c, k.otherwise) and then;
         },
         .gather => |g| if (g.then) |then| stmtGone(c, then) else false,
-        .flow => |f| f != .call,
-        .flow_if => |f| f.then != .call and f.otherwise != .call,
+        .flow => |f| f.kind != .call,
+        .flow_if => |f| f.then.kind != .call and f.otherwise.kind != .call,
         .choice => unreachable, // a choice point is read whole by `gone`
     };
 }

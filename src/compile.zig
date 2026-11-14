@@ -102,7 +102,7 @@ fn pass(c: *Compiler, p: Pass) Error!void {
     if (c.diags.errors() > before) return error.PassFailed;
 }
 
-// riverrun's own number on a part, `# weight 3`, `# migrate 2`, which the checker held to a u16 above 0; 0 for none.
+// riverrun's own number on a part, `[weight 3]`, `[migrate 2]`, which the checker held to a u16 above 0; 0 for none.
 fn ownNumber(tags: []const syntax.ast.Tag, key: []const u8) u16 {
     for (tags) |t| if (std.mem.eql(u8, t.key.text, key) and t.values.len == 1) {
         return std.fmt.parseInt(u16, t.values[0], 10) catch 0;

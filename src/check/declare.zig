@@ -188,6 +188,10 @@ fn external(c: *Checker, module: sym.ModuleId, e: *const ast.Extern) Error!void 
     const returns: ?sym.Type = if (e.returns) |r| try typeOf(c, r, e.name.span) else null;
     const reads: ?sym.Stamp = if (e.reads) |st| try stamp(c, e, st, names) else null;
     if (reads != null and (returns == null or e.action)) try c.err(e.name.span, "`(reads …)` stamps a query: `{s}` is an action", .{e.name.text});
+    // `[x(…)]` runs an action and `[x …]` is a tag: one name cannot be both
+    if ((returns == null or e.action) and c.isKey(e.name.text)) {
+        try c.err(e.name.span, "`{s}` is an action and a tag the host knows: a name is one or the other", .{e.name.text});
+    }
     if (c.externs.items.len == sym.limits.ids) return c.err(e.name.span, "the story has more queries and actions than {d}", .{sym.limits.ids});
     const id = sym.idOf(sym.ExternId, c.externs.items.len);
     if (!try named(c, module, e.name, .{ .external = id }, null)) return;

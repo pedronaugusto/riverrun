@@ -22,7 +22,7 @@ files from it alone. `src/story/format.zig` is the same layout in Zig.
 - `none` is `0xFFFFFFFF` in a 32-bit index and `0xFFFF` in a 16-bit one.
 - Names are qualified by their module: `module.name`, the root module's bare.
 - The hash is XxHash64 with seed 0. A **line id** is the XxHash64 (seed 0) of the
-  line's `# id` text; it is never zero.
+  line's id text (`k7f3a2`, written `^k7f3a2` at the end of its row); it is never zero.
 
 ## Layout of a file
 
@@ -346,7 +346,7 @@ and `locale: Str`, a BCP 47 tag. A translation may carry an earlier graph's hash
 what decides whether it serves a graph is the check below, not the hash.
 
 **ids** are line ids in strictly ascending order; **entries** are parallel to them:
-`id_text: Str` (the `# id` text, for tools and voice scripts) and `template: Str`.
+`id_text: Str` (the line's id text, for tools and voice scripts) and `template: Str`.
 
 ### Templates
 

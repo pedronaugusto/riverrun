@@ -50,12 +50,19 @@ lines: std.AutoHashMapUnmanaged(*const ast.Stmt, sym.LineId),
 tags: std.AutoHashMapUnmanaged(*const ast.Tag, []const sym.SectionId),
 /// The tags whose values are words a player reads (a quest's title), which go into the string table.
 text_tags: std.AutoHashMapUnmanaged(*const ast.Tag, void),
+/// A line's tags where it has a delivery: the delivery, a tag of the host's key, then the line's own.
+line_tags: std.AutoHashMapUnmanaged(*const ast.Stmt, []const ast.Tag),
 
 pub fn deinit(c: *Checked) void {
     const gpa = c.arena.child_allocator;
     c.arena.deinit();
     gpa.destroy(c.arena);
     c.* = undefined;
+}
+
+/// A line's or a choice's tags as the host is given them: a delivery among them, as a tag.
+pub fn tagsOf(c: *const Checked, s: *const ast.Stmt) []const ast.Tag {
+    return c.line_tags.get(s) orelse s.tags;
 }
 
 /// A section by name, as the root module sees it.

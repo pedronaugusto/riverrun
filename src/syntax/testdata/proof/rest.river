@@ -1,14 +1,16 @@
 // The eulogy speaks a life, shaped by its one day; resting there ends the game.
 
 // Two of what the day kept, one of what it let go, then the close.
-== eulogy                                        # card · picture title · dim 0.35
+== eulogy
+  [card] [picture title] [dim 0.35]
 { life = stay }
   TOM: Mum stayed. That's the first thing anyone says about her, and she hated it, so I'll say it first and get it over with.
 { life = go }
   LEO: Mum got on the bus. She told that story at every dinner for fifty years, so: she got on the bus.
-->> eulogy_kept
-->> eulogy_missed
-That's it. That's Mum. There isn't a better version of her somewhere. There's this one, and we had it.   # pause 0.4
+-> eulogy_kept ->
+-> eulogy_missed ->
+That's it. That's Mum. There isn't a better version of her somewhere. There's this one, and we had it.
+  [pause 0.4]
 <-
 
 == eulogy_kept (pool 2)
@@ -39,7 +41,9 @@ That's it. That's Mum. There isn't a better version of her somewhere. There's th
 = premiere   when { life = go and kept hasnt premiere }   She missed her own premiere. Someone else took her bow.
 = walk       when { life = go and kept hasnt walk }       She never had an hour to herself.
 
-== rest                                          # card · picture title · dim 0.35 · rests
-->> eulogy
-The burial never changes. The same hill, the same rain, whoever is holding the umbrellas.   # pause 0.6
+== rest
+  [card] [picture title] [dim 0.35] [rests]
+-> eulogy ->
+The burial never changes. The same hill, the same rain, whoever is holding the umbrellas.
+  [pause 0.6]
 -> end

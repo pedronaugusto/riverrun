@@ -1,10 +1,15 @@
 //! The reader: one `.river` file into its syntax tree.
 //!
-//! At indentation zero a line is a declaration (`cast:`, `extras:`,
+//! At indentation zero a row is a declaration (`cast:`, `extras:`,
 //! `facts:`, `const:`, `extern:`), a section (`== name`), a part of one
 //! (`= name`) or a statement of the section it is in. A `facts:` block
 //! straight under a section's heading is the section's own. Inside, a
-//! statement's body is the lines indented further than it.
+//! statement's body is the rows indented further than it.
+//!
+//! A row whose words begin with `[` is a row of brackets: each bracket a tag
+//! or an effect. The rows of brackets first under a heading, a line, a choice
+//! or a cast entry are its: its tags, and its effects. Anywhere else a row of
+//! brackets is a step of effects, and a tag there is refused.
 
 const std = @import("std");
 const ast = @import("ast.zig");
@@ -40,6 +45,40 @@ pub fn parseFile(arena: Allocator, gpa: Allocator, diags: *source.Diagnostics, f
     return f;
 }
 
+/// What is indented under a row, as it is read: its statements, and the tags of the rows of brackets that come
+/// first, which are the row's.
+const Body = struct {
+    stmts: std.ArrayList(ast.Stmt) = .empty,
+    tags: std.ArrayList(ast.Tag) = .empty,
+    /// Whether every row read so far is a row of brackets, whose tags are the owner's.
+    leading: bool,
+
+    fn under(b: *const Body) Under {
+        return .{ .stmts = b.stmts.items, .tags = b.tags.items };
+    }
+};
+
+/// What a row has under it, read.
+const Under = struct {
+    stmts: []const ast.Stmt = &.{},
+    tags: []const ast.Tag = &.{},
+
+    fn empty(u: Under) bool {
+        return u.stmts.len == 0 and u.tags.len == 0;
+    }
+
+    // Where the last of it ends, if anything is under the row.
+    fn end(u: Under) ?u32 {
+        var e: ?u32 = null;
+        if (u.stmts.len > 0) e = u.stmts[u.stmts.len - 1].span.end;
+        if (u.tags.len > 0) e = @max(e orelse 0, u.tags[u.tags.len - 1].span.end);
+        return e;
+    }
+};
+
+/// A bracket: a tag, or an effect.
+const Item = union(enum) { tag: ast.Tag, effect: ast.Stmt };
+
 const Reader = struct {
     arena: Allocator,
     gpa: Allocator,
@@ -47,12 +86,14 @@ const Reader = struct {
     file: source.FileId,
     lines: []const Line,
     i: usize = 0,
+    /// The ids a line or a choice has taken, by where each starts; any other is refused once the file is read.
+    taken: std.AutoHashMapUnmanaged(u32, void) = .empty,
 
     fn name(r: *const Reader, p: Placed) ast.Name {
         return .{ .text = p.text, .span = p.span(r.file) };
     }
 
-    // From the start of line `first` to the end of line `last`'s words and tags.
+    // From the start of line `first` to the end of line `last`'s words and id.
     fn over(r: *const Reader, first: Line, last: Line) source.Span {
         return first.span(r.file).join(last.span(r.file));
     }
@@ -64,6 +105,10 @@ const Reader = struct {
 
     fn report(r: *Reader, l: Line, comptime fmt: []const u8, args: anytype) Error!void {
         try r.diags.add(r.gpa, l.span(r.file), .err, fmt, args);
+    }
+
+    fn reportAt(r: *Reader, span: source.Span, comptime fmt: []const u8, args: anytype) Error!void {
+        try r.diags.add(r.gpa, span, .err, fmt, args);
     }
 
     fn readFile(r: *Reader, path: []const u8) Error!ast.File {
@@ -85,6 +130,9 @@ const Reader = struct {
             try r.report(l, "a story's lines belong in a section: `== name` comes first", .{});
             r.i += 1;
         }
+        for (r.lines) |l| if (l.id.text.len > 0 and !r.taken.contains(l.id.at)) {
+            try r.reportAt(l.id.span(r.file), "an id ends a line or a choice: `{s}` stands at the end of neither", .{l.id.text});
+        };
         return .{ .path = path, .span = .none, .module = module, .decls = try decls.toOwnedSlice(r.arena), .sections = try sections.toOwnedSlice(r.arena) };
     }
 
@@ -148,10 +196,10 @@ const Reader = struct {
         const l = r.lines[r.i];
         const scope = try r.scopeOf(l);
         const ls = r.block();
-        return .{ .span = r.under(l, ls), .scope = scope, .entries = try r.factEntries(ls) };
+        return .{ .span = r.under(l, ls), .scope = if (scope) |s| s.name else null, .scope_span = if (scope) |s| s.span else null, .entries = try r.factEntries(ls) };
     }
 
-    fn scopeOf(r: *Reader, l: Line) Error!?ast.Name {
+    fn scopeOf(r: *Reader, l: Line) Error!?struct { name: ast.Name, span: source.Span } {
         const t = l.text.text;
         if (std.mem.eql(u8, t, "facts:")) return null;
         const close = std.mem.findScalar(u8, t, ')') orelse {
@@ -159,10 +207,10 @@ const Reader = struct {
             return null;
         };
         if (!std.mem.endsWith(u8, t, "):")) try r.report(l, "a facts heading ends with `):`", .{});
-        return r.name(l.text.cut("facts (".len, close).trim());
+        return .{ .name = r.name(l.text.cut("facts (".len, close).trim()), .span = l.text.cut("facts ".len, close + 1).span(r.file) };
     }
 
-    // `a · b · c` or `a, b, c`: names.
+    // `a, b, c`: names.
     fn list(r: *Reader, words: Placed) Error![]const ast.Name {
         var out: std.ArrayList(ast.Name) = .empty;
         try r.listInto(&out, words);
@@ -174,7 +222,9 @@ const Reader = struct {
         var start: usize = 0;
         var i: usize = 0;
         while (i <= text.len) {
-            const sep: usize = if (i == text.len) 1 else if (text[i] == ',') 1 else if (std.mem.startsWith(u8, text[i..], "·")) "·".len else 0;
+            const dot = i < text.len and std.mem.startsWith(u8, text[i..], "·");
+            if (dot) try r.reportAt(words.cut(i, i + "·".len).span(r.file), "`·` is gone: separate a list with commas", .{});
+            const sep: usize = if (i == text.len) 1 else if (text[i] == ',') 1 else if (dot) "·".len else 0;
             if (sep == 0) {
                 i += 1;
                 continue;
@@ -186,9 +236,30 @@ const Reader = struct {
         }
     }
 
+    // Each entry, `id "Name" — who they are`, and the rows of brackets under it, its tags.
     fn castEntries(r: *Reader, ls: []const Line) Error![]const ast.CastEntry {
         var out: std.ArrayList(ast.CastEntry) = .empty;
-        for (ls) |l| {
+        var k: usize = 0;
+        while (k < ls.len) {
+            const l = ls[k];
+            k += 1;
+            var tags: std.ArrayList(ast.Tag) = .empty;
+            var last = l;
+            while (k < ls.len and ls[k].indent > l.indent) : (k += 1) {
+                last = ls[k];
+                if (!isBrackets(ls[k].text.text)) {
+                    try r.report(ls[k], "under a cast entry stand its tags, in brackets: `[gender feminine]`", .{});
+                    continue;
+                }
+                for (try r.brackets(ls[k])) |item| switch (item) {
+                    .tag => |t| try tags.append(r.arena, t),
+                    .effect => |s| try r.reportAt(s.span, "a cast entry takes tags, never effects", .{}),
+                };
+            }
+            if (isBrackets(l.text.text)) {
+                try r.report(l, "a cast entry's tags stand on a row indented under it", .{});
+                continue;
+            }
             const t = l.text;
             const sp = std.mem.findScalar(u8, t.text, ' ') orelse t.text.len;
             const rest = t.from(sp).trim().text;
@@ -205,7 +276,7 @@ const Reader = struct {
                 try r.report(l, "after the name comes `— who they are`, or nothing", .{});
                 break :blk null;
             };
-            try out.append(r.arena, .{ .span = l.span(r.file), .id = r.name(t.to(sp)), .display = rest[1..close], .relation = relation, .tags = try r.tags(l) });
+            try out.append(r.arena, .{ .span = r.over(l, last), .id = r.name(t.to(sp)), .display = rest[1..close], .relation = relation, .tags = try tags.toOwnedSlice(r.arena) });
         }
         return out.toOwnedSlice(r.arena);
     }
@@ -232,8 +303,16 @@ const Reader = struct {
             var clock = false;
             var moment = false;
             var role = false;
+            var marks: std.ArrayList(source.Span) = .empty;
             while (true) {
-                if (takeMark(last, "(game)")) game = true else if (takeMark(last, "(clock)")) clock = true else if (takeMark(last, "(moment)")) moment = true else if (takeMark(last, "(role)")) role = true else break;
+                const m = takeMark(last, "(game)") orelse takeMark(last, "(clock)") orelse takeMark(last, "(moment)") orelse takeMark(last, "(role)") orelse break;
+                switch (m.text[1]) {
+                    'g' => game = true,
+                    'c' => clock = true,
+                    'm' => moment = true,
+                    else => role = true,
+                }
+                try marks.insert(r.arena, 0, m.span(r.file));
             }
             const head = l.text.to(colon).trim();
             const n = if (std.mem.findScalar(u8, head.text, '(')) |p| head.to(p).trim() else head;
@@ -253,26 +332,40 @@ const Reader = struct {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Invalid => continue,
             };
-            try out.append(r.arena, .{ .span = r.over(l, ls[k]), .name = r.name(n), .key = key, .type = parsed, .bounds = bounds, .game = game or clock, .clock = clock, .moment = moment, .role = role });
+            const typed = segments.items[0].span(r.file).join(last.span(r.file));
+            try out.append(r.arena, .{
+                .span = r.over(l, ls[k]),
+                .name = r.name(n),
+                .key = if (key) |x| x.type else null,
+                .key_span = if (key) |x| x.span else null,
+                .type = parsed,
+                .type_span = typed,
+                .bounds = bounds,
+                .game = game or clock,
+                .clock = clock,
+                .moment = moment,
+                .role = role,
+                .marks = try marks.toOwnedSlice(r.arena),
+            });
         }
         return out.toOwnedSlice(r.arena);
     }
 
     // What a fact is kept per, from `name(key)`: a kind of the host's things, `opinion(person)`, or an
     // enumeration's values, `mood(one of calm, angry)`; null for a fact with one value.
-    fn keyOf(r: *Reader, l: Line, head: Placed) Fail!?ast.Type {
+    fn keyOf(r: *Reader, l: Line, head: Placed) Fail!?struct { type: ast.Type, span: source.Span } {
         const open = std.mem.findScalar(u8, head.text, '(') orelse return null;
         if (!std.mem.endsWith(u8, head.text, ")")) {
             try r.report(l, "a fact kept per thing is `name(kind): type`", .{});
             return error.Invalid;
         }
         const inner = head.cut(open + 1, head.text.len - 1).trim();
-        if (std.mem.startsWith(u8, inner.text, "one of ")) return try r.typeOf(l, inner, &.{});
+        if (std.mem.startsWith(u8, inner.text, "one of ")) return .{ .type = try r.typeOf(l, inner, &.{}), .span = inner.span(r.file) };
         if (!isName(inner.text)) {
             try r.report(l, "`{s}` is not what a fact is kept per: a kind of the host's things, or `one of …`", .{inner.text});
             return error.Invalid;
         }
-        return .{ .ref = r.name(inner) };
+        return .{ .type = .{ .ref = r.name(inner) }, .span = inner.span(r.file) };
     }
 
     // `int from -100 to 100`: the bounds taken off the type, which is left `int`.
@@ -293,8 +386,9 @@ const Reader = struct {
             try r.report(l, "a bounded int's least, {d}, is past its most, {d}", .{ min.?, max.? });
             return error.Invalid;
         }
+        const span = t.from("int".len).trim().span(r.file);
         t.* = t.to("int".len);
-        return .{ .min = min.?, .max = max.? };
+        return .{ .span = span, .min = min.?, .max = max.? };
     }
 
     // A type, `t`; a list's names go on in `more`, the lines under it.
@@ -365,13 +459,16 @@ const Reader = struct {
         var marks = after.from(marks_at).trim();
         after = after.to(marks_at).trim();
         var returns: ?ast.Type = null;
+        var returns_span: ?source.Span = null;
         if (std.mem.startsWith(u8, after.text, "->")) {
-            returns = try r.typeOf(l, after.from(2).trim(), &.{});
+            const returned = after.from(2).trim();
+            returns = try r.typeOf(l, returned, &.{});
+            returns_span = returned.span(r.file);
         } else if (after.text.len != 0) {
             try r.report(l, "after the parameters comes `-> type`, or nothing", .{});
             return error.Invalid;
         }
-        var e: ast.Extern = .{ .span = l.span(r.file), .name = r.name(t.to(open).trim()), .params = ps, .returns = returns };
+        var e: ast.Extern = .{ .span = l.span(r.file), .name = r.name(t.to(open).trim()), .params = ps, .returns = returns, .returns_span = returns_span };
         while (marks.text.len > 0) {
             if (marks.text[0] != '(') {
                 try r.report(l, "after the parameters and the type come marks, each `(action)` or `(reads stamp)`, or nothing", .{});
@@ -382,11 +479,14 @@ const Reader = struct {
                 return error.Invalid;
             };
             const mark = marks.cut(1, end).trim();
+            const whole = marks.to(end + 1).span(r.file);
             if (std.mem.eql(u8, mark.text, "action")) {
                 if (returns == null) try r.report(l, "`(action)` marks an action with an outcome: it needs `-> type`", .{});
                 e.action = true;
+                e.action_span = whole;
             } else if (std.mem.startsWith(u8, mark.text, "reads ")) {
                 e.reads = try r.stamp(l, mark.from("reads ".len).trim());
+                e.reads_span = whole;
             } else {
                 try r.report(l, "`({s})` is not a mark: `(action)` or `(reads stamp)`", .{mark.text});
                 return error.Invalid;
@@ -417,7 +517,7 @@ const Reader = struct {
                 n = try r.word(l, piece.to(colon));
                 ty = piece.from(colon + 1).trim();
             }
-            try out.append(r.arena, .{ .span = piece.span(r.file), .name = n, .type = try r.typeOf(l, ty, &.{}) });
+            try out.append(r.arena, .{ .span = piece.span(r.file), .name = n, .type = try r.typeOf(l, ty, &.{}), .type_span = ty.span(r.file) });
             start = i + 1;
         }
         return out.toOwnedSlice(r.arena);
@@ -433,31 +533,105 @@ const Reader = struct {
         return .{ .span = t.span(r.file), .family = try r.word(l, t.to(open)), .keys = try r.list(t.cut(open + 1, t.text.len - 1)) };
     }
 
-    // ------------------------------------------------------------ tags
+    // ------------------------------------------------------------ brackets
 
-    fn tags(r: *Reader, l: Line) Error![]const ast.Tag {
-        if (l.tags.text.len == 0) return &.{};
-        var out: std.ArrayList(ast.Tag) = .empty;
-        var items = Split.init(l.tags.text, "·");
-        while (items.next()) |raw| {
-            const item = l.tags.cut(items.last, items.last + raw.len).trim();
-            if (item.text.len == 0) continue;
-            const sp = std.mem.findScalar(u8, item.text, ' ') orelse item.text.len;
-            var values: std.ArrayList([]const u8) = .empty;
-            var spans: std.ArrayList(source.Span) = .empty;
-            const rest = item.from(sp);
-            var vs = Split.init(rest.text, ",");
-            while (vs.next()) |v| {
-                var value = rest.cut(vs.last, vs.last + v.len).trim();
-                if (value.text.len == 0) continue;
-                const quoted = value.text.len >= 2 and value.text[0] == '"' and value.text[value.text.len - 1] == '"';
-                if (quoted) value = value.cut(1, value.text.len - 1);
-                try values.append(r.arena, value.text);
-                try spans.append(r.arena, value.span(r.file));
+    // The brackets of a row of them: each a tag or an effect, the row nothing else.
+    fn brackets(r: *Reader, l: Line) Error![]const Item {
+        var out: std.ArrayList(Item) = .empty;
+        var rest = l.text;
+        while (true) {
+            rest = rest.trim();
+            if (rest.text.len == 0) break;
+            if (rest.text[0] != '[') {
+                try r.reportAt(rest.span(r.file), "a row of brackets holds brackets alone: `{s}` is in none", .{rest.text});
+                break;
             }
-            try out.append(r.arena, .{ .span = item.span(r.file), .key = r.name(item.to(sp)), .values = try values.toOwnedSlice(r.arena), .spans = try spans.toOwnedSlice(r.arena) });
+            const close = bracketClose(rest.text) orelse {
+                try r.reportAt(rest.to(1).span(r.file), "`[` is not closed", .{});
+                break;
+            };
+            if (try r.bracket(l, rest.to(close + 1))) |item| try out.append(r.arena, item);
+            rest = rest.from(close + 1);
         }
         return out.toOwnedSlice(r.arena);
+    }
+
+    // One bracket, `[` to `]`: a tag, `[key value, value]`, or an effect, `[fact = value]` or `[action(…)]`.
+    fn bracket(r: *Reader, l: Line, whole: Placed) Error!?Item {
+        const inner = whole.cut(1, whole.text.len - 1).trim();
+        if (dotAt(inner.text)) |at| {
+            try r.reportAt(inner.cut(at, at + "·".len).span(r.file), "one tag to a bracket: `[a 1] [b 2]`, never `·`", .{});
+            return null;
+        }
+        var n: usize = 0;
+        while (n < inner.text.len and (expr.isWord(inner.text[n]) or inner.text[n] == '.')) n += 1;
+        if (n == 0) {
+            try r.reportAt(whole.span(r.file), "a bracket holds a tag, `[key value]`, or an effect, `[fact = value]` or `[action(…)]`", .{});
+            return null;
+        }
+        const after = inner.from(n);
+        const told = after.trim().text;
+        const tells = (after.text.len > 0 and after.text[0] == '(') or std.mem.startsWith(u8, told, "+=") or std.mem.startsWith(u8, told, "-=") or
+            (std.mem.startsWith(u8, told, "=") and !std.mem.startsWith(u8, told, "=="));
+        if (tells) {
+            const inside: Line = .{ .indent = l.indent, .text = inner, .id = inner.cut(0, 0) };
+            const e = r.effect(inside, inner) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Invalid => return null,
+            };
+            return .{ .effect = .{ .span = whole.span(r.file), .tags = &.{}, .kind = .{ .effect = e } } };
+        }
+        const key = inner.to(n);
+        if (!isName(key.text)) {
+            try r.reportAt(key.span(r.file), "`{s}` is not a tag's key: a key is letters, digits and `_`", .{key.text});
+            return null;
+        }
+        if (std.mem.eql(u8, key.text, "id")) {
+            try r.reportAt(whole.span(r.file), "a line's id is `^{s}` at the end of its row, never `[id …]`", .{after.trim().text});
+            return null;
+        }
+        var values: std.ArrayList([]const u8) = .empty;
+        var spans: std.ArrayList(source.Span) = .empty;
+        var vs = Split.init(after.text, ",");
+        while (vs.next()) |v| {
+            var value = after.cut(vs.last, vs.last + v.len).trim();
+            if (value.text.len == 0) continue;
+            const quoted = value.text.len >= 2 and value.text[0] == '"' and value.text[value.text.len - 1] == '"';
+            if (quoted) value = value.cut(1, value.text.len - 1);
+            try values.append(r.arena, value.text);
+            try spans.append(r.arena, value.span(r.file));
+        }
+        return .{ .tag = .{ .span = whole.span(r.file), .key = r.name(key), .values = try values.toOwnedSlice(r.arena), .spans = try spans.toOwnedSlice(r.arena) } };
+    }
+
+    // The row of brackets at `r.i`, read into `body`: its tags are the owner's while every row before it was a row
+    // of brackets too, and its effects are steps.
+    fn bracketRow(r: *Reader, body: *Body) Error!void {
+        const l = r.lines[r.i];
+        const nested = r.block();
+        if (nested.len > 0) try r.reportAt(r.over(nested[0], nested[nested.len - 1]), "nothing is indented under a row of brackets", .{});
+        for (try r.brackets(l)) |item| switch (item) {
+            .tag => |t| if (body.leading) try body.tags.append(r.arena, t) else try r.misplaced(t),
+            .effect => |s| try body.stmts.append(r.arena, s),
+        };
+    }
+
+    // A tag where nothing it could describe stands.
+    fn misplaced(r: *Reader, t: ast.Tag) Error!void {
+        try r.reportAt(t.span, "`[{s}]` is a tag, and a tag belongs to what it describes: indent it under that line, choice or heading", .{t.key.text});
+    }
+
+    // A line's or a choice's id, the first of its tags, and the line's own.
+    fn idTag(r: *Reader, l: Line) Error!?ast.Tag {
+        if (l.id.text.len == 0) return null;
+        try r.taken.put(r.arena, l.id.at, {});
+        const value = l.id.from(1);
+        return .{
+            .span = l.id.span(r.file),
+            .key = .{ .text = "id", .span = l.id.to(1).span(r.file) },
+            .values = try r.arena.dupe([]const u8, &.{value.text}),
+            .spans = try r.arena.dupe(source.Span, &.{value.span(r.file)}),
+        };
     }
 
     // ------------------------------------------------------------ sections
@@ -474,13 +648,23 @@ const Reader = struct {
             return null;
         }
         var kind: ast.Section.Kind = .scene;
-        if (paren) |p| kind = try r.kindOf(l, head.from(p));
-        // the section's own facts come first, under its heading
+        var kind_span: ?source.Span = null;
+        if (paren) |p| {
+            kind = try r.kindOf(l, head.from(p));
+            if (std.mem.findScalarPos(u8, head.text, p, ')')) |close| kind_span = head.cut(p, close + 1).span(r.file);
+        }
+        // its tags, in brackets on the rows under its heading
+        var heading: Body = .{ .leading = true };
+        while (r.i < r.lines.len and r.lines[r.i].indent > 0 and isBrackets(r.lines[r.i].text.text)) try r.bracketRow(&heading);
+        for (heading.stmts.items) |s| {
+            try r.reportAt(s.span, "a section's heading takes tags: an effect is a step, written at the section's level", .{});
+        }
+        // the section's own facts come next
         var own: std.ArrayList(ast.Facts) = .empty;
         while (r.i < r.lines.len and r.lines[r.i].indent == 0 and isFacts(r.lines[r.i].text.text)) {
             try own.append(r.arena, try r.factsBlock());
         }
-        var body: std.ArrayList(ast.Stmt) = .empty;
+        var body: Body = .{ .leading = false };
         var subs: std.ArrayList(ast.Subsection) = .empty;
         while (r.i < r.lines.len) {
             const s = r.lines[r.i];
@@ -500,9 +684,10 @@ const Reader = struct {
             .span = r.over(l, r.lines[r.i - 1]),
             .name = r.name(n),
             .kind = kind,
-            .tags = try r.tags(l),
+            .kind_span = kind_span,
+            .tags = try heading.tags.toOwnedSlice(r.arena),
             .facts = try own.toOwnedSlice(r.arena),
-            .body = try body.toOwnedSlice(r.arena),
+            .body = try body.stmts.toOwnedSlice(r.arena),
             .subsections = try subs.toOwnedSlice(r.arena),
         };
     }
@@ -537,11 +722,12 @@ const Reader = struct {
         const n = t.to(end);
         if (n.text.len == 0) {
             try r.report(l, "a part is `= name`", .{});
-            r.i += 1;
+            _ = r.block();
             return null;
         }
         t = t.from(end).trim();
         var when: ?ast.Expr = null;
+        var when_span: ?source.Span = null;
         if (std.mem.startsWith(u8, t.text, "when ")) {
             // the braces: none, or one not closed, is no condition
             const braces: ?[2]usize = found: {
@@ -550,53 +736,66 @@ const Reader = struct {
             };
             const open, const close = braces orelse {
                 try r.report(l, "`when` takes `{{ condition }}`", .{});
-                r.i += 1;
+                _ = r.block();
                 return null;
             };
             when = if (expr.parse(r.arena, r.gpa, r.diags, r.file, t.cut(open + 1, close).trim())) |e| e.* else |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Invalid => null,
             };
+            when_span = t.cut(open, close + 1).span(r.file);
             t = t.from(close + 1).trim();
         }
-        var body: std.ArrayList(ast.Stmt) = .empty;
         r.i += 1;
+        var body: Body = .{ .leading = true };
+        if (r.i < r.lines.len and r.lines[r.i].indent > l.indent) {
+            const base = r.lines[r.i].indent;
+            while (r.i < r.lines.len and r.lines[r.i].indent >= base) try r.into(&body, base, 1);
+        }
+        var stmts = body.stmts.items;
+        var tags = body.tags.items;
         if (t.text.len > 0) {
-            // a candidate written on its one line, which has the line's tags
-            const inline_line: Line = .{ .indent = l.indent, .text = t, .tags = l.tags };
-            if (try r.stmtOf(inline_line, &.{})) |st| try body.append(r.arena, st);
-        } else {
-            const base = if (r.i < r.lines.len) r.lines[r.i].indent else 0;
-            if (base > 0) while (r.i < r.lines.len and r.lines[r.i].indent >= base) {
-                try r.into(&body, base, 1);
-            };
+            // a candidate written on its one row, which has the row's id and what is under the row
+            const one = try r.arena.alloc(ast.Stmt, 1);
+            const inline_line: Line = .{ .indent = l.indent, .text = t, .id = l.id };
+            stmts = if (try r.stmtOf(inline_line, body.under())) |st| blk: {
+                one[0] = st;
+                break :blk one;
+            } else &.{};
+            tags = &.{};
         }
         return .{
             .span = r.over(l, r.lines[r.i - 1]),
             .name = r.name(n),
             .when = when,
-            .tags = if (t.text.len > 0) &.{} else try r.tags(l),
-            .body = try body.toOwnedSlice(r.arena),
+            .when_span = when_span,
+            .tags = tags,
+            .body = stmts,
         };
     }
 
     // ------------------------------------------------------------ statements
 
-    // The statement at `r.i` read into `list`; `{ else }` joins the `{ condition }` block before it.
-    fn into(r: *Reader, out: *std.ArrayList(ast.Stmt), indent: u32, depth: usize) Error!void {
+    // The row at `r.i` read into `body`: a row of brackets, or a statement; `{ else }` joins the `{ condition }`
+    // block before it.
+    fn into(r: *Reader, body: *Body, indent: u32, depth: usize) Error!void {
         const l = r.lines[r.i];
+        if (l.indent == indent and isBrackets(l.text.text)) return r.bracketRow(body);
+        body.leading = false;
         const is_else = l.indent == indent and isElse(l.text.text);
         const st = try r.stmt(indent, depth) orelse return;
-        if (!is_else) return out.append(r.arena, st);
-        const last = if (out.items.len > 0) &out.items[out.items.len - 1] else null;
-        if (last == null or last.?.kind != .cond or last.?.kind.cond.body.len == 0 or last.?.kind.cond.otherwise.len > 0 or last.?.kind.cond.on_row) {
+        if (!is_else) return body.stmts.append(r.arena, st);
+        const items = body.stmts.items;
+        const last = if (items.len > 0) &items[items.len - 1] else null;
+        if (last == null or last.?.kind != .cond or last.?.kind.cond.body.len == 0 or last.?.kind.cond.else_span != null or last.?.kind.cond.on_row) {
             return r.report(l, "`{{ else }}` follows a `{{ condition }}` block, at its indentation", .{});
         }
         last.?.kind.cond.otherwise = st.kind.cond.body;
+        last.?.kind.cond.else_span = st.kind.cond.cond_span;
         last.?.span = last.?.span.join(st.span);
     }
 
-    // The statement at `r.i`, at indentation `indent`, with its body.
+    // The statement at `r.i`, at indentation `indent`, with what is under it.
     fn stmt(r: *Reader, indent: u32, depth: usize) Error!?ast.Stmt {
         aegis.assert.invariant(r.i < r.lines.len, "the caller stands on a line");
         const l = r.lines[r.i];
@@ -611,73 +810,82 @@ const Reader = struct {
             return null;
         }
         r.i += 1;
-        var children: std.ArrayList(ast.Stmt) = .empty;
+        var body: Body = .{ .leading = true };
         if (r.i < r.lines.len and r.lines[r.i].indent > indent) {
             const base = r.lines[r.i].indent;
             while (r.i < r.lines.len and r.lines[r.i].indent >= base) {
-                try r.into(&children, base, depth + 1);
+                try r.into(&body, base, depth + 1);
             }
         }
-        return r.stmtOf(l, try children.toOwnedSlice(r.arena));
+        return r.stmtOf(l, body.under());
     }
 
-    fn stmtOf(r: *Reader, l: Line, body: []const ast.Stmt) Error!?ast.Stmt {
-        return r.stmtFrom(l, body) catch |err| switch (err) {
+    fn stmtOf(r: *Reader, l: Line, under_row: Under) Error!?ast.Stmt {
+        return r.stmtFrom(l, under_row) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Invalid => return null,
         };
     }
 
-    // The statement on `l`, with `body` under it. A statement written after a condition or a gather on the row
-    // has the row's tags.
-    fn stmtFrom(r: *Reader, l: Line, body: []const ast.Stmt) Fail!ast.Stmt {
-        const kind = try r.kindOfStmt(l, body);
-        const given = switch (kind) {
-            .cond => |k| k.on_row,
-            .gather => |g| g.then != null,
-            else => false,
-        };
-        const span = if (body.len == 0) l.span(r.file) else l.span(r.file).join(body[body.len - 1].span);
-        return .{ .span = span, .tags = if (given) &.{} else try r.tags(l), .kind = kind };
+    // The statement on `l`, with what is under it. A line or a choice has its id and the tags first under it; a
+    // statement written after a condition or a gather on the row has them, and the condition or the gather none.
+    fn stmtFrom(r: *Reader, l: Line, under_row: Under) Fail!ast.Stmt {
+        const kind = try r.kindOfStmt(l, under_row);
+        const owns = kind == .line or kind == .choice;
+        const end = @max(l.span(r.file).end, under_row.end() orelse 0);
+        const span: source.Span = .{ .file = r.file, .start = l.text.at, .end = end };
+        if (!owns) return .{ .span = span, .tags = &.{}, .kind = kind };
+        var tags: std.ArrayList(ast.Tag) = .empty;
+        if (try r.idTag(l)) |id| try tags.append(r.arena, id);
+        try tags.appendSlice(r.arena, under_row.tags);
+        return .{ .span = span, .tags = try tags.toOwnedSlice(r.arena), .kind = kind };
     }
 
-    fn kindOfStmt(r: *Reader, l: Line, body: []const ast.Stmt) Fail!@FieldType(ast.Stmt, "kind") {
+    fn kindOfStmt(r: *Reader, l: Line, under_row: Under) Fail!@FieldType(ast.Stmt, "kind") {
         const t = l.text;
-        if (std.mem.startsWith(u8, t.text, "->>")) return r.leaf(l, body, .{ .flow = .{ .call = try r.target(l, t.from(3)) } });
-        if (std.mem.startsWith(u8, t.text, "->")) return r.leaf(l, body, .{ .flow = .{ .jump = try r.target(l, t.from(2)) } });
-        if (std.mem.eql(u8, t.text, "<-")) return r.leaf(l, body, .{ .flow = .ret });
-        if (std.mem.startsWith(u8, t.text, "~ ")) return r.leaf(l, body, .{ .effect = try r.effect(l, t.from(2)) });
-        if (std.mem.startsWith(u8, t.text, "* ") or std.mem.startsWith(u8, t.text, "+ ")) return .{ .choice = try r.choice(l, body) };
-        if (std.mem.eql(u8, t.text, "-") or std.mem.startsWith(u8, t.text, "- ")) return .{ .gather = try r.gather(l, body) };
+        if (std.mem.startsWith(u8, t.text, "->") or std.mem.eql(u8, t.text, "<-")) return r.leaf(l, under_row, .{ .flow = try r.flowOf(l, t) });
+        if (t.text.len > 0 and t.text[0] == '~') {
+            try r.report(l, "`~` is gone: an effect is written in brackets, `[{s}]`", .{std.mem.trim(u8, t.text[1..], " ")});
+            return error.Invalid;
+        }
+        if (std.mem.startsWith(u8, t.text, "* ") or std.mem.startsWith(u8, t.text, "+ ")) return .{ .choice = try r.choice(l, under_row) };
+        if (std.mem.eql(u8, t.text, "-") or std.mem.startsWith(u8, t.text, "- ")) return .{ .gather = try r.gather(l, under_row) };
         if (t.text.len > 0 and t.text[0] == '{') {
             const close = text_mod.matching(t.text, 0) orelse {
                 try r.report(l, "`{{` is not closed", .{});
                 return error.Invalid;
             };
-            if (isElse(t.text)) return .{ .cond = .{ .cond = .{ .span = t.span(r.file), .kind = .{ .boolean = true } }, .body = body } };
+            const braces = t.to(close + 1).span(r.file);
+            if (isElse(t.text)) return .{ .cond = .{ .cond = .{ .span = t.span(r.file), .kind = .{ .boolean = true } }, .cond_span = braces, .body = try r.gated(under_row) } };
             if (!text_mod.choosesWords(t.text, 0, close)) {
                 const cond = try expr.parse(r.arena, r.gpa, r.diags, r.file, t.cut(1, close).trim());
                 const rest = t.from(close + 1).trim();
-                if (rest.text.len == 0) return .{ .cond = .{ .cond = cond.*, .body = body } };
-                const inner: Line = .{ .indent = l.indent, .text = rest, .tags = l.tags };
+                if (rest.text.len == 0) return .{ .cond = .{ .cond = cond.*, .cond_span = braces, .body = try r.gated(under_row) } };
+                const inner: Line = .{ .indent = l.indent, .text = rest, .id = l.id };
                 const one = try r.arena.alloc(ast.Stmt, 1);
-                one[0] = try r.stmtFrom(inner, body);
-                return .{ .cond = .{ .cond = cond.*, .body = one, .on_row = true } };
+                one[0] = try r.stmtFrom(inner, under_row);
+                return .{ .cond = .{ .cond = cond.*, .cond_span = braces, .body = one, .on_row = true } };
             }
-            if (close == t.text.len - 1 and std.mem.find(u8, t.text, "->") != null) return r.leaf(l, body, .{ .flow_if = try r.flowIf(l, t.cut(1, close)) });
+            if (close == t.text.len - 1 and std.mem.find(u8, t.text, "->") != null) return r.leaf(l, under_row, .{ .flow_if = try r.flowIf(l, t.cut(1, close), braces) });
         }
-        for (body) |child| if (child.kind != .effect) {
-            try r.diags.add(r.gpa, child.span, .err, "only effects can be indented under a line: they happen when it is said", .{});
+        for (under_row.stmts) |child| if (child.kind != .effect) {
+            try r.diags.add(r.gpa, child.span, .err, "only brackets can be indented under a line: its tags, and its effects, which happen when it is said", .{});
             return error.Invalid;
         };
         var ln = try r.line(l);
-        ln.effects = body;
+        ln.effects = under_row.stmts;
         return .{ .line = ln };
     }
 
-    // A statement that takes no body.
-    fn leaf(r: *Reader, l: Line, body: []const ast.Stmt, kind: @FieldType(ast.Stmt, "kind")) Fail!@FieldType(ast.Stmt, "kind") {
-        if (body.len > 0) {
+    // What a condition gates: the statements under it; a tag there describes nothing.
+    fn gated(r: *Reader, under_row: Under) Error![]const ast.Stmt {
+        for (under_row.tags) |t| try r.misplaced(t);
+        return under_row.stmts;
+    }
+
+    // A statement that takes nothing under it.
+    fn leaf(r: *Reader, l: Line, under_row: Under, kind: @FieldType(ast.Stmt, "kind")) Fail!@FieldType(ast.Stmt, "kind") {
+        if (!under_row.empty()) {
             try r.report(l, "nothing can be indented under this line", .{});
             return error.Invalid;
         }
@@ -694,16 +902,17 @@ const Reader = struct {
     }
 
     fn effect(r: *Reader, l: Line, t: Placed) Fail!ast.Effect {
+        const span = t.span(r.file);
         if (std.mem.find(u8, t.text, "+=")) |k| return .{ .add = try r.change(l, t, k) };
         if (std.mem.find(u8, t.text, "-=")) |k| return .{ .remove = try r.change(l, t, k) };
         if (std.mem.findScalar(u8, t.text, '=')) |k| {
             const value = try expr.parse(r.arena, r.gpa, r.diags, r.file, t.from(k + 1).trim());
             const w = try r.written(l, t.to(k));
-            return .{ .set = .{ .fact = w.fact, .key = w.key, .value = value.* } };
+            return .{ .set = .{ .span = span, .fact = w.fact, .key = w.key, .value = value.* } };
         }
         const call = try expr.parse(r.arena, r.gpa, r.diags, r.file, t.trim());
         if (call.kind != .call) {
-            try r.report(l, "an effect is `fact = value`, `set += item`, `set -= item` or `action(…)`", .{});
+            try r.report(l, "an effect is `[fact = value]`, `[set += item]`, `[set -= item]` or `[action(…)]`", .{});
             return error.Invalid;
         }
         return .{ .call = call.kind.call };
@@ -717,7 +926,7 @@ const Reader = struct {
             return error.Invalid;
         }
         const dest = try r.written(l, t.to(k));
-        return .{ .fact = dest.fact, .key = dest.key, .amount = amount.* };
+        return .{ .span = t.span(r.file), .fact = dest.fact, .key = dest.key, .amount = amount.* };
     }
 
     // What an effect writes: a fact, or a fact kept per thing and the key it writes, `opinion(wife)`.
@@ -751,9 +960,11 @@ const Reader = struct {
         return r.name(w);
     }
 
-    fn choice(r: *Reader, l: Line, body: []const ast.Stmt) Fail!ast.Choice {
+    fn choice(r: *Reader, l: Line, under_row: Under) Fail!ast.Choice {
+        if (l.id.text.len > 0) try r.taken.put(r.arena, l.id.at, {});
         var t = l.text.from(2).trim();
         var cond: ?ast.Expr = null;
+        var cond_span: ?source.Span = null;
         if (t.text.len > 0 and t.text[0] == '{') {
             const close = text_mod.matching(t.text, 0) orelse {
                 try r.report(l, "`{{` is not closed", .{});
@@ -761,72 +972,99 @@ const Reader = struct {
             };
             if (!text_mod.choosesWords(t.text, 0, close)) {
                 cond = (try expr.parse(r.arena, r.gpa, r.diags, r.file, t.cut(1, close).trim())).*;
+                cond_span = t.to(close + 1).span(r.file);
                 t = t.from(close + 1).trim();
             }
         }
         const text = try text_mod.parse(r.arena, r.gpa, r.diags, r.file, t);
-        return .{ .sticky = l.text.text[0] == '+', .cond = cond, .text = text, .body = body };
+        return .{ .sticky = l.text.text[0] == '+', .cond = cond, .cond_span = cond_span, .text = text, .body = under_row.stmts };
     }
 
-    fn gather(r: *Reader, l: Line, body: []const ast.Stmt) Fail!ast.Gather {
+    fn gather(r: *Reader, l: Line, under_row: Under) Fail!ast.Gather {
         var t = l.text.from(1).trim();
         var label: ?ast.Name = null;
+        var label_span: ?source.Span = null;
         if (t.text.len > 0 and t.text[0] == '(') {
             const close = std.mem.findScalar(u8, t.text, ')') orelse {
                 try r.report(l, "`(` is not closed", .{});
                 return error.Invalid;
             };
             label = try r.word(l, t.cut(1, close));
+            label_span = t.to(close + 1).span(r.file);
             t = t.from(close + 1).trim();
         }
         if (t.text.len == 0) {
-            if (body.len > 0) {
+            if (!under_row.empty()) {
                 try r.report(l, "nothing can be indented under a gather", .{});
                 return error.Invalid;
             }
-            return .{ .label = label, .then = null };
+            return .{ .label = label, .label_span = label_span, .then = null };
         }
         const then = try r.arena.create(ast.Stmt);
-        then.* = try r.stmtFrom(.{ .indent = l.indent, .text = t, .tags = l.tags }, body);
-        return .{ .label = label, .then = then };
+        then.* = try r.stmtFrom(.{ .indent = l.indent, .text = t, .id = l.id }, under_row);
+        return .{ .label = label, .label_span = label_span, .then = then };
     }
 
-    fn flowIf(r: *Reader, l: Line, inner: Placed) Fail!ast.FlowIf {
+    fn flowIf(r: *Reader, l: Line, inner: Placed, braces: source.Span) Fail!ast.FlowIf {
         const colon = std.mem.findScalar(u8, inner.text, ':') orelse unreachable; // choosesWords said so
         const bar = std.mem.findScalarPos(u8, inner.text, colon, '|') orelse {
             try r.report(l, "a flow chosen by a condition is `{{ condition: -> a | -> b }}`", .{});
             return error.Invalid;
         };
         const cond = try expr.parse(r.arena, r.gpa, r.diags, r.file, inner.to(colon).trim());
-        return .{ .cond = cond.*, .then = try r.flowOf(l, inner.cut(colon + 1, bar)), .otherwise = try r.flowOf(l, inner.from(bar + 1)) };
+        return .{ .span = braces, .cond = cond.*, .then = try r.flowOf(l, inner.cut(colon + 1, bar)), .otherwise = try r.flowOf(l, inner.from(bar + 1)) };
     }
 
+    // `-> name`, `-> name ->` or `<-`.
     fn flowOf(r: *Reader, l: Line, t: Placed) Fail!ast.Flow {
         const s = t.trim();
-        if (std.mem.startsWith(u8, s.text, "->>")) return .{ .call = try r.target(l, s.from(3)) };
-        if (std.mem.startsWith(u8, s.text, "->")) return .{ .jump = try r.target(l, s.from(2)) };
-        if (std.mem.eql(u8, s.text, "<-")) return .ret;
-        try r.report(l, "`{s}` is not a flow: `-> name`, `->> name` or `<-`", .{s.text});
-        return error.Invalid;
+        const span = s.span(r.file);
+        if (std.mem.eql(u8, s.text, "<-")) return .{ .span = span, .kind = .ret };
+        if (std.mem.startsWith(u8, s.text, "->>")) {
+            try r.reportAt(span, "`->>` is gone: a call is `-> {s} ->`", .{std.mem.trim(u8, s.text[3..], " ")});
+            return error.Invalid;
+        }
+        if (!std.mem.startsWith(u8, s.text, "->")) {
+            try r.report(l, "`{s}` is not a flow: `-> name`, `-> name ->` or `<-`", .{s.text});
+            return error.Invalid;
+        }
+        const rest = s.from(2).trim();
+        if (std.mem.endsWith(u8, rest.text, "->")) return .{ .span = span, .kind = .{ .call = try r.target(l, rest.to(rest.text.len - 2)) } };
+        return .{ .span = span, .kind = .{ .jump = try r.target(l, rest) } };
     }
 
     fn line(r: *Reader, l: Line) Fail!ast.Line {
+        if (l.id.text.len > 0) try r.taken.put(r.arena, l.id.at, {});
         const t = l.text;
-        var speaker: ?ast.Name = null;
-        var rest = t;
-        if (speakerEnd(t.text)) |end| {
-            speaker = r.name(t.to(end));
-            rest = t.from(end + 1).trim();
+        if (t.text.len > 0 and t.text[0] == '[') {
+            try r.report(l, "brackets stand on a row of their own, under what they belong to; `\\[` writes the mark", .{});
+            return error.Invalid;
         }
-        return .{ .speaker = speaker, .text = try text_mod.parse(r.arena, r.gpa, r.diags, r.file, rest), .effects = &.{} };
+        var ln: ast.Line = .{ .speaker = null, .text = &.{}, .effects = &.{} };
+        var rest = t;
+        if (speakerOf(t.text)) |sp| {
+            ln.speaker = r.name(t.to(sp.name));
+            if (sp.delivery) |d| {
+                const words = t.cut(d[0] + 1, d[1]).trim();
+                if (words.text.len == 0) {
+                    try r.reportAt(t.cut(d[0], d[1] + 1).span(r.file), "a delivery says how the line is said: `NAME (quietly):`", .{});
+                    return error.Invalid;
+                }
+                ln.delivery = .{ .span = t.cut(d[0], d[1] + 1).span(r.file), .words = r.name(words) };
+            }
+            rest = t.from(sp.colon + 1).trim();
+        }
+        ln.text = try text_mod.parse(r.arena, r.gpa, r.diags, r.file, rest);
+        return ln;
     }
 };
 
-// Takes `m` off the end of `t`, if it is there.
-fn takeMark(t: *Placed, m: []const u8) bool {
-    if (!std.mem.endsWith(u8, t.text, m)) return false;
+// Takes `m` off the end of `t`, if it is there, and gives where it was.
+fn takeMark(t: *Placed, m: []const u8) ?Placed {
+    if (!std.mem.endsWith(u8, t.text, m)) return null;
+    const mark = t.from(t.text.len - m.len);
     t.* = t.to(t.text.len - m.len).trim();
-    return true;
+    return mark;
 }
 
 // The `)` that closes the `(` at `open`.
@@ -844,6 +1082,26 @@ fn parenClose(t: []const u8, open: usize) ?usize {
     return null;
 }
 
+// The `]` that closes the bracket `t` begins with, outside quotes.
+fn bracketClose(t: []const u8) ?usize {
+    var quoted = false;
+    for (t, 0..) |c, i| {
+        if (c == '"') quoted = !quoted;
+        if (!quoted and c == ']') return i;
+    }
+    return null;
+}
+
+// Where a `·` outside quotes is, if one is.
+fn dotAt(t: []const u8) ?usize {
+    var quoted = false;
+    for (t, 0..) |c, i| {
+        if (c == '"') quoted = !quoted;
+        if (!quoted and std.mem.startsWith(u8, t[i..], "·")) return i;
+    }
+    return null;
+}
+
 // Whether what follows a comma names a parameter: `name:`.
 fn namesParam(t: []const u8) bool {
     const s = std.mem.trimStart(u8, t, " ");
@@ -852,24 +1110,45 @@ fn namesParam(t: []const u8) bool {
     return n > 0 and n < s.len and s[n] == ':';
 }
 
-/// A speaker is capitals, digits, `_` and spaces, then `:` and a space: `DAD: Go.`, `A CELLIST: …`.
-pub fn speakerEnd(t: []const u8) ?usize {
+/// A speaker before a line's words: where its name ends, its delivery's parentheses if it has one, and its colon.
+pub const Speaker = struct { name: usize, delivery: ?[2]usize = null, colon: usize };
+
+/// A speaker is capitals, digits, `_` and spaces, then `:` and a space: `DAD: Go.`, `A CELLIST: …`; a delivery in
+/// parentheses may stand between the name and the colon, `DAD (quietly): …`.
+pub fn speakerOf(t: []const u8) ?Speaker {
     if (t.len < 2 or !std.ascii.isUpper(t[0])) return null;
     var i: usize = 0;
     while (i < t.len) : (i += 1) {
         const c = t[i];
         if (c == ':') {
-            if (i + 1 < t.len and t[i + 1] != ' ') return null;
-            return if (t[i - 1] == ' ') null else i;
+            if (!colonEnds(t, i) or t[i - 1] == ' ') return null;
+            return .{ .name = i, .colon = i };
+        }
+        if (c == '(') {
+            const name = std.mem.trimEnd(u8, t[0..i], " ").len;
+            const close = std.mem.findScalarPos(u8, t, i, ')') orelse return null;
+            if (close + 1 >= t.len or t[close + 1] != ':' or !colonEnds(t, close + 1)) return null;
+            if (std.mem.findScalar(u8, t[i + 1 .. close], '(') != null) return null;
+            return .{ .name = name, .delivery = .{ i, close }, .colon = close + 1 };
         }
         if (!(std.ascii.isUpper(c) or std.ascii.isDigit(c) or c == '_' or c == ' ')) return null;
     }
     return null;
 }
 
+// Whether the `:` at `i` ends a speaker: a space or the end after it.
+fn colonEnds(t: []const u8, i: usize) bool {
+    return i + 1 == t.len or t[i + 1] == ' ';
+}
+
 fn isElse(t: []const u8) bool {
     if (t.len < 2 or t[0] != '{' or t[t.len - 1] != '}') return false;
     return std.mem.eql(u8, std.mem.trim(u8, t[1 .. t.len - 1], " "), "else");
+}
+
+// A row of brackets: its words begin with `[`.
+fn isBrackets(t: []const u8) bool {
+    return t.len > 0 and t[0] == '[';
 }
 
 // A name, or `module.name`.
@@ -926,11 +1205,17 @@ const Split = struct {
     }
 };
 
-test "a speaker is capitals before a colon" {
-    try std.testing.expectEqual(@as(?usize, 3), speakerEnd("DAD: Go."));
-    try std.testing.expectEqual(@as(?usize, 9), speakerEnd("A CELLIST: She stopped us."));
-    try std.testing.expectEqual(@as(?usize, null), speakerEnd("22:31. The bus stop is four minutes away."));
-    try std.testing.expectEqual(@as(?usize, null), speakerEnd("Royal College of Music, 1958: “…”"));
+test "a speaker is capitals before a colon, a delivery in parentheses between" {
+    try std.testing.expectEqual(@as(usize, 3), speakerOf("DAD: Go.").?.name);
+    try std.testing.expectEqual(@as(usize, 9), speakerOf("A CELLIST: She stopped us.").?.colon);
+    try std.testing.expectEqual(@as(?Speaker, null), speakerOf("22:31. The bus stop is four minutes away."));
+    try std.testing.expectEqual(@as(?Speaker, null), speakerOf("Royal College of Music, 1958: “…”"));
+    const astro = speakerOf("ASTRO (laughing manically): Not even close.").?;
+    try std.testing.expectEqual(@as(usize, 5), astro.name);
+    try std.testing.expectEqual([2]usize{ 6, 25 }, astro.delivery.?);
+    try std.testing.expectEqual(@as(usize, 26), astro.colon);
+    // capitals and words in parentheses, with no colon after them, are narration
+    try std.testing.expectEqual(@as(?Speaker, null), speakerOf("NASA (the agency) said nothing."));
 }
 
 test "a small story reads into sections, statements and tags" {
@@ -945,10 +1230,12 @@ test "a small story reads into sections, statements and tags" {
         \\facts (player):
         \\  carried: set of play, gave,
         \\           hands
-        \\== kitchen_1985                # talk
+        \\== kitchen_1985
+        \\  [talk]
         \\DAD: Go.
         \\- (ask)
-        \\* { carried has play } You could still play, Dad.   # known play
+        \\* { carried has play } You could still play, Dad.
+        \\  [known play]
         \\  DAD: Who'd listen?
         \\  -> ask
         \\* Pick up the case.
@@ -983,7 +1270,7 @@ test "a span is the range its words are written in, past the spaces trimmed" {
     const story =
         \\== a
         \\{ met }  Go.
-        \\~ carried += play
+        \\[carried += play]
         \\* {  met } Stay.
         \\  -> end
     ;
@@ -1014,7 +1301,8 @@ test "a module, clocks, refs and the host's vocabulary with outcomes and stamps"
         \\  count(kind: ref of item_kind) -> int   (reads stock(kind))
         \\  persuade(who: ref of person, against: int) -> one of yes, no   (action)
         \\  take(kind: ref of item_kind, n: int)
-        \\== a          # pool wake_night · then dawn
+        \\== a
+        \\  [pool wake_night] [then dawn]
         \\-> end
     ;
     const f = try parseFile(arena.allocator(), gpa, &diags, 0, "harbour.river", story);
@@ -1034,7 +1322,7 @@ test "a module, clocks, refs and the host's vocabulary with outcomes and stamps"
     try expectWritten(story, ext[1].reads.?.span, "stock(kind)");
     try expectWritten(story, ext[2].params[1].span, "against: int");
     // a tag's span is where it is written, its key's where the key is, and each value's where it is
-    try expectWritten(story, f.sections[0].tags[0].span, "pool wake_night");
+    try expectWritten(story, f.sections[0].tags[0].span, "[pool wake_night]");
     try expectWritten(story, f.sections[0].tags[1].key.span, "then");
     try expectWritten(story, f.sections[0].tags[0].at(0), "wake_night");
     try expectWritten(story, f.sections[0].tags[1].at(0), "dawn");
@@ -1046,7 +1334,7 @@ test "a tag's values are placed where they are written, inside their quotes" {
     defer arena.deinit();
     var diags: source.Diagnostics = .{};
     defer diags.deinit(gpa);
-    const story = "== a   # heard piano,  door · title \"Who · was he?\"\n-> end";
+    const story = "== a\n  [heard piano,  door] [title \"Who · was he?\"]\n-> end";
     const f = try parseFile(arena.allocator(), gpa, &diags, 0, "a.river", story);
     const tags = f.sections[0].tags;
     try std.testing.expectEqualStrings("door", tags[0].values[1]);
@@ -1054,7 +1342,7 @@ test "a tag's values are placed where they are written, inside their quotes" {
     try expectWritten(story, tags[0].at(1), "door");
     try std.testing.expectEqualStrings("Who · was he?", tags[1].values[0]);
     try expectWritten(story, tags[1].at(0), "Who · was he?");
-    try expectWritten(story, tags[1].span, "title \"Who · was he?\"");
+    try expectWritten(story, tags[1].span, "[title \"Who · was he?\"]");
 }
 
 test "a section's own facts come straight under its heading, its roles marked" {
@@ -1091,9 +1379,9 @@ test "an int changes by a number or a constant, never by an expression" {
     defer diags.deinit(gpa);
     const story =
         \\== a
-        \\~ ryuji_points += 2
-        \\~ ryuji_points -= penalty
-        \\~ ryuji_points += 2 and 3
+        \\[ryuji_points += 2]
+        \\[ryuji_points -= penalty]
+        \\[ryuji_points += 2 and 3]
         \\-> end
     ;
     const f = try parseFile(arena.allocator(), gpa, &diags, 0, "a.river", story);
@@ -1142,4 +1430,111 @@ test "any bytes are read or refused, never crash" {
             _ = try parseFile(arena.allocator(), std.testing.allocator, &diags, 0, "fuzz.river", bytes);
         }
     }.one, .{});
+}
+
+test "each mark design B refuses is reported where it is written, naming the form it means" {
+    const cases = [_]struct { text: []const u8, line: u32, col: u32, message: []const u8 }{
+        .{ .text = "== a\n~ x = 1\n", .line = 2, .col = 1, .message = "`~` is gone: an effect is written in brackets, `[x = 1]`" },
+        .{ .text = "== a\n->> b\n", .line = 2, .col = 1, .message = "`->>` is gone: a call is `-> b ->`" },
+        .{ .text = "== a\n{ x: ->> b | -> c }\n", .line = 2, .col = 6, .message = "`->>` is gone: a call is `-> b ->`" },
+        .{ .text = "== a\nGo.   # pause 0.3\n", .line = 2, .col = 7, .message = "`#` tags are gone: write `[key value]` on a row under the line, or `\\#` for the mark" },
+        .{ .text = "== a\n{n -> one: x | other: y}.\n", .line = 2, .col = 4, .message = "a selection is `{n as one: … | other: …}`: `as`, not `->`" },
+        .{ .text = "extras: a · b\n", .line = 1, .col = 11, .message = "`·` is gone: separate a list with commas" },
+        .{ .text = "== a\n  [a 1 · b 2]\n", .line = 2, .col = 8, .message = "one tag to a bracket: `[a 1] [b 2]`, never `·`" },
+        .{ .text = "== a\nGo.\n  [id k1]\n", .line = 3, .col = 3, .message = "a line's id is `^k1` at the end of its row, never `[id …]`" },
+        .{ .text = "== a\n  [x\n", .line = 2, .col = 3, .message = "`[` is not closed" },
+        .{ .text = "== a\n  [a] b\n", .line = 2, .col = 7, .message = "a row of brackets holds brackets alone: `b` is in none" },
+        .{ .text = "== a\n  []\n", .line = 2, .col = 3, .message = "a bracket holds a tag, `[key value]`, or an effect, `[fact = value]` or `[action(…)]`" },
+        .{ .text = "== a\n  [a.b c]\n", .line = 2, .col = 4, .message = "`a.b` is not a tag's key: a key is letters, digits and `_`" },
+        .{ .text = "== a\n  [t]\n    [u]\n", .line = 3, .col = 5, .message = "nothing is indented under a row of brackets" },
+        .{ .text = "== a\n[t]\n", .line = 2, .col = 1, .message = "`[t]` is a tag, and a tag belongs to what it describes: indent it under that line, choice or heading" },
+        .{ .text = "== a\n{ x }\n  [t]\n  Go.\n", .line = 3, .col = 3, .message = "`[t]` is a tag, and a tag belongs to what it describes: indent it under that line, choice or heading" },
+        .{ .text = "== a\n* Go.\n  Hi.\n  [t]\n", .line = 4, .col = 3, .message = "`[t]` is a tag, and a tag belongs to what it describes: indent it under that line, choice or heading" },
+        .{ .text = "== a\n  [x = 1]\n", .line = 2, .col = 3, .message = "a section's heading takes tags: an effect is a step, written at the section's level" },
+        .{ .text = "== a\nGo.\n  -> end\n", .line = 3, .col = 3, .message = "only brackets can be indented under a line: its tags, and its effects, which happen when it is said" },
+        .{ .text = "== a\n{ x } [y = 1]\n", .line = 2, .col = 7, .message = "brackets stand on a row of their own, under what they belong to; `\\[` writes the mark" },
+        .{ .text = "== a\nDAD (): Go.\n", .line = 2, .col = 5, .message = "a delivery says how the line is said: `NAME (quietly):`" },
+        .{ .text = "== a ^k1\n", .line = 1, .col = 6, .message = "an id ends a line or a choice: `^k1` stands at the end of neither" },
+        .{ .text = "== a\n-> b ^k1\n", .line = 2, .col = 6, .message = "an id ends a line or a choice: `^k1` stands at the end of neither" },
+        .{ .text = "cast:\n  mum  \"Mum\"\n    hello\n", .line = 3, .col = 5, .message = "under a cast entry stand its tags, in brackets: `[gender feminine]`" },
+        .{ .text = "cast:\n  mum  \"Mum\"\n    [x = 1]\n", .line = 3, .col = 5, .message = "a cast entry takes tags, never effects" },
+        .{ .text = "cast:\n  [voice]\n", .line = 2, .col = 3, .message = "a cast entry's tags stand on a row indented under it" },
+        .{ .text = "== a\n[x]\n- (ask)\n  [t]\n", .line = 3, .col = 1, .message = "nothing can be indented under a gather" },
+    };
+    for (cases) |case| {
+        var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+        defer arena.deinit();
+        var diags: source.Diagnostics = .{};
+        defer diags.deinit(std.testing.allocator);
+        const f = try parseFile(arena.allocator(), std.testing.allocator, &diags, 0, "a.river", case.text);
+        const found = for (diags.list.items) |d| {
+            const at = f.place(d.span);
+            if (at.line == case.line and at.col == case.col and std.mem.eql(u8, d.message, case.message)) break true;
+        } else false;
+        if (!found) {
+            std.debug.print("wanted {d}:{d}: {s}\n", .{ case.line, case.col, case.message });
+            for (diags.list.items) |d| std.debug.print("  have {d}:{d}: {s}\n", .{ f.place(d.span).line, f.place(d.span).col, d.message });
+            return error.TestMissingDiagnostic;
+        }
+    }
+}
+
+test "a row of brackets under a line, a choice and a heading is theirs: tags, then effects in order" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(gpa);
+    const story =
+        \\cast:
+        \\  marta  "Marta"   — the merchant
+        \\    [gender feminine] [voice]
+        \\== a (pool 2)
+        \\  [card]
+        \\  [count 2]
+        \\= one   when { met }   MARTA (quietly): Go. ^k1
+        \\  [at 2] [met = false]
+        \\  [pause 1]
+        \\= two
+        \\  [weight 3]
+        \\  [met = true]
+        \\  * Run. ^k2
+        \\    [side go]
+        \\    [met = true]
+        \\    -> one ->
+        \\    [met = false]
+        \\  <-
+    ;
+    const f = try parseFile(arena.allocator(), gpa, &diags, 0, "a.river", story);
+    try std.testing.expectEqual(@as(usize, 0), diags.list.items.len);
+    try std.testing.expectEqual(@as(usize, 2), f.decls[0].kind.cast[0].tags.len);
+    const s = f.sections[0];
+    try std.testing.expectEqual(@as(usize, 2), s.tags.len);
+    try expectWritten(story, s.kind_span.?, "(pool 2)");
+    // a candidate on one row: what is under the row is its line's
+    const one = s.subsections[0];
+    try std.testing.expectEqual(@as(usize, 0), one.tags.len);
+    try expectWritten(story, one.when_span.?, "{ met }");
+    const line = one.body[0];
+    try std.testing.expectEqualStrings("id", line.tags[0].key.text);
+    try expectWritten(story, line.tags[0].span, "^k1");
+    try expectWritten(story, line.tags[0].at(0), "k1");
+    try std.testing.expectEqualStrings("at", line.tags[1].key.text);
+    try std.testing.expectEqualStrings("pause", line.tags[2].key.text);
+    try std.testing.expectEqual(@as(usize, 1), line.kind.line.effects.len);
+    try expectWritten(story, line.kind.line.effects[0].span, "[met = false]");
+    try expectWritten(story, line.kind.line.effects[0].kind.effect.span(), "met = false");
+    try expectWritten(story, line.kind.line.delivery.?.span, "(quietly)");
+    try expectWritten(story, line.kind.line.delivery.?.words.span, "quietly");
+    try std.testing.expectEqualStrings("MARTA", line.kind.line.speaker.?.text);
+    // a part's: its tags, its effects its first step
+    const two = s.subsections[1];
+    try std.testing.expectEqualStrings("weight", two.tags[0].key.text);
+    try std.testing.expect(two.body[0].kind == .effect);
+    const run = two.body[1];
+    try std.testing.expectEqual(@as(usize, 2), run.tags.len);
+    try std.testing.expectEqual(@as(usize, 3), run.kind.choice.body.len);
+    try std.testing.expect(run.kind.choice.body[1].kind.flow.kind == .call);
+    try expectWritten(story, run.kind.choice.body[1].kind.flow.span, "-> one ->");
+    try std.testing.expectEqualStrings("one", run.kind.choice.body[1].kind.flow.kind.call.text);
 }

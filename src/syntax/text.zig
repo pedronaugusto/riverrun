@@ -1,9 +1,9 @@
 //! Text: what a line or a choice says. Literal runs, `{fact}` for a value,
 //! `{ condition: these words | those words }` for words chosen by a
 //! condition, and `{seq: a | b | c}`, `{cycle: …}`, `{once: …}` and
-//! `{shuffle: …}` for alternatives, and `{ count -> one: pelt | other: pelts }`
-//! for words chosen by a plural category or a gender. `\{` and `\}` are
-//! braces themselves.
+//! `{shuffle: …}` for alternatives, and `{ count as one: pelt | other: pelts }`
+//! for words chosen by a plural category or a gender. `\{`, `\}`, `\[`, `\]`, `\^`
+//! and `\#` are the marks themselves.
 
 const std = @import("std");
 const ast = @import("ast.zig");
@@ -23,13 +23,17 @@ pub fn parse(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Di
     var i: usize = 0;
     while (i < text.len) {
         const c = text[i];
-        if (c == '\\' and i + 1 < text.len and (text[i + 1] == '{' or text[i + 1] == '}')) {
+        if (c == '\\' and i + 1 < text.len and escaped(text[i + 1])) {
             try lit.append(arena, text[i + 1]);
             i += 2;
             continue;
         }
         if (c == '}') {
             try diags.add(gpa, words.cut(i, i + 1).span(file), .err, "`}}` has no `{{` before it", .{});
+            return error.Invalid;
+        }
+        if (c == '#' and (i == 0 or text[i - 1] == ' ') and (i + 1 == text.len or text[i + 1] == ' ')) {
+            try diags.add(gpa, words.cut(i, i + 1).span(file), .err, "`#` tags are gone: write `[key value]` on a row under the line, or `\\#` for the mark", .{});
             return error.Invalid;
         }
         if (c != '{') {
@@ -54,7 +58,13 @@ pub fn parse(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Di
 
 // What is between braces: a selection, alternatives, `cond: a | b`, or a value.
 fn braced(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagnostics, file: source.FileId, inner: source.Placed) Error!ast.Piece.Kind {
-    if (arrowAt(inner.text)) |arrow| return selected(arena, gpa, diags, file, inner, arrow);
+    if (selectionAt(inner.text)) |at| return switch (at) {
+        .as => |k| selected(arena, gpa, diags, file, inner, k),
+        .arrow => |k| {
+            try diags.add(gpa, inner.cut(k, k + 2).span(file), .err, "a selection is `{{n as one: … | other: …}}`: `as`, not `->`", .{});
+            return error.Invalid;
+        },
+    };
     if (std.mem.findScalar(u8, inner.text, ':')) |colon| {
         if (alternativesOf(std.mem.trim(u8, inner.text[0..colon], " "))) |kind| {
             var options: std.ArrayList(ast.Text) = .empty;
@@ -86,25 +96,33 @@ fn braced(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagn
     return .{ .value = (try expr.parse(arena, gpa, diags, file, inner.trim())).* };
 }
 
-// Where `->` opens a selection: before any `:` or `|`, outside braces.
-fn arrowAt(inner: []const u8) ?usize {
+const Selection = union(enum) {
+    /// `as` at this index.
+    as: usize,
+    /// The first syntax's `->` at this index.
+    arrow: usize,
+};
+
+// Where ` as ` opens a selection: before any `:` or `|`, outside braces; or where the first syntax's `->` did.
+fn selectionAt(inner: []const u8) ?Selection {
     var depth: usize = 0;
     var i: usize = 0;
-    while (i + 1 < inner.len) : (i += 1) switch (inner[i]) {
+    while (i < inner.len) : (i += 1) switch (inner[i]) {
         '{' => depth += 1,
         '}' => depth -|= 1,
         ':', '|' => if (depth == 0) return null,
-        '-' => if (depth == 0 and inner[i + 1] == '>') return i,
+        '-' => if (depth == 0 and i + 1 < inner.len and inner[i + 1] == '>') return .{ .arrow = i },
+        ' ' => if (depth == 0 and std.mem.startsWith(u8, inner[i..], " as ")) return .{ .as = i + 1 },
         else => {},
     };
     return null;
 }
 
-// `operand -> label: words | label: words`
-fn selected(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagnostics, file: source.FileId, inner: source.Placed, arrow: usize) Error!ast.Piece.Kind {
-    const operand = try expr.parse(arena, gpa, diags, file, inner.to(arrow).trim());
+// `operand as label: words | label: words`
+fn selected(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagnostics, file: source.FileId, inner: source.Placed, at: usize) Error!ast.Piece.Kind {
+    const operand = try expr.parse(arena, gpa, diags, file, inner.to(at).trim());
     var branches: std.ArrayList(ast.Branch) = .empty;
-    var start = arrow + 2;
+    var start = at + 2;
     var depth: usize = 0;
     var i = start;
     while (i <= inner.text.len) : (i += 1) {
@@ -172,6 +190,11 @@ pub fn choosesWords(text: []const u8, open: usize, close: usize) bool {
     return std.mem.findScalar(u8, text[open + 1 .. close], ':') != null;
 }
 
+/// Whether `\` before `c` writes `c` itself.
+pub fn escaped(c: u8) bool {
+    return c == '{' or c == '}' or c == '[' or c == ']' or c == '^' or c == '#';
+}
+
 test "text holds literals, values and words chosen by a condition" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
@@ -204,7 +227,7 @@ test "a selection labels its branches by category" {
     defer arena.deinit();
     var diags: source.Diagnostics = .{};
     defer diags.deinit(std.testing.allocator);
-    const t = try parse(arena.allocator(), std.testing.allocator, &diags, 0, .{ .text = "{count(pelt) -> one: a pelt | other: {count(pelt)} pelts} left.", .at = 0 });
+    const t = try parse(arena.allocator(), std.testing.allocator, &diags, 0, .{ .text = "{count(pelt) as one: a pelt | other: {count(pelt)} pelts} left.", .at = 0 });
     try std.testing.expectEqual(@as(usize, 0), diags.list.items.len);
     const sel = t[0].kind.select;
     try std.testing.expectEqualStrings("count", sel.operand.kind.call.name.text);
@@ -237,4 +260,22 @@ test "any bytes are read or refused, never crash" {
             };
         }
     }.one, .{});
+}
+
+test "the marks a writer escapes are words, and the first syntax's are refused" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(std.testing.allocator);
+    const t = try parse(arena.allocator(), std.testing.allocator, &diags, 0, .{ .text = "\\[sic\\] \\{x\\} Room \\# 4 \\^k1", .at = 0 });
+    try std.testing.expectEqualStrings("[sic] {x} Room # 4 ^k1", t[0].kind.literal);
+    try std.testing.expectError(error.Invalid, parse(arena.allocator(), std.testing.allocator, &diags, 0, .{ .text = "Go.   # pause 0.3", .at = 0 }));
+    try std.testing.expectEqualStrings("`#` tags are gone: write `[key value]` on a row under the line, or `\\#` for the mark", diags.list.items[0].message);
+    try std.testing.expectEqual(source.Span{ .file = 0, .start = 6, .end = 7 }, diags.list.items[0].span);
+    try std.testing.expectError(error.Invalid, parse(arena.allocator(), std.testing.allocator, &diags, 0, .{ .text = "{n -> one: a | other: b}", .at = 0 }));
+    try std.testing.expectEqualStrings("a selection is `{n as one: … | other: …}`: `as`, not `->`", diags.list.items[1].message);
+    try std.testing.expectEqual(source.Span{ .file = 0, .start = 3, .end = 5 }, diags.list.items[1].span);
+    // `#` that no tag could start is a word
+    const hash = try parse(arena.allocator(), std.testing.allocator, &diags, 0, .{ .text = "#1 fan", .at = 0 });
+    try std.testing.expectEqualStrings("#1 fan", hash[0].kind.literal);
 }

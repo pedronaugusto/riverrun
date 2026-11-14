@@ -1,8 +1,9 @@
 //! The second pass: every statement of every section, its names resolved,
 //! its expressions, effects and text typed, its tags held to the schema, its
-//! width measured and its id given. A statement written on the line of a
-//! condition or a gather (`{ spot = door }  DAD: How long…   # id …`) owns
-//! that line's tags.
+//! width measured and its id given. A statement written on the row of a
+//! condition or a gather (`{ spot = door }  DAD: How long… ^k1`) owns that
+//! row's id and the brackets under it; a line's delivery is a tag of the
+//! key the host names for one.
 
 const syntax = @import("../syntax.zig");
 const sym = @import("symbols.zig");
@@ -57,7 +58,7 @@ fn section(c: *Checker, id: sym.SectionId) Error!void {
             }
         }
         if (s.kind == .rules) for (p.node.body) |st| if (st.kind != .effect) {
-            try c.err(st.span, "a rule's body is its effects, `~ …`: a rule says nothing and goes nowhere", .{});
+            try c.err(st.span, "a rule's body is its effects, `[…]`: a rule says nothing and goes nowhere", .{});
         };
         try body(c, &unit, p.node.body);
     }
@@ -74,28 +75,16 @@ fn stmt(c: *Checker, u: *Unit, s: *const ast.Stmt) Error!void {
         .cond => |*k| {
             try exprs.condition(c, u.scope, &k.cond);
             if (never(c, &k.cond)) try c.warn(k.cond.span, "this condition can never hold: what it gates is never said", .{});
-            if (k.on_row) return stmt(c, u, &k.body[0]);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
             try body(c, u, k.body);
             try body(c, u, k.otherwise);
         },
-        .gather => |g| {
-            if (g.then) |then| return stmt(c, u, then);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
-        },
-        .effect => |*e| {
-            try exprs.effect(c, u.scope, e);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
-        },
-        .flow => |*f| {
-            try flow.resolve(c, u.scope, f, s.span);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
-        },
+        .gather => |g| if (g.then) |then| try stmt(c, u, then),
+        .effect => |*e| try exprs.effect(c, u.scope, e),
+        .flow => |*f| try flow.resolve(c, u.scope, f),
         .flow_if => |*f| {
             try exprs.condition(c, u.scope, &f.cond);
-            try flow.resolve(c, u.scope, &f.then, s.span);
-            try flow.resolve(c, u.scope, &f.otherwise, s.span);
-            try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .other);
+            try flow.resolve(c, u.scope, &f.then);
+            try flow.resolve(c, u.scope, &f.otherwise);
         },
     }
 }
@@ -111,10 +100,29 @@ fn line(c: *Checker, u: *Unit, s: *const ast.Stmt, l: *const ast.Line) Error!voi
     }
     try exprs.text(c, u.scope, l.text);
     try width.check(c, s.span, l.text, c.options.width.line, "line");
-    try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .line);
+    try tags.check(c, u.scope.module, u.scope.section, u.scope.part, try delivered(c, s, l), .line);
     try ids.give(c, s, u.path, key, l.text);
     u.path.ordinal += 1;
     for (l.effects) |*e| try stmt(c, u, e);
+}
+
+// A line's tags with its delivery among them, first, as a tag of the key the host names for one.
+fn delivered(c: *Checker, s: *const ast.Stmt, l: *const ast.Line) Error![]const ast.Tag {
+    const d = l.delivery orelse return s.tags;
+    const key = c.options.delivery orelse {
+        try c.err(d.span, "`({s})` is a delivery, and the host names no key for one: `Options.delivery`", .{d.words.text});
+        return s.tags;
+    };
+    const all = try c.arena.alloc(ast.Tag, s.tags.len + 1);
+    all[0] = .{
+        .span = d.span,
+        .key = .{ .text = key, .span = d.span },
+        .values = try c.arena.dupe([]const u8, &.{d.words.text}),
+        .spans = try c.arena.dupe(syntax.Span, &.{d.words.span}),
+    };
+    @memcpy(all[1..], s.tags);
+    try c.line_tags.put(c.arena, s, all);
+    return all;
 }
 
 fn choice(c: *Checker, u: *Unit, s: *const ast.Stmt, ch: *const ast.Choice) Error!void {

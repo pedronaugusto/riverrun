@@ -1,26 +1,38 @@
 // 1969. Iris is eight: hide and seek while her parents talk in the kitchen.
 
-== cold_open                                    # card
-Every life ends the same way.                   # pause 0.4
-What it meant is still open.                    # pause 0.6
+== cold_open
+  [card]
+Every life ends the same way.
+  [pause 0.4]
+What it meant is still open.
+  [pause 0.6]
 -> hide_1969
 
 // The listen mechanic plays these at their times; a line reaches her only where she is.
 // Its spots are the `spot` fact's values; the count and its pace are the mechanic's.
-== hide_1969                                    # listen · count 20 · beat 1.35 · then found_1969
-MUM: She was at the piano again today. She found middle C on her own.     # at 2.5 · heard piano, door
-DAD: Then lock it.                                                         # at 6.5 · heard door
-MUM: You could still play, Frank.                                          # at 9.5 · heard piano, door, landing
-  ~ carried += play
-DAD: Who'd listen?                                                         # at 12.5 · heard piano
-  ~ carried += play
-MUM: You gave up the conservatory for us. You don't get to give her up too. # at 16 · heard door
-  ~ carried += gave
-DAD: I'd do it again.                                                      # at 21 · heard door, landing
-MUM: She has your hands, you know. Look at them sometime.                  # at 24 · heard landing
-  ~ carried += hands
+== hide_1969
+  [listen] [count 20] [beat 1.35] [then found_1969]
+MUM: She was at the piano again today. She found middle C on her own.
+  [at 2.5] [heard piano, door]
+DAD: Then lock it.
+  [at 6.5] [heard door]
+MUM: You could still play, Frank.
+  [at 9.5] [heard piano, door, landing]
+  [carried += play]
+DAD: Who'd listen?
+  [at 12.5] [heard piano]
+  [carried += play]
+MUM: You gave up the conservatory for us. You don't get to give her up too.
+  [at 16] [heard door]
+  [carried += gave]
+DAD: I'd do it again.
+  [at 21] [heard door, landing]
+MUM: She has your hands, you know. Look at them sometime.
+  [at 24] [heard landing]
+  [carried += hands]
 
-== found_1969                                   # card · picture hide
+== found_1969
+  [card] [picture hide]
 { spot = stairs }
   Margaret finds her in four seconds.
   MARGARET: You always hide there.
@@ -32,5 +44,6 @@ MUM: She has your hands, you know. Look at them sometime.                  # at 
   He doesn't wait for an answer.
 { spot = landing }
   Nobody finds her. She falls asleep on the landing with her cheek on the carpet.
-- In the morning the piano is locked.           # pause 0.5
+- In the morning the piano is locked.
+  [pause 0.5]
 -> kitchen_1985

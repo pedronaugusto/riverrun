@@ -14,11 +14,13 @@ cast:
   leo       "Leo"                    — her son, in the life where she got on
   joan      "Aunt Joan"
   stranger  "the stranger"
-  stayed    "Iris, who stayed"       # voice
-  got_on    "Iris, who got on the bus"   # voice
+  stayed    "Iris, who stayed"
+    [voice]
+  got_on    "Iris, who got on the bus"
+    [voice]
 
 // people who speak once and need no name
-extras: a student · the youngest · the eldest · a cellist · a violinist
+extras: a student, the youngest, the eldest, a cellist, a violinist
 
 // one of these per life, saved with it
 facts (life):

@@ -4,28 +4,34 @@
 // move it asks the pool for what happens there and then. The most specific candidate
 // that holds wins, so a line that also needs what the day kept beats a plain one.
 
-== wake                                          # rooms · rooms front, kitchen, stairs · hours 20, 22, 0, 2, 4, 6 · pool wake_night · then dawn
+== wake
+  [rooms] [rooms front, kitchen, stairs] [hours 20, 22, 0, 2, 4, 6] [pool wake_night] [then dawn]
 { life = stay: The front room. Everyone she ever kept is here. | The front room of the flat by the river. Everyone she ever met on purpose is here. }
 { life = stay: A man | A woman } nobody knows stands at the foot of the coffin. { life = stay: He | She } has been there since eight.
 { life = stay }
-  MARGARET: Who is he?                            # who her sister
-  TOM: Mum never said anything about a cousin.    # who her eldest
+  MARGARET: Who is he?
+    [who her sister]
+  TOM: Mum never said anything about a cousin.
+    [who her eldest]
   GOT_ON: you know exactly who he is.
 { life = go }
   MARTIN: Who is she? One of your mother's students?
-  LEO: Mum never mentioned a —                    # who her son
+  LEO: Mum never mentioned a —
+    [who her son]
   STAYED: you know exactly who she is.
 
 == wake_night (pool)
 // the front room
 = reading_glasses   when { room = front and hour = 22 and life = stay }
-  DANNY: Forty-one years. She'd say forty-three. She counted the courting.   # who her husband
+  DANNY: Forty-one years. She'd say forty-three. She counted the courting.
+    [who her husband]
   Someone has put her reading glasses on the coffin, folded, as if she might want them.
 = rain              when { room = front and hour = 22 and life = go }
   MARTIN: We parted kindly. She sent me recordings of rain. I have two hundred and six.
 = same_hands        when { room = front and hour = 0 }
   The stranger is back at the coffin, looking at the photograph on the easel.
-  STRANGER: Same hands.                           # known hands
+  STRANGER: Same hands.
+    [known hands]
   { life = stay } GOT_ON: he means yours. your father's.
   { life = go }   STAYED: she means yours. your father's.
 = cake              when { room = front and hour = 2 and life = stay and kept has danny }
@@ -65,7 +71,7 @@
 = without_dad       when { room = kitchen and hour = 0 }
   MARGARET: She didn't make it to Dad. He asked for her twice. I never told her that. Well. I can't now.
 = two_of_you        when { room = kitchen and hour = 2 }
-  ->> stranger_talk
+  -> stranger_talk ->
 = washed_cup        when { room = kitchen and hour = 4 }
   The cup is washed and upside down on the rack. The back door is on the latch.
 
@@ -97,7 +103,8 @@
 = on_a_train        when { room = stairs and hour = 0 and life = go }
   A VIOLINIST: She missed her own premiere. She was on a train. The conductor took her bow and has been insufferable ever since.
 = eight_bars        when { room = stairs and hour = 2 and life = stay and kept has piano }
-  ELLIE: She played at my wedding. Eight bars, over and over. Nobody minded.   # who her youngest
+  ELLIE: She played at my wedding. Eight bars, over and over. Nobody minded.
+    [who her youngest]
 = never_heard       when { room = stairs and hour = 2 and life = stay }
   ELLIE: There was a piano in this house my whole life, and I never once heard it.
 = a_kitchen         when { room = stairs and hour = 2 and life = go and kept has radio }
@@ -111,20 +118,22 @@
   Nothing happens here for two hours. Somebody laughs in another room and stops.
 
 // Two in the morning, in the kitchen: the only one who looks at where you are.
-== stranger_talk                                 # talk
+== stranger_talk
+  [talk]
 Just the two of you: the stranger, and you, in a way.
 { life = stay: He | She } looks straight at where you are.
 - (ask)
 * Who are you?
-  ~ met = true
+  [met = true]
   STRANGER: Someone she never met.
   -> ask
 * How did you know her?
-  ~ met = true
+  [met = true]
   STRANGER: She wouldn't know me. I knew her once. In a way.
   -> ask
-* You're { life = stay: her son | her daughter }.    # voice · told "by your other self"
-  ~ met = true
+* You're { life = stay: her son | her daughter }.
+  [voice] [told "by your other self"]
+  [met = true]
   A long time.
   STRANGER: Not in this one.
   -> ask
@@ -132,10 +141,12 @@ Just the two of you: the stranger, and you, in a way.
   { life = stay: He | She } goes back to the window. Neither of you says anything else.
   <-
 
-== dawn                                          # card
+== dawn
+  [card]
 Dawn. They carry the chairs back to the kitchen. { life = stay: Tom | Leo } stands by the coffin with a folded page.
-->> eulogy
-* Go back                                        # choose · picture title
+-> eulogy ->
+* Go back
+  [choose] [picture title]
   -> her_life
 * Let her rest here
   -> rest

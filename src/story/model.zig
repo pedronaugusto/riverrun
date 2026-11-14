@@ -21,7 +21,7 @@ pub const CastId = aegis.id.Id(enum { cast }, u16);
 pub const EnumId = aegis.id.Id(enum { enumeration }, u16);
 /// A kind of the host's things, by its place in the story's kinds.
 pub const RefKindId = aegis.id.Id(enum { ref_kind }, u16);
-/// A line, by the 64-bit XxHash (seed 0) of its `# id` text: what a translation and a voice key on.
+/// A line, by the 64-bit XxHash (seed 0) of its id text (`^k7f3a2` in the story): what a translation and a voice key on.
 pub const LineId = aegis.id.NonZero(enum { line }, u64);
 
 pub const FactDecl = struct {
@@ -145,7 +145,7 @@ pub const Node = struct {
         gather: struct { visits: ?FactId = null, next: Next = null },
         effects: struct { effects: Range, next: Next = null },
         jump: SectionId,
-        /// `->>`: run the section, then come back to `next`.
+        /// `-> name ->`: run the section, then come back to `next`.
         call: struct { section: SectionId, next: Next = null },
         ret,
         end,
@@ -183,7 +183,7 @@ pub const Effect = union(format.EffectKind) {
     add: Item,
     remove: Item,
     call: struct { action: ExternId, args: Range, result: ?FactId = null },
-    /// `~ int += n`, `~ int -= n`: the int moves by the value of `by`, a number (negative for `-=`).
+    /// `[int += n]`, `[int -= n]`: the int moves by the value of `by`, a number (negative for `-=`).
     change: struct { fact: FactId, by: Range },
 
     /// `key`: for a fact kept per thing, the terms of its key; empty for a fact with one value. A `set`'s and a

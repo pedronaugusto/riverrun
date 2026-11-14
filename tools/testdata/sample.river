@@ -6,11 +6,12 @@ facts (world):
 == wares (stock)
 = furs
 = salt
-== market                                   # stall · sells furs
+== market
+  [stall] [sells furs]
 HILDE: Ten pelts before the frost.
 { furs > 0 } HILDE: You have furs already.
 * I'll bring them.
-  ~ pelts += 10
+  [pelts += 10]
   HILDE: Good.
 * Not this year.
   HILDE: Then next.

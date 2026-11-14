@@ -1,8 +1,9 @@
 //! Line ids: what translations, recorded voices and saves key on, so they
-//! survive a typo fix. A line or a choice is given one with the tag
-//! `# id k7f3a2`, which `riverrun tag` writes; every id is unique in the
-//! story. A release refuses a line without one. A development build
-//! derives one, so a story can be played before it is tagged.
+//! survive a typo fix. A line or a choice is given one by `^k7f3a2` at the
+//! end of its row, the tag `id`, which `riverrun tag` writes; every id is
+//! unique in the story. A release refuses a line without one. A
+//! development build derives one, so a story can be played before it is
+//! tagged.
 //!
 //! A pool's candidate is named by its section and part, which are unique
 //! already; its lines carry ids as any line does.
@@ -27,7 +28,7 @@ pub const Path = struct {
 /// Gives the line or choice `stmt` its id, from its tags.
 pub fn give(c: *Checker, stmt: *const ast.Stmt, path: Path, speaker: ?[]const u8, text: ast.Text) Error!void {
     const id: sym.LineId = if (try written(c, stmt.tags)) |w| .{ .text = w, .written = true } else switch (c.options.mode) {
-        .release => return c.err(stmt.span, "a release needs every line's `# id`: `riverrun tag` writes them", .{}),
+        .release => return c.err(stmt.span, "a release needs every line's id, `^…` at its end: `riverrun tag` writes them", .{}),
         .development => .{ .text = try derive(c, path, speaker, text), .written = false },
     };
     const slot = try c.line_ids.getOrPut(c.arena, id.text);

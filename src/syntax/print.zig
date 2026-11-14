@@ -1,8 +1,7 @@
 //! A file's tree printed as text: its byte-order mark, then each row's
-//! indentation, words, tags and comment, each after the spaces before it,
-//! the spaces at its end and its line ending. A file the reader read without
-//! a problem prints back byte for byte; a tool that edits the rows prints the
-//! file it means.
+//! indentation, words, id and comment, each after the spaces before it,
+//! the spaces at its end and its line ending. A file the reader read prints
+//! back byte for byte; a tool that edits the rows prints the file it means.
 
 const std = @import("std");
 const ast = @import("ast.zig");
@@ -16,8 +15,8 @@ pub fn print(w: *std.Io.Writer, file: *const ast.File) std.Io.Writer.Error!void 
 pub fn printRow(w: *std.Io.Writer, row: ast.Row) std.Io.Writer.Error!void {
     try w.splatByteAll(' ', row.indent);
     try w.writeAll(row.text);
-    try w.splatByteAll(' ', row.before_tags);
-    try w.writeAll(row.tags);
+    try w.splatByteAll(' ', row.before_id);
+    try w.writeAll(row.id);
     try w.splatByteAll(' ', row.before_comment);
     try w.writeAll(row.comment);
     try w.splatByteAll(' ', row.trailing);

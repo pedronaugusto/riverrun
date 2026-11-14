@@ -43,6 +43,8 @@ pub fn join(comptime vocabulary: type) Joined {
             if (p.check) |c| options.passes = options.passes ++ &[_]check.Pass{c};
             if (p.compile) |c| passes = passes ++ &[_]compile.Pass{c};
         }
+        // every pair compared: a host's schema of a few dozen keys is past the default quota
+        @setEvalBranchQuota(1000 + 200 * (keys.len * keys.len + options.kinds.len * options.kinds.len));
         distinct(options.kinds, keys);
         if (options.schema == null and keys.len == 0) return .{ .options = options, .passes = passes };
         const schema: check.Schema = .{ .keys = keys };
@@ -63,6 +65,21 @@ fn distinct(comptime kinds: []const check.Kind, comptime keys: []const check.Sch
 fn overlap(a: check.Schema.Places, b: check.Schema.Places) bool {
     for (std.enums.values(check.Schema.Place)) |at| if (a.has(at) and b.has(at)) return true;
     return false;
+}
+
+test "a vocabulary of many keys joins: every pair is compared within the quota" {
+    const Vocabulary = struct {
+        const many: check.Schema = .{ .keys = blk: {
+            @setEvalBranchQuota(100_000);
+            var keys: [80]check.Schema.Key = undefined;
+            for (&keys, 0..) |*k, i| k.* = .{ .name = std.fmt.comptimePrint("key_{d}", .{i}), .on = .{ .line = true } };
+            const out = keys;
+            break :blk &out;
+        } };
+        pub const options: check.Options = .{ .schema = &many };
+    };
+    const v = comptime join(Vocabulary);
+    try std.testing.expectEqual(@as(usize, 80), v.options.schema.?.keys.len);
 }
 
 test "a vocabulary's packages are joined after the host's own" {

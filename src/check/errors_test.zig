@@ -73,11 +73,11 @@ test "a speaker comes from the cast or the extras" {
 test "a fact must be declared" {
     var o = try checkOne(
         \\== a
-        \\~ carried += play
+        \\[carried += play]
         \\-> end
     , .{});
     defer o.deinit();
-    try o.only(.err, 2, 3, "nothing is called `carried`: no fact");
+    try o.only(.err, 2, 2, "nothing is called `carried`: no fact");
 }
 
 test "a comparison is of like with like" {
@@ -86,7 +86,7 @@ test "a comparison is of like with like" {
         \\  met: bool
         \\== a
         \\{ met = 3 }  Go.
-        \\~ met = true
+        \\[met = true]
         \\-> end
     , .{});
     defer o.deinit();
@@ -99,13 +99,13 @@ test "an effect's value is of its fact's type, and an item of its set" {
         \\  life: one of stay, go
         \\  carried: set of play, gave
         \\== a
-        \\~ life = gone
-        \\~ carried += hands
+        \\[life = gone]
+        \\[carried += hands]
         \\-> end
     , .{});
     defer o.deinit();
-    try o.has(.err, 5, 10, "`gone` is not one of stay, go");
-    try o.has(.err, 6, 14, "`hands` is not in `carried`: play, gave");
+    try o.has(.err, 5, 9, "`gone` is not one of stay, go");
+    try o.has(.err, 6, 13, "`hands` is not in `carried`: play, gave");
 }
 
 test "the story never sets a fact the game writes" {
@@ -113,11 +113,11 @@ test "the story never sets a fact the game writes" {
         \\facts:
         \\  spot: one of stairs, piano   (game)
         \\== a
-        \\~ spot = piano
+        \\[spot = piano]
         \\-> end
     , .{});
     defer o.deinit();
-    try o.only(.err, 4, 3, "`spot` is the game's, declared `(game)`: the story reads it and never sets it");
+    try o.only(.err, 4, 2, "`spot` is the game's, declared `(game)`: the story reads it and never sets it");
 }
 
 test "a fact nothing sets is a warning" {
@@ -139,14 +139,14 @@ test "a query is asked and an action is run" {
         \\  rest_in(one of stay, go)
         \\== a
         \\{ rest_in(go) }  Go.
-        \\~ lived(go)
+        \\[lived(go)]
         \\{ lived(gone) }  Stay.
-        \\~ rest_in(go)
+        \\[rest_in(go)]
         \\-> end
     , .{});
     defer o.deinit();
-    try o.has(.err, 5, 3, "`rest_in` is an action: it runs as an effect, `~ rest_in(…)`, and gives no value");
-    try o.has(.err, 6, 3, "`lived` is a query: it answers in a condition, and an effect runs an action");
+    try o.has(.err, 5, 3, "`rest_in` is an action: it runs as an effect, `[rest_in(…)]`, and gives no value");
+    try o.has(.err, 6, 2, "`lived` is a query: it answers in a condition, and an effect runs an action");
     try o.has(.err, 7, 9, "`gone` is not one of stay, go");
     try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
 }
@@ -233,13 +233,13 @@ test "what follows a flow away is unreached, unless a label lets flow back" {
 test "a pool is called, and its candidates are picked" {
     var o = try checkOne(
         \\== a
-        \\->> kept
+        \\-> kept ->
         \\-> kept
         \\== kept (pool 2)
         \\= one   when { true }   One.
     , .{});
     defer o.deinit();
-    try o.has(.err, 3, 4, "`kept` is a pool: call it, `->> kept`, and it gives its lines and comes back");
+    try o.has(.err, 3, 4, "`kept` is a pool: call it, `-> kept ->`, and it gives its lines and comes back");
     try o.has(.err, 4, 4, "the pool `kept` gives 2, but has 1 candidates");
 }
 
@@ -255,18 +255,23 @@ test "a tag is one the host knows, where it may stand, with values of its type" 
         \\  dad  "Dad"
         \\facts:
         \\  spot: one of stairs, piano   (game)
-        \\== hide   # then found
-        \\MUM: Then lock it.   # at 6.5 · heard piano, door
-        \\DAD: Who'd listen?   # at soon
-        \\MUM: You gave it up.   # pause 2
-        \\== found   # at 3
+        \\== hide
+        \\  [then found]
+        \\MUM: Then lock it.
+        \\  [at 6.5] [heard piano, door]
+        \\DAD: Who'd listen?
+        \\  [at soon]
+        \\MUM: You gave it up.
+        \\  [pause 2]
+        \\== found
+        \\  [at 3]
         \\-> end
     , .{ .schema = &schema });
     defer o.deinit();
-    try o.has(.err, 7, 47, "`heard` takes one of stairs, piano: `door` is not one");
-    try o.has(.err, 8, 27, "`at` takes a number: `soon` is not one");
-    try o.has(.err, 9, 26, "`pause` is not a tag the host knows");
-    try o.has(.err, 10, 14, "`at` is not a tag of a section");
+    try o.has(.err, 9, 26, "`heard` takes one of stairs, piano: `door` is not one");
+    try o.has(.err, 11, 7, "`at` takes a number: `soon` is not one");
+    try o.has(.err, 13, 4, "`pause` is not a tag the host knows");
+    try o.has(.err, 15, 4, "`at` is not a tag of a section");
     try std.testing.expectEqual(@as(usize, 4), o.diags.list.items.len);
 }
 
@@ -302,14 +307,14 @@ test "a name is declared once, and the second says where the first is" {
 test "a line id is used once, and a release needs one on every line" {
     var o = try checkOne(
         \\== a
-        \\Go.   # id k7f3a2
-        \\Stay.   # id k7f3a2
+        \\Go. ^k7f3a2
+        \\Stay. ^k7f3a2
         \\Wait.
         \\-> end
     , .{ .mode = .release });
     defer o.deinit();
     try o.has(.err, 3, 1, "the line id `k7f3a2` is used twice: first at a.river:2:1");
-    try o.has(.err, 4, 1, "a release needs every line's `# id`: `riverrun tag` writes them");
+    try o.has(.err, 4, 1, "a release needs every line's id, `^…` at its end: `riverrun tag` writes them");
     try std.testing.expectEqual(@as(usize, 2), o.diags.list.items.len);
 }
 
@@ -321,7 +326,7 @@ test "a choice that can never be offered is a warning" {
         \\const:
         \\  demo = false
         \\== a
-        \\~ kept += dad
+        \\[kept += dad]
         \\* { spot = piano and spot = stairs } Both.
         \\  -> end
         \\* { kept has dad and kept hasnt dad } Neither.
@@ -368,7 +373,7 @@ test "`<-` with nothing to go back to is a warning" {
         \\<-
     , .{});
     defer o.deinit();
-    try o.only(.warning, 5, 1, "`<-` goes back to a caller, but nothing calls `b` with `->>`");
+    try o.only(.warning, 5, 1, "`<-` goes back to a caller, but nothing calls `b` with `-> b ->`");
 }
 
 test "any story is checked or refused, never crashes" {
@@ -395,7 +400,7 @@ test "ints are ordered, and nothing else is" {
         \\  met:  bool
         \\== a
         \\{ hour >= 6 and met < 2 } Dawn.
-        \\~ met = true
+        \\[met = true]
         \\-> end
     , .{});
     defer o.deinit();
@@ -410,18 +415,18 @@ test "an action with an outcome keeps it in a fact, and is never asked" {
         \\extern:
         \\  persuade(who: int, against: int) -> one of yes, no   (action)
         \\== a
-        \\~ persuaded = persuade(1, 12)
-        \\~ rolled = persuade(1, 12)
-        \\~ persuade(1, 12)
+        \\[persuaded = persuade(1, 12)]
+        \\[rolled = persuade(1, 12)]
+        \\[persuade(1, 12)]
         \\{ persuade(1, 12) = yes } Fine.
         \\{ persuaded = yes } Fine.
-        \\~ rolled = 3
+        \\[rolled = 3]
         \\-> end
     , .{});
     defer o.deinit();
-    try o.has(.err, 8, 12, "`persuade`'s outcome is one of yes, no, and the fact keeping it is a number");
-    try o.has(.err, 9, 3, "`persuade` has an outcome, which a fact keeps: `~ fact = persuade(…)`");
-    try o.has(.err, 10, 3, "`persuade` is an action with an outcome: it runs as an effect whose outcome a fact keeps, `~ fact = persuade(…)`");
+    try o.has(.err, 8, 11, "`persuade`'s outcome is one of yes, no, and the fact keeping it is a number");
+    try o.has(.err, 9, 2, "`persuade` has an outcome, which a fact keeps: `[fact = persuade(…)]`");
+    try o.has(.err, 10, 3, "`persuade` is an action with an outcome: it runs as an effect whose outcome a fact keeps, `[fact = persuade(…)]`");
     try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
 }
 
@@ -492,7 +497,7 @@ test "another module's names are reached qualified" {
         \\facts:
         \\  met: bool
         \\== letter
-        \\~ met = true
+        \\[met = true]
         \\-> end
     );
     files[1] = try syntax.parse(a, std.testing.allocator, &o.diags, 1, "main.river",
@@ -516,18 +521,18 @@ test "an int changes by a number or an int constant; a set by one of its items" 
         \\  penalty = 3
         \\  word = "no"
         \\== a
-        \\~ points += 2
-        \\~ points -= penalty
-        \\~ points += word
-        \\~ kept += 2
-        \\~ met += 1
+        \\[points += 2]
+        \\[points -= penalty]
+        \\[points += word]
+        \\[kept += 2]
+        \\[met += 1]
         \\{ points > 0 and kept has dad and met } -> end
         \\-> end
     , .{});
     defer o.deinit();
-    try o.has(.err, 11, 13, "`+=` changes the int `points` by a number or an int constant, and `word` is neither");
-    try o.has(.err, 12, 11, "`+=` changes the set `kept` by an item: ruth, dad");
-    try o.has(.err, 13, 3, "`+=` changes a set or an int; `met` is true or false");
+    try o.has(.err, 11, 12, "`+=` changes the int `points` by a number or an int constant, and `word` is neither");
+    try o.has(.err, 12, 10, "`+=` changes the set `kept` by an item: ruth, dad");
+    try o.has(.err, 13, 2, "`+=` changes a set or an int; `met` is true or false");
     try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
 }
 
@@ -559,18 +564,20 @@ test "a registered kind adds its tags and builtins to its own sections, and nowh
         \\  day:  int    (clock)
         \\  life: one of stay, go
         \\== pelts (quest)
-        \\= asked      when { day > 1 }                    # stage
-        \\= late       when { since(asked, day) > 3 }      # stage · after asked
+        \\= asked      when { day > 1 }
+        \\  [stage]
+        \\= late       when { since(asked, day) > 3 }
+        \\  [stage] [after asked]
         \\= wrong      when { since(gone, day) > 3 and since(asked, life) > 0 }
         \\== a
-        \\~ life = go
+        \\[life = go]
         \\{ since(asked, day) > 3 } -> end
         \\-> end
     , .{ .kinds = &.{quest} });
     defer o.deinit();
-    try o.has(.err, 7, 27, "`gone` is not a part of `pelts`");
-    try o.has(.err, 7, 59, "`life` is one of stay, go, where an int fact is wanted");
-    try o.has(.err, 10, 3, "nothing is called `since`: no query or action");
+    try o.has(.err, 9, 27, "`gone` is not a part of `pelts`");
+    try o.has(.err, 9, 59, "`life` is one of stay, go, where an int fact is wanted");
+    try o.has(.err, 12, 3, "nothing is called `since`: no query or action");
     try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
 }
 
@@ -633,16 +640,18 @@ test "a registered kind's sections declare facts, named and typed beside the sto
         \\  day:     int   (game)
         \\  weekday: int   (game)
         \\== school (calendar)
-        \\= slot   # place slot · names morning, evening
-        \\= week   # place weekday · names monday, sunday
+        \\= slot
+        \\  [place slot] [names morning, evening]
+        \\= week
+        \\  [place weekday] [names monday, sunday]
         \\== a
         \\{ slot = evening } Evening.
         \\{ slot = noon } Noon.
         \\-> end
     , .{ .kinds = &.{calendar_kind} });
     defer o.deinit();
-    try o.has(.err, 6, 12, "`weekday` is declared twice: first at a.river:3:3, then by the calendar `school`");
-    try o.has(.err, 9, 10, "`noon` is not one of morning, evening");
+    try o.has(.err, 8, 4, "`weekday` is declared twice: first at a.river:3:3, then by the calendar `school`");
+    try o.has(.err, 11, 10, "`noon` is not one of morning, evening");
     try std.testing.expectEqual(@as(usize, 2), o.diags.errors());
     const slot = o.checked.?.facts[o.checked.?.fact("slot").?.raw()];
     try std.testing.expectEqualStrings("time", slot.scope.?);
@@ -680,14 +689,14 @@ test "a section's own facts are named within it, and its roles never set by the 
         \\= named   when { asked has tom and who = tom }
         \\== a
         \\{ stranger.asked has danny } Danny.
-        \\~ stranger.asked += tom
-        \\~ stranger.who = tom
+        \\[stranger.asked += tom]
+        \\[stranger.who = tom]
         \\-> end
     , .{ .kinds = &.{quest_kind} });
     defer o.deinit();
     try o.has(.err, 3, 3, "`(role)` is a thing a section is given: declare `lost` in the section's own `facts:`");
     try o.has(.err, 8, 3, "`met` in `stranger` would hide `met`, declared at a.river:2:3, inside it: name one otherwise");
-    try o.has(.err, 13, 3, "`stranger.who` is a role, given when its section starts: the story reads it and never sets it");
+    try o.has(.err, 13, 2, "`stranger.who` is a role, given when its section starts: the story reads it and never sets it");
     try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
     const asked = o.checked.?.facts[o.checked.?.fact("stranger.asked").?.raw()];
     try std.testing.expectEqualStrings("player", asked.scope.?);
@@ -708,22 +717,23 @@ test "a section kept per thing reads and writes its own for the one it is evalua
     var o = try checkOne(
         \\facts:
         \\  lead: ref of bounty   (game)
-        \\== bounty (quest)   # repeat
+        \\== bounty (quest)
+        \\  [repeat]
         \\facts:
         \\  target: ref of person   (role)
         \\  asked: set of tom, danny
         \\  kills(person): int
         \\= ask   when { asked has tom and target = tom and kills(tom) > 0 }
-        \\  ~ asked += danny
-        \\  ~ asked(lead) -= tom
+        \\  [asked += danny]
+        \\  [asked(lead) -= tom]
         \\== a
         \\{ bounty.asked has tom } No.
         \\{ bounty.asked(lead) has tom and bounty.ask(lead) } Yes.
         \\-> end
     , .{ .kinds = &.{repeat_kind} });
     defer o.deinit();
-    try o.has(.err, 7, 3, "`kills` is in `bounty`, which keeps it per bounty: it takes no key of its own");
-    try o.has(.err, 12, 3, "`bounty.asked` is kept per bounty: read it for one, `bounty.asked(…)`");
+    try o.has(.err, 8, 3, "`kills` is in `bounty`, which keeps it per bounty: it takes no key of its own");
+    try o.has(.err, 13, 3, "`bounty.asked` is kept per bounty: read it for one, `bounty.asked(…)`");
     try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
     const c = o.checked.?;
     const asked = c.facts[c.fact("bounty.asked").?.raw()];
@@ -762,14 +772,17 @@ test "a package judges its own tags' values, and says what is wrong where the va
     var o = try checkOne(
         \\== pelts (quest)
         \\= asked
-        \\= late    # after asked, akked
-        \\= early   # after
-        \\= done    # after done
+        \\= late
+        \\  [after asked, akked]
+        \\= early
+        \\  [after]
+        \\= done
+        \\  [after done]
     , .{ .kinds = &.{.{ .name = "quest", .schema = &quest_tags }} });
     defer o.deinit();
-    try o.has(.err, 3, 26, "`akked` is not a stage of `pelts`");
-    try o.has(.err, 4, 13, "`after` takes at least one value");
-    try o.has(.err, 5, 19, "`done` comes after itself");
+    try o.has(.err, 4, 17, "`akked` is not a stage of `pelts`");
+    try o.has(.err, 6, 4, "`after` takes at least one value");
+    try o.has(.err, 8, 10, "`done` comes after itself");
     try std.testing.expectEqual(@as(usize, 3), o.diags.errors());
 }
 
@@ -786,11 +799,11 @@ test "rules: each a condition and its effects, reached by nothing, their queries
         \\-> honor_rules
         \\== honor_rules (rules)
         \\= drift    when { since_changed(honor, day) > 10 }
-        \\  ~ honor += 1
+        \\  [honor += 1]
         \\= rich     when { gold() > 100 }
-        \\  ~ honor += 1
+        \\  [honor += 1]
         \\= loose
-        \\  ~ honor -= 1
+        \\  [honor -= 1]
         \\= loud     when { honor < 0 }
         \\  Honor is low.
     , .{});
@@ -800,7 +813,7 @@ test "rules: each a condition and its effects, reached by nothing, their queries
     try o.has(.err, 11, 40, "`day` is not a clock: since_changed counts on a fact declared `(clock)`");
     try o.has(.err, 13, 19, "`gold` is asked by a rule, which wakes only when what it reads changes: declare what it reads, `(reads …)`");
     try o.has(.err, 15, 3, "the rule `loose` needs its condition: `= loose when { … }`, its effects under it");
-    try o.has(.err, 18, 3, "a rule's body is its effects, `~ …`: a rule says nothing and goes nowhere");
+    try o.has(.err, 18, 3, "a rule's body is its effects, `[…]`: a rule says nothing and goes nowhere");
 }
 
 test "only a watched condition asks queries that must declare what they read" {
@@ -813,7 +826,7 @@ test "only a watched condition asks queries that must declare what they read" {
         \\== pelts (quest)
         \\= asked   when { gold() > 3 }
         \\  Pelts for {name(1)}.
-        \\  ~ rich = gold() > 10
+        \\  [rich = gold() > 10]
     , .{ .kinds = &.{.{ .name = "quest" }} });
     defer o.deinit();
     try o.only(.err, 7, 18, "`gold` is asked by a watched condition, which wakes only when what it reads changes: declare what it reads, `(reads …)`");
@@ -831,7 +844,7 @@ test "a moment is seen only by rules and quests, and happened asks of moments al
         \\-> end
         \\== lever (rules)
         \\= any    when { happened(pulled) and happened(hour) }
-        \\  ~ rang = true
+        \\  [rang = true]
     , .{});
     defer o.deinit();
     try o.has(.err, 7, 3, "`pulled` is a moment, over once rules and quests have seen it: `a` would never see it");
@@ -850,17 +863,17 @@ test "a fact kept per thing is read and written for one key of its kind" {
         \\== a
         \\{ opinion > 3 } Liked.
         \\{ mood(calm) and opinion(3) > 1 } Calm.
-        \\~ opinion -= 5
-        \\~ rank(margaret) = 2
-        \\~ mood(angry) = true
+        \\[opinion -= 5]
+        \\[rank(margaret) = 2]
+        \\[mood(angry) = true]
         \\-> end
     , .{});
     defer o.deinit();
     try o.has(.err, 5, 3, "`ticks` is kept per thing, so it cannot be a clock, a moment or text");
     try o.has(.err, 7, 3, "`opinion` is kept per person: read it for one, `opinion(…)`");
     try o.has(.err, 8, 26, "this is a number, where a person is wanted");
-    try o.has(.err, 9, 3, "`opinion` is kept per person: write it for one, `opinion(…)`");
-    try o.has(.err, 10, 3, "`rank` is a fact with one value: it takes no key");
+    try o.has(.err, 9, 2, "`opinion` is kept per person: write it for one, `opinion(…)`");
+    try o.has(.err, 10, 2, "`rank` is a fact with one value: it takes no key");
 }
 
 test "a bounded int is set within its bounds, and a clock has none" {
@@ -871,36 +884,37 @@ test "a bounded int is set within its bounds, and a clock has none" {
         \\  honor: int from -100 to 100
         \\  day:   int from 0 to 9   (clock)
         \\== a
-        \\~ honor = 120
-        \\~ honor = max_honor
-        \\~ honor = -100
+        \\[honor = 120]
+        \\[honor = max_honor]
+        \\[honor = -100]
         \\-> end
     , .{});
     defer o.deinit();
     try o.has(.err, 5, 3, "`day` is a clock, which only moves on: it has no bounds");
-    try o.has(.err, 7, 11, "120 is past `honor`'s bounds, -100 to 100");
-    try o.has(.err, 8, 11, "300 is past `honor`'s bounds, -100 to 100");
+    try o.has(.err, 7, 10, "120 is past `honor`'s bounds, -100 to 100");
+    try o.has(.err, 8, 10, "300 is past `honor`'s bounds, -100 to 100");
     try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
 }
 
 test "words chosen by a plural or a gender: known labels, none twice, other among them" {
     var o = try checkOne(
         \\cast:
-        \\  marta  "Marta"   # gender female
+        \\  marta  "Marta"
+        \\    [gender female]
         \\facts:
         \\  pelts: int
         \\  name:  text
         \\== a
-        \\{pelts -> one: a pelt | few: pelts}.
-        \\{marta -> feminine: she | feminine: her | other: they}.
-        \\{name -> one: x | other: y}.
+        \\{pelts as one: a pelt | few: pelts}.
+        \\{marta as feminine: she | feminine: her | other: they}.
+        \\{name as one: x | other: y}.
         \\-> end
     , .{});
     defer o.deinit();
-    try o.has(.err, 2, 22, "a gender is one of masculine, feminine, neuter or other");
-    try o.has(.err, 7, 11, "words chosen by a plural or a gender need `other`, which every language falls back to");
-    try o.has(.err, 8, 27, "`feminine` is chosen twice here");
-    try o.has(.err, 9, 2, "words are chosen by a number's plural or by a gender, a person's or a thing's: this is text");
+    try o.has(.err, 3, 6, "a gender is one of masculine, feminine, neuter or other");
+    try o.has(.err, 8, 11, "words chosen by a plural or a gender need `other`, which every language falls back to");
+    try o.has(.err, 9, 27, "`feminine` is chosen twice here");
+    try o.has(.err, 10, 2, "words are chosen by a number's plural or by a gender, a person's or a thing's: this is text");
 }
 
 test "weight belongs on a pool's candidates and migrate on rules, within the story's version" {
@@ -909,22 +923,83 @@ test "weight belongs on a pool's candidates and migrate on rules, within the sto
         \\facts:
         \\  honor: int
         \\== a
-        \\->> p
+        \\-> p ->
         \\-> end
         \\== p (pool)
-        \\= one    when { true }   # weight 0
+        \\= one    when { true }
+        \\  [weight 0]
         \\  One.
-        \\= two    when { true }   # migrate 2
+        \\= two    when { true }
+        \\  [migrate 2]
         \\  Two.
         \\== fixes (rules)
-        \\= ahead  # migrate 3
-        \\  ~ honor += 1
-        \\= heavy  when { true }   # weight 2
-        \\  ~ honor += 1
+        \\= ahead
+        \\  [migrate 3]
+        \\  [honor += 1]
+        \\= heavy  when { true }
+        \\  [weight 2]
+        \\  [honor += 1]
     , .{});
     defer o.deinit();
-    try o.has(.err, 8, 28, "`weight` takes one whole number above 0, at most 65535");
-    try o.has(.err, 10, 28, "`migrate` is riverrun's, and belongs on a rule");
-    try o.has(.err, 13, 12, "a migration to version 3 needs a story of that version: declare `version: 3`");
-    try o.has(.err, 15, 28, "`weight` is riverrun's, and belongs on a pool's candidate");
+    try o.has(.err, 9, 4, "`weight` takes one whole number above 0, at most 65535");
+    try o.has(.err, 12, 4, "`migrate` is riverrun's, and belongs on a rule");
+    try o.has(.err, 16, 4, "a migration to version 3 needs a story of that version: declare `version: 3`");
+    try o.has(.err, 19, 4, "`weight` is riverrun's, and belongs on a pool's candidate");
+}
+
+test "a name is a tag or an action, never both, and the wrong form is refused naming the right one" {
+    const schema: check.Schema = .{ .keys = &.{
+        .{ .name = "picture", .on = .{ .line = true }, .value = .word },
+        .{ .name = "cutscene", .on = .{ .section = true }, .value = .word },
+    } };
+    var o = try checkOne(
+        \\extern:
+        \\  show(name: ref of picture)
+        \\  cutscene(name: ref of cutscene)
+        \\== a
+        \\[picture(door)]
+        \\Go.
+        \\  [show door]
+        \\-> end
+    , .{ .schema = &schema });
+    defer o.deinit();
+    try o.has(.err, 3, 3, "`cutscene` is an action and a tag the host knows: a name is one or the other");
+    try o.has(.err, 5, 2, "`picture` is a tag, not an action: write `[picture …]`, without parentheses");
+    try o.has(.err, 7, 4, "`show` is an action, not a tag: run it with `[show(…)]`");
+    try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
+}
+
+test "an action named as a tag is refused with no schema too" {
+    var o = try checkOne(
+        \\extern:
+        \\  show(name: ref of picture)
+        \\== a
+        \\Go.
+        \\  [show door]
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 5, 4, "`show` is an action, not a tag: run it with `[show(…)]`");
+}
+
+test "a delivery is a tag of the key the host names, typed by its schema, and refused where it names none" {
+    const schema: check.Schema = .{ .keys = &.{
+        .{ .name = "mood", .on = .{ .line = true }, .value = .{ .words = &.{ "laughing", "quiet" } } },
+    } };
+    const story =
+        \\cast:
+        \\  astro  "Astro"
+        \\== a
+        \\ASTRO (laughing): Fuck you.
+        \\ASTRO (laughin): Not even close.
+        \\-> end
+    ;
+    var typed = try checkOne(story, .{ .schema = &schema, .delivery = "mood" });
+    defer typed.deinit();
+    try typed.only(.err, 5, 8, "`mood` takes one of laughing, quiet: `laughin` is not one");
+    var none = try checkOne(story, .{ .schema = &schema });
+    defer none.deinit();
+    try none.has(.err, 4, 7, "`(laughing)` is a delivery, and the host names no key for one: `Options.delivery`");
+    try none.has(.err, 5, 7, "`(laughin)` is a delivery, and the host names no key for one: `Options.delivery`");
+    try std.testing.expectEqual(@as(usize, 2), none.diags.list.items.len);
 }

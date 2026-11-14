@@ -94,15 +94,15 @@ pub const Store = struct {
 
 /// What a step of the story does to the world: emitted, never applied by riverrun.
 pub const Effect = union(enum) {
-    /// `~ fact = value`; `key` for a fact kept per thing.
+    /// `[fact = value]`; `key` for a fact kept per thing.
     set: struct { fact: FactId, key: ?Key = null, value: Value },
-    /// `~ set += item`
+    /// `[set += item]`
     add: Item,
-    /// `~ set -= item`
+    /// `[set -= item]`
     remove: Item,
-    /// `~ action(args)`: an action the story declared, performed by the host.
+    /// `[action(args)]`: an action the story declared, performed by the host.
     call: Call,
-    /// `~ int += n`, `~ int -= n`: the int moves by `by`.
+    /// `[int += n]`, `[int -= n]`: the int moves by `by`.
     change: struct { fact: FactId, key: ?Key = null, by: i64 },
 
     pub const Item = struct { fact: FactId, key: ?Key = null, item: u16 };

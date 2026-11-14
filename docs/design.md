@@ -143,8 +143,8 @@ line's text is exactly what follows `:`, never assembled from pieces at run time
   (`masculine`, `feminine`, `neuter`, `other`), each language's string table labels its own, and `other`, which
   every language falls back to, is required.
 
-`\{`, `\}`, `\[`, `\^` and `\#` write the mark itself, so a narration row that begins with a bracket is written
-`\[`, and words that end in `^word` are written `\^word`.
+`\{`, `\}`, `\[`, `\]`, `\^` and `\#` write the mark itself, so a narration row that begins with a bracket is
+written `\[`, words that end in `^word` are written `\^word`, and a `#` alone among words is written `\#`.
 
 **A line's id** is `^` and the id at the end of its row, after one space or more: `MUM: You could still play,
 Frank. ^k7f3a2`. Letters, digits, `_` and `-`. It is riverrun's reserved `id` tag, which `riverrun tag` writes and
@@ -256,8 +256,8 @@ return.
 
 The reader reads this syntax and no other. Where it costs nothing, a mark of riverrun's earlier syntax is an error
 that names the form that replaced it: `~ x` (write `[x]`), `# key` after a line's words (write `[key]` under the
-line, or `\#` for the mark), `->> x` (write `-> x ->`), `{n -> one: …}` (write `{n as one: …}`), `·` between tags or
-names (a bracket each, or commas), `[id x]` (write `^x` at the line's end).
+line, or `\#` for the mark), `->> x` (write `-> x ->`), `{n -> one: …}` (write `{n as one: …}`), `·` between tags
+or names (a bracket each, or commas), `[id x]` (write `^x` at the line's end).
 
 Built: the reader and the checker, all of the above.
 
@@ -331,9 +331,9 @@ then compiles each file's sections against it alone, then runs each package's pa
 the graph, reads it back and validates it, and writes the string table for its hash. A file's steps depend only on
 the index and its own tree, so a cache keyed by both can keep a file's steps between builds; that cache is not built
 yet, and every build compiles every file. Facts declared without a scope are kept in riverrun's scope `default`.
-**Line ids:** `riverrun tag` writes an id, `^id`, at the end of every line that has none; a development build derives missing ones
-(`~` and a hash of the section, the part, the position, the speaker and the words). *Protects:* translations,
-recorded voices and model characters keyed on a line and surviving a typo fix.
+**Line ids:** `riverrun tag` writes an id, `^id`, at the end of every line that has none; a development build
+derives missing ones (`~` and a hash of the section, the part, the position, the speaker and the words).
+*Protects:* translations, recorded voices and model characters keyed on a line and surviving a typo fix.
 
 Built: all of it, `addStory` included.
 

@@ -338,7 +338,7 @@ pub const Builder = struct {
         try b.blocks.append(b.gpa, .{ .name = n, .version = version, .bytes = .{ .start = start, .len = try count(data.len) } });
     }
 
-    /// A line's words for the string table, keyed by the hash of its `# id` text.
+    /// A line's words for the string table, keyed by the hash of its id text.
     pub fn line(b: *Builder, id_text: []const u8, template: []const u8) Error!model.LineId {
         templates.validate(template, null) catch return error.BadTemplate;
         const id = try strings.lineId(id_text);

@@ -35,6 +35,9 @@ pub const Options = struct {
     /// The host's things by kind, the ids a story may name: `item_kind` holds `wolf_pelt`. A kind not listed is
     /// carried unchecked, so a host without a manifest still compiles.
     things: []const Things = &.{},
+    /// The key of the schema a speaker's delivery fills, `DAD (quietly): …`: one tag of the line, typed by the
+    /// schema like any key. Null: the host takes no delivery, and one written is refused.
+    delivery: ?[]const u8 = null,
 };
 
 pub const Things = struct { kind: []const u8, ids: []const []const u8 };
@@ -89,7 +92,7 @@ pub const Schema = struct {
     keys: []const Key,
 
     /// Where a tag stands.
-    pub const Place = enum { cast, section, part, line, choice, other };
+    pub const Place = enum { cast, section, part, line, choice };
 
     pub const Places = struct {
         cast: bool = false,
@@ -97,8 +100,6 @@ pub const Schema = struct {
         part: bool = false,
         line: bool = false,
         choice: bool = false,
-        /// Any other statement: a condition, a gather, an effect, a flow.
-        other: bool = false,
 
         pub fn has(p: Places, at: Schema.Place) bool {
             return switch (at) {
@@ -175,6 +176,21 @@ pub const Schema = struct {
     }
 };
 
+/// Whether a key called `name` is the host's, or a registered kind's, wherever it may stand.
+pub fn isKey(c: *const Checker, name: []const u8) bool {
+    if (c.options.schema) |s| if (s.find(name, .line) != .unknown) return true;
+    for (c.options.kinds) |k| if (k.schema) |s| if (s.find(name, .line) != .unknown) return true;
+    return false;
+}
+
+/// Whether `name`, as `module` sees it, is an action: an extern with no answer, or one marked `(action)`.
+pub fn isAction(c: *const Checker, module: sym.ModuleId, name: []const u8) bool {
+    const named = c.valueNamed(module, name) orelse return false;
+    if (named != .external) return false;
+    const e = c.externs.items[named.external.raw()];
+    return e.action or e.returns == null;
+}
+
 /// The kind a package registered for `section`, if it is one.
 pub fn kindOfSection(c: *const Checker, id: sym.SectionId) ?*const Kind {
     const k = c.sections.items[id.raw()].kind;
@@ -227,6 +243,8 @@ names: std.AutoHashMapUnmanaged(*const ast.Name, sym.Ref) = .empty,
 exprs: std.AutoHashMapUnmanaged(*const ast.Expr, sym.Typed) = .empty,
 lines: std.AutoHashMapUnmanaged(*const ast.Stmt, sym.LineId) = .empty,
 tags: std.AutoHashMapUnmanaged(*const ast.Tag, []const sym.SectionId) = .empty,
+/// A line's tags where it has a delivery: the delivery, as a tag of the host's key, then its own.
+line_tags: std.AutoHashMapUnmanaged(*const ast.Stmt, []const ast.Tag) = .empty,
 /// The tags whose values the schema types as words a player reads, which a translation carries.
 text_tags: std.AutoHashMapUnmanaged(*const ast.Tag, void) = .empty,
 /// Each line id in use, and where, so a second use can say where the first is.

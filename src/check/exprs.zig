@@ -133,8 +133,9 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
         },
         .constant => |id| return record(c, e, c.consts.items[id.raw()].type, .{ .constant = id }),
         .external => |id| {
-            const what = if (!c.externs.items[id.raw()].asks()) "an action: it runs as an effect, `~ " else "a query: ask it as `";
-            try c.err(e.span, "`{s}` is {s}{s}(…)`", .{ n, what, n });
+            if (c.externs.items[id.raw()].asks()) {
+                try c.err(e.span, "`{s}` is a query: ask it as `{s}(…)`", .{ n, n });
+            } else try c.err(e.span, "`{s}` is an action: it runs as an effect, `[{s}(…)]`", .{ n, n });
             return null;
         },
     };
@@ -158,11 +159,11 @@ fn calls(c: *Checker, scope: Scope, e: *const ast.Expr, call: *const ast.Call) E
         return null;
     }
     if (ext.action) {
-        try c.err(e.span, "`{s}` is an action with an outcome: it runs as an effect whose outcome a fact keeps, `~ fact = {s}(…)`", .{ ext.name, ext.name });
+        try c.err(e.span, "`{s}` is an action with an outcome: it runs as an effect whose outcome a fact keeps, `[fact = {s}(…)]`", .{ ext.name, ext.name });
         return null;
     }
     const returns = ext.returns orelse {
-        try c.err(e.span, "`{s}` is an action: it runs as an effect, `~ {s}(…)`, and gives no value", .{ ext.name, ext.name });
+        try c.err(e.span, "`{s}` is an action: it runs as an effect, `[{s}(…)]`, and gives no value", .{ ext.name, ext.name });
         return null;
     };
     try c.names.put(c.arena, &call.name, .{ .query = id });
@@ -462,16 +463,19 @@ pub fn effect(c: *Checker, scope: Scope, eff: *const ast.Effect) Error!void {
         .add => |*a| try change(c, scope, a, "+="),
         .remove => |*r| try change(c, scope, r, "-="),
         .call => |*call| {
+            if (lookup(c, scope, call.name.text) == null and c.isKey(call.name.text)) {
+                return c.err(call.name.span, "`{s}` is a tag, not an action: write `[{s} …]`, without parentheses", .{ call.name.text, call.name.text });
+            }
             const id = try externOf(c, scope, call) orelse return;
             const ext = c.externs.items[id.raw()];
-            if (ext.action) return c.err(call.name.span, "`{s}` has an outcome, which a fact keeps: `~ fact = {s}(…)`", .{ ext.name, ext.name });
+            if (ext.action) return c.err(call.name.span, "`{s}` has an outcome, which a fact keeps: `[fact = {s}(…)]`", .{ ext.name, ext.name });
             if (ext.returns != null) return c.err(call.name.span, "`{s}` is a query: it answers in a condition, and an effect runs an action", .{ext.name});
             try c.names.put(c.arena, &call.name, .{ .action = id });
         },
     }
 }
 
-// `~ fact = action(…)`: an action whose outcome the host decides, kept in `fact`. False when the value is no such call.
+// `[fact = action(…)]`: an action whose outcome the host decides, kept in `fact`. False when the value is no such call.
 fn outcome(c: *Checker, scope: Scope, v: *const ast.Expr, fact: sym.FactId) Error!bool {
     if (v.kind != .call) return false;
     const named = lookup(c, scope, v.kind.call.name.text) orelse return false;
