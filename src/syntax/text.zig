@@ -13,9 +13,17 @@ const aegis = @import("aegis");
 
 pub const Error = expr.Error;
 
+/// How deep braces nest in words: as deep as the string table's templates nest branches. A brace past it is
+/// refused where it opens, so reading words, and everything that walks what they read to, recurses no deeper.
+pub const max_nesting = 8;
+
 /// Reads `words`, of file `file`, into its pieces, each placed where it is written.
 pub fn parse(arena: std.mem.Allocator, gpa: std.mem.Allocator, diags: *source.Diagnostics, file: source.FileId, words: source.Placed) Error!ast.Text {
     const text = words.text;
+    if (tooDeep(text)) |at| {
+        try diags.add(gpa, words.cut(at, at + 1).span(file), .err, "braces nest deeper than {d} here", .{max_nesting});
+        return error.Invalid;
+    }
     var pieces: std.ArrayList(ast.Piece) = .empty;
     var lit: std.ArrayList(u8) = .empty;
     // where the literal run being gathered starts
@@ -166,6 +174,24 @@ pub fn alternativesOf(word: []const u8) ?ast.Alternatives {
     return null;
 }
 
+// Where a `{` opens past `max_nesting`, escapes aside.
+fn tooDeep(text: []const u8) ?usize {
+    var depth: usize = 0;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) switch (text[i]) {
+        '\\' => if (i + 1 < text.len and escaped(text[i + 1])) {
+            i += 1;
+        },
+        '{' => {
+            depth += 1;
+            if (depth > max_nesting) return i;
+        },
+        '}' => depth -|= 1,
+        else => {},
+    };
+    return null;
+}
+
 /// The index of the `}` that closes the `{` at `open`, braces nesting.
 pub fn matching(text: []const u8, open: usize) ?usize {
     aegis.assert.invariant(text[open] == '{', "`open` is a `{`");
@@ -206,6 +232,20 @@ test "text holds literals, values and words chosen by a condition" {
     try std.testing.expectEqualStrings("dies_at", t[1].kind.value.kind.name);
     try std.testing.expectEqualStrings("You came all this way.", t[3].kind.choose.then[0].kind.literal);
     try std.testing.expectEqualStrings("You came.", t[3].kind.choose.otherwise[0].kind.literal);
+}
+
+test "braces nest as deep as a template's branches, and one past is refused where it opens" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(gpa);
+    var deep: std.ArrayList(u8) = .empty;
+    for (0..100_000) |_| try deep.appendSlice(arena.allocator(), "{seq: a | ");
+    try std.testing.expectError(error.Invalid, parse(arena.allocator(), gpa, &diags, 0, .{ .text = deep.items, .at = 0 }));
+    try std.testing.expectEqual(source.Span{ .file = 0, .start = 10 * max_nesting, .end = 10 * max_nesting + 1 }, diags.list.items[0].span);
+    _ = try parse(arena.allocator(), gpa, &diags, 0, .{ .text = "{seq: {seq: {seq: a | b} | c} | \\{ d}", .at = 0 });
+    try std.testing.expectEqual(@as(usize, 1), diags.list.items.len);
 }
 
 test "alternatives hold their options, braces nesting inside them" {

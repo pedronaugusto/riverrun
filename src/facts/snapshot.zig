@@ -149,10 +149,10 @@ pub fn writeNamed(m: *const Memory, w: *std.Io.Writer, scope: ScopeId, story_has
         try str(w, d.name);
         try w.writeByte(@backingInt(d.kind));
         var held: u32 = 0;
-        for (map.values()) |k| held += @intFromBool(!k.value.eql(.initial(d.kind)));
+        for (map.values()) |k| held += @intFromBool(!k.value.eql(d.start()));
         try w.writeInt(u32, held, .little);
         for (map.keys(), map.values()) |key, k| {
-            if (k.value.eql(.initial(d.kind))) continue;
+            if (k.value.eql(d.start())) continue;
             switch (d.key) {
                 .ref => |kind| try writeRef(w, kind, key, names),
                 .items => |items| {
@@ -311,13 +311,13 @@ fn apply(m: *Memory, scope: ScopeId, staged: []Staged) Error!void {
     m.reset(scope);
     for (staged) |st| {
         if (st.key) |key| {
-            if (st.value.eql(.initial(st.value))) continue;
+            if (st.value.eql(m.schema.decl(st.id).start())) continue;
             m.changes.markKey(st.id, key);
             m.keyed[st.id.raw()].putAssumeCapacity(key, .{ .value = st.value, .stamp = m.changes.now() });
             continue;
         }
         m.values[st.id.raw()] = st.value;
-        if (!st.value.eql(.initial(st.value))) m.changes.mark(st.id);
+        if (!st.value.eql(m.schema.decl(st.id).start())) m.changes.mark(st.id);
     }
 }
 

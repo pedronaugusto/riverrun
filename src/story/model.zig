@@ -38,6 +38,11 @@ pub const FactDecl = struct {
     bounds: ?facts.Bounds = null,
 
     pub const Key = union(enum) { none, items: EnumId, ref: RefKindId };
+
+    /// What the fact holds before anything sets it: `facts.Value.start`.
+    pub fn start(f: FactDecl) facts.Value {
+        return .start(f.kind, f.bounds);
+    }
 };
 
 pub const Cast = struct {

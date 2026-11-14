@@ -78,7 +78,14 @@ pub const Value = union(Kind) {
     /// A `ref` that holds no thing yet: every `=` is false of it too.
     pub const no_ref: u64 = 0;
 
-    /// What a fact of `kind` holds before anything sets it.
+    /// What a fact holds before anything sets it, and after its scope is reset: its kind's initial value, and for
+    /// a bounded int the value in its range nearest 0, so a fact's value always lies in its range.
+    pub fn start(kind: Kind, bounds: ?Bounds) Value {
+        if (kind == .int) if (bounds) |b| return .{ .int = b.clamp(0) };
+        return initial(kind);
+    }
+
+    /// What a fact of `kind` holds before anything sets it, where no bounds narrow it.
     pub fn initial(kind: Kind) Value {
         return switch (kind) {
             .boolean => .{ .boolean = false },

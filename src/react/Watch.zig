@@ -365,8 +365,8 @@ pub fn step(w: *Watch) Error![]const Evaluated {
     }
     // a moment is over once every condition has seen it; with a budget it waits for the rest
     if (w.marked.count() == 0) for (w.moments) |m| {
-        const kind = w.story.fact(m).kind;
-        if (!w.store.get(m).eql(.initial(kind))) try w.store.set(m, .initial(kind));
+        const start = w.story.fact(m).start();
+        if (!w.store.get(m).eql(start)) try w.store.set(m, start);
     };
     return w.evaluated.items;
 }

@@ -34,7 +34,7 @@ pub const Memory = struct {
         try schema.validate(gpa);
         const values = try gpa.alloc(Value, schema.facts.len);
         errdefer gpa.free(values);
-        for (values, schema.facts) |*v, d| v.* = .initial(d.kind);
+        for (values, schema.facts) |*v, d| v.* = d.start();
         const keyed = try gpa.alloc(std.array_hash_map.Auto(Key, Keyed), schema.facts.len);
         errdefer gpa.free(keyed);
         @memset(keyed, .empty);
@@ -107,16 +107,21 @@ pub const Memory = struct {
         const d = m.schema.decl(fact);
         if (d.key != .none) return error.WrongKey;
         try check(d, v);
+        if (m.values[fact.raw()].eql(v)) return;
+        m.put(fact, if (v == .text and v.text.len > 0) .{ .text = try m.gpa.dupe(u8, v.text) } else v);
+    }
+
+    // `v`, which fits the fact and owns its text, in place of what it held.
+    fn put(m: *Memory, fact: FactId, v: Value) void {
         const slot = &m.values[fact.raw()];
         if (slot.eql(v)) return;
-        const next: Value = if (v == .text and v.text.len > 0) .{ .text = try m.gpa.dupe(u8, v.text) } else v;
         freeText(m.gpa, slot.*);
-        slot.* = next;
+        slot.* = v;
         m.changes.mark(fact);
     }
 
     pub fn getKey(m: *const Memory, fact: FactId, key: Key) Value {
-        return if (m.keyed[fact.raw()].get(key)) |k| k.value else .initial(m.schema.decl(fact).kind);
+        return if (m.keyed[fact.raw()].get(key)) |k| k.value else m.schema.decl(fact).start();
     }
 
     pub fn setKey(m: *Memory, fact: FactId, key: Key, v: Value) SetError!void {
@@ -126,13 +131,14 @@ pub const Memory = struct {
         const map = &m.keyed[fact.raw()];
         if (map.get(key)) |have| {
             if (have.value.eql(v)) return;
-        } else if (v.eql(.initial(d.kind))) return;
+        } else if (v.eql(d.start())) return;
         if (!map.contains(key) and map.count() == value.max_keys) return error.TooManyKeys;
         m.changes.markKey(fact, key);
         try map.put(m.gpa, key, .{ .value = v, .stamp = m.changes.now() });
     }
 
-    /// Every fact of `scope` back to its initial value: a new life, a new game.
+    /// Every fact of `scope` back to the value it starts at (`Decl.start`, which always fits it): a new life, a new
+    /// game.
     pub fn reset(m: *Memory, scope: ScopeId) void {
         for (m.schema.facts, 0..) |d, i| {
             if (!d.scope.eql(scope)) continue;
@@ -142,7 +148,7 @@ pub const Memory = struct {
                 m.keyed[i].clearRetainingCapacity();
                 continue;
             }
-            m.set(id, .initial(d.kind)) catch unreachable; // glint-ignore: Z026 -- an initial value fits its kind and allocates nothing
+            m.put(id, d.start());
         }
     }
 };
@@ -214,6 +220,37 @@ test "an int changes by an amount, and never past what it holds" {
     try s.set(testing.hour, .{ .int = std.math.maxInt(i64) });
     try std.testing.expectError(error.Overflow, store_.apply(s, .{ .change = .{ .fact = testing.hour, .by = 1 } }));
     try std.testing.expectError(error.WrongKind, store_.apply(s, .{ .change = .{ .fact = testing.met, .by = 1 } }));
+}
+
+test "a bounded int starts, and is reset, at the value in its range nearest 0, so it always lies in its range" {
+    const gpa = std.testing.allocator;
+    const scope: value.ScopeId = .fromRaw(0);
+    const schema: Schema = .{ .scopes = &.{"life"}, .facts = &.{
+        .{ .name = "x", .scope = scope, .kind = .int, .bounds = .{ .min = 5, .max = 10 } },
+        .{ .name = "below", .scope = scope, .kind = .int, .bounds = .{ .min = -10, .max = -3 } },
+        .{ .name = "about", .scope = scope, .kind = .int, .bounds = .{ .min = -4, .max = 4 } },
+        .{ .name = "opinion", .scope = scope, .kind = .int, .bounds = .{ .min = 5, .max = 10 }, .key = .{ .ref = "person" } },
+    } };
+    const x: FactId = .fromRaw(0);
+    const opinion: FactId = .fromRaw(3);
+    var m: Memory = try .init(gpa, schema);
+    defer m.deinit();
+    // read before any write
+    try std.testing.expectEqual(@as(i64, 5), m.get(x).int);
+    try std.testing.expectEqual(@as(i64, -3), m.get(.fromRaw(1)).int);
+    try std.testing.expectEqual(@as(i64, 0), m.get(.fromRaw(2)).int);
+    try std.testing.expectEqual(@as(i64, 5), m.getKey(opinion, 41).int);
+    // set, then reset
+    try m.set(x, .{ .int = 7 });
+    try m.setKey(opinion, 41, .{ .int = 9 });
+    const before = m.changes.now();
+    m.reset(scope);
+    try std.testing.expectEqual(@as(i64, 5), m.get(x).int);
+    try std.testing.expectEqual(@as(i64, 5), m.getKey(opinion, 41).int);
+    try std.testing.expect(m.changes.now() > before);
+    // a key set to where it starts holds nothing to save
+    try m.setKey(opinion, 42, .{ .int = 5 });
+    try std.testing.expectEqual(@as(usize, 0), m.keyed[opinion.raw()].count());
 }
 
 test "a fact kept per thing holds a value only for the keys set, each with its own stamp" {

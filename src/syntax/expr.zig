@@ -11,8 +11,12 @@
 //! A sum binds tighter than a comparison and runs left to right: a story
 //! counts its own state. There is no multiplication, division or remainder
 //! and nothing that loops: a formula is the game's, asked for by name through
-//! the queries it declares. Each operand of a sum is a nesting level, so a sum
-//! is as long as `max_depth` allows.
+//! the queries it declares. A chain (`a and b and c`, `a + b - c`) holds at
+//! most `max_depth` links, as an expression nests at most `max_depth` deep,
+//! and a chain past it is reported over the chain: the tree is left-deep
+//! along a chain, so a tree is never deeper than `max_depth` links at each of
+//! `max_depth` levels, and nothing that walks it (checker, compiler, a
+//! package) recurses further, however long a row is.
 
 const std = @import("std");
 const ast = @import("ast.zig");
@@ -82,19 +86,32 @@ const Parser = struct {
         return true;
     }
 
+    // A chain past `max_depth`, reported from where it begins to the end of what was written.
+    fn tooLong(p: *Parser, start: u32, comptime links: []const u8) Error {
+        const end = p.at + @as(u32, @intCast(p.text.len)); // safe: as `here`
+        try p.diags.add(p.gpa, .{ .file = p.file, .start = start, .end = end }, .err, "this chain is longer than an expression holds: " ++ links ++ " join at most {d} links in one chain", .{max_depth});
+        return error.Invalid;
+    }
+
     fn orExpr(p: *Parser, depth: usize) Error!*const ast.Expr {
         if (depth > max_depth) return p.fail("the expression nests deeper than {d}", .{max_depth});
         var lhs = try p.andExpr(depth + 1);
+        var links: usize = 0;
         while (true) {
             if (!p.keyword("or")) return lhs;
+            links += 1;
+            if (links > max_depth) return p.tooLong(lhs.span.start, "`or`");
             lhs = try p.node(lhs.span.start, .{ .binary = .{ .op = .@"or", .lhs = lhs, .rhs = try p.andExpr(depth + 1) } });
         }
     }
 
     fn andExpr(p: *Parser, depth: usize) Error!*const ast.Expr {
         var lhs = try p.notExpr(depth + 1);
+        var links: usize = 0;
         while (true) {
             if (!p.keyword("and")) return lhs;
+            links += 1;
+            if (links > max_depth) return p.tooLong(lhs.span.start, "`and`");
             lhs = try p.node(lhs.span.start, .{ .binary = .{ .op = .@"and", .lhs = lhs, .rhs = try p.notExpr(depth + 1) } });
         }
     }
@@ -115,10 +132,10 @@ const Parser = struct {
         return p.node(lhs.span.start, .{ .binary = .{ .op = o, .lhs = lhs, .rhs = try p.sumExpr(depth + 1) } });
     }
 
-    // Atoms added and subtracted, left to right; each operand after the first nests one level deeper.
+    // Atoms added and subtracted, left to right, at most `max_depth` links.
     fn sumExpr(p: *Parser, depth: usize) Error!*const ast.Expr {
         var lhs = try p.atom(depth + 1);
-        var d = depth;
+        var links: usize = 0;
         while (true) {
             p.space();
             if (p.i == p.text.len) return lhs;
@@ -129,9 +146,9 @@ const Parser = struct {
                 else => return lhs,
             };
             p.i += 1;
-            d += 1;
-            if (d > max_depth) return p.fail("the expression nests deeper than {d}", .{max_depth});
-            lhs = try p.node(lhs.span.start, .{ .binary = .{ .op = op, .lhs = lhs, .rhs = try p.atom(d + 1) } });
+            links += 1;
+            if (links > max_depth) return p.tooLong(lhs.span.start, "`+` and `-`");
+            lhs = try p.node(lhs.span.start, .{ .binary = .{ .op = op, .lhs = lhs, .rhs = try p.atom(depth + 1) } });
         }
     }
 
@@ -314,17 +331,28 @@ test "`*`, `/` and `%` are refused where they stand, naming the game as what com
     }
 }
 
-test "a sum is as long as the nesting allows" {
-    var long: [2 * max_depth + 8]u8 = undefined;
-    for (&long, 0..) |*c, i| c.* = if (i % 2 == 0) 'a' else '+';
-    var r = try testParse(long[0 .. 2 * max_depth + 1]);
-    defer r.arena.deinit();
-    defer r.diags.deinit(std.testing.allocator);
-    try std.testing.expect(r.expr == null);
-    var short = try testParse(long[0..41]);
-    defer short.arena.deinit();
-    defer short.diags.deinit(std.testing.allocator);
-    try std.testing.expect(short.expr != null);
+test "a chain of `+`, `and` or `or` is as long as the nesting allows, and one past it is reported over the chain" {
+    for ([_][]const u8{ " + ", " and ", " or " }) |link| {
+        var text: std.ArrayList(u8) = .empty;
+        defer text.deinit(std.testing.allocator);
+        // a hundred thousand links: refused, the tree never built that deep
+        for (0..100_000) |i| {
+            if (i > 0) try text.appendSlice(std.testing.allocator, link);
+            try text.append(std.testing.allocator, 'a');
+        }
+        var r = try testParse(text.items);
+        defer r.arena.deinit();
+        defer r.diags.deinit(std.testing.allocator);
+        try std.testing.expect(r.expr == null);
+        const d = r.diags.list.items[0];
+        try std.testing.expectEqual(source.Span{ .file = 0, .start = 0, .end = @intCast(text.items.len) }, d.span);
+        try std.testing.expect(std.mem.startsWith(u8, d.message, "this chain is longer than an expression holds"));
+        // as many links as a chain holds read
+        var short = try testParse(text.items[0 .. max_depth * (link.len + 1) + 1]);
+        defer short.arena.deinit();
+        defer short.diags.deinit(std.testing.allocator);
+        try std.testing.expect(short.expr != null);
+    }
 }
 
 test "any bytes are read or refused, never crash" {

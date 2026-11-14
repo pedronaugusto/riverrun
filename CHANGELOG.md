@@ -14,7 +14,7 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
   `ast.Expr.Op.add` and `.sub`.
 - A sum past what an i64 holds is `error.Overflow` at run time, evaluated with aegis's checked ints, never a wrap;
   the checker refuses one that always overflows.
-- The checker works out each int expression's least and most (`check/interval.zig`): a bounded fact's bounds and 0,
+- The checker works out each int expression's least and most (`check/interval.zig`): a bounded fact's bounds,
   a constant's and a number's value, anything an int holds otherwise, and a sum's from its sides. A comparison
   whose sides cannot meet folds to never or always, so `{ a + b > 300 }` over two ints bounded at 100 is reported as
   never offered; a set whose every possible value lies past the fact's bounds is refused.
@@ -53,6 +53,13 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Changed
 
+- A bounded int starts, and its scope's reset puts it back, at the value in its range nearest 0 (`Value.start`,
+  `Decl.start`, `FactDecl.start`), where it started at 0 even when 0 lay outside the range; a key of a bounded fact
+  kept per thing reads so until set, and a snapshot leaves out a key that holds it. A fact's value always lies in its
+  range. Nothing new is stored: the starting value is worked out from the kind and bounds.
+- A chain of `and`, of `or` or of `+` and `-` holds at most 32 links, refused over the chain past that, and braces
+  in words nest at most 8 deep, refused at the brace that opens past it (as deep as the string table's templates):
+  a row of any length can no longer make the checker or the compiler recurse with it.
 - **Breaking:** the compiled format is major 3 (docs/format.md): the terms `add` (25) and `sub` (26), which a
   major 2 reader could not step over. A story compiled before is refused by name and compiled again; snapshots are
   unchanged. A `-=` amount compiles to `0 amount sub`.
@@ -87,6 +94,8 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Fixed
 
+- Resetting a scope that holds a bounded int whose range leaves out 0 trapped (`catch unreachable` on the set of 0);
+  it is put back at its starting value, which always fits.
 - `join` takes a vocabulary of any size: comparing every pair of a schema's keys ran past the compiler's default
   branch quota at a few dozen keys, and the vocabulary did not compile.
 - A flow chosen by a condition with `|` before its `:` (`{ a | b: -> x }`) is refused, where it trapped.

@@ -84,7 +84,7 @@ pub const Context = struct {
     pub fn role(cx: Context, f: facts.FactId) Value {
         for (cx.roles) |r| if (r.fact.eql(f)) return r.value;
         if (cx.story.fact(f).key == .none) return cx.store.get(f);
-        if (cx.call.this == Value.no_ref) return .initial(cx.story.fact(f).kind);
+        if (cx.call.this == Value.no_ref) return cx.story.fact(f).start();
         return cx.store.getKey(f, cx.call.this);
     }
 };
@@ -179,11 +179,11 @@ fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
             },
             .keyed => {
                 const f: facts.FactId = .fromRaw(@intCast(t.arg)); // safe: validated to a fact id
-                stack[n - 1] = if (keyOf(stack[n - 1])) |key| cx.store.getKey(f, key) else .initial(cx.story.fact(f).kind);
+                stack[n - 1] = if (keyOf(stack[n - 1])) |key| cx.store.getKey(f, key) else cx.story.fact(f).start();
             },
             .happened => {
                 const f = cx.story.fact(.fromRaw(@intCast(t.arg))); // safe: validated to a fact id
-                push(stack, &n, .{ .boolean = !cx.store.get(.fromRaw(@intCast(t.arg))).eql(.initial(f.kind)) }); // safe: validated to a fact id
+                push(stack, &n, .{ .boolean = !cx.store.get(.fromRaw(@intCast(t.arg))).eql(f.start()) }); // safe: validated to a fact id
             },
             .since_changed => {
                 const w = cx.story.change(t.arg);

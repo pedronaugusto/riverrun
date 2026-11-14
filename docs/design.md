@@ -143,7 +143,8 @@ line's text is exactly what follows `:`, never assembled from pieces at run time
   (`masculine`, `feminine`, `neuter`, `other`), each language's string table labels its own, and `other`, which
   every language falls back to, is required.
 
-`\{`, `\}`, `\[`, `\]`, `\^` and `\#` write the mark itself, so a narration row that begins with a bracket is
+Braces nest at most 8 deep in a line's words, as the string table's templates do. `\{`, `\}`, `\[`, `\]`, `\^` and
+`\#` write the mark itself, so a narration row that begins with a bracket is
 written `\[`, words that end in `^word` are written `\^word`, and a `#` alone among words is written `\#`.
 
 **A line's id** is `^` and the id at the end of its row, after one space or more: `MUM: You could still play,
@@ -238,7 +239,7 @@ the writer wants named is a constant or a fact, so `promised_on + tolerance` rat
   | other: …}`; an argument of a query that takes an int. A sum is never a condition on its own, never a
   constant (a constant is a value written), and never the fact an effect writes.
 - **How it binds:** tighter than the comparisons, left to right: `a - b + c >= d` is `((a - b) + c) >= d`. Parentheses
-  group, as they group conditions: `a - (b + c)`. A number may be written negative, `-3`; a `-` before a name is an
+  group, as they group conditions: `a - (b + c)`. A chain holds at most 32 links, as a chain of `and` or `or` does. A number may be written negative, `-3`; a `-` before a name is an
   error, which `0 - x` writes.
 - **What stays the game's:** `*`, `/` and `%` are errors that name the boundary: a formula (a rate, a scaling, a
   percentage, a price with its discount) is the game's, asked for by name through a query in `extern:`. So is
@@ -249,7 +250,7 @@ the writer wants named is a constant or a fact, so `promised_on + tolerance` rat
   facts each time it is read and kept nowhere but in the fact an effect writes, so saves and replays hold what they
   held.
 - **What the checker proves:** each int expression's least and most. A number and a constant are themselves; a
-  bounded fact is its bounds and 0, which it holds until it is first set; any other int is anything 64 bits hold;
+  bounded fact is its bounds, which it holds from the start; any other int is anything 64 bits hold;
   a sum adds its sides' least and most, a difference takes the other side's most from its least and its least from
   its most. A comparison whose sides cannot meet is decided: `{ a + b > 300 }` with `a` and `b` from 0 to 100 can
   never hold, so a choice gated on it is reported as never offered. A sum that lies wholly past 64 bits is an
@@ -309,10 +310,12 @@ A conversation with several speakers needs no construct of its own:
 
 ## Facts
 
-- **Bounded ints,** `honor: int from -100 to 100`: a change stops at the nearer end, a set past the bounds is
-  refused (by the checker where every value the expression can have lies past them, by the store at run time), and
-  a save restored under tighter bounds holds its value at the nearer end and reports it. Honor, karma, approval,
-  reputation.
+- **Bounded ints,** `honor: int from -100 to 100`: a fact's value always lies in its range. It starts, and a reset
+  of its scope puts it back, at the value in the range nearest 0 (0 where 0 is in it, 5 for `int from 5 to 10`, the
+  upper bound of a range wholly below 0), as does every key of one kept per thing until that key is set; a change
+  stops at the nearer end; a set past the bounds is refused (by the checker where every value the expression can
+  have lies past them, by the store at run time); and a save restored under tighter bounds holds its value at the
+  nearer end and reports it. Honor, karma, approval, reputation.
 - **Types:** `bool`, `int`, `one of …`, `set of …`, text (only for names the player types), and `ref of kind`,
   the host's handle for one of its things. A story names things by stable text ids, resolved to handles once at
   load; a snapshot saves a named thing by its id, so a host may renumber its handles, and any other ref by its

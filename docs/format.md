@@ -134,7 +134,10 @@ section or part keeps one only where `seen` reads it, since its package runs it.
 any other, so they are saved and restored with their scope, and their names, made of
 what a writer wrote, survive a recompiled story.
 
-Initial values: false, 0, none, the empty set, the empty text, no thing (0).
+Initial values: false, 0, none, the empty set, the empty text, no thing (0); a bounded int's is the value in its
+range nearest 0 (its bounds' clamp of 0), so a fact's value always lies in its range. The initial value is not
+stored: a reader works it out from the fact's kind and bounds. A snapshot leaves out a key of a fact kept per thing
+that holds its initial value, so for a bounded int that is the value nearest 0.
 
 **Kinds** name the kinds of the host's things a `ref` holds (`person`, `item_kind`), at
 most 65,534. **Thing**: `id: Str` (its stable text id, `wolf_pelt`), `kind: u16`, 2 bytes

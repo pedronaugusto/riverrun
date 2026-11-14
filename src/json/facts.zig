@@ -63,7 +63,7 @@ pub fn write(m: *const Memory, arena: std.mem.Allocator, w: *std.Io.Writer, scop
         if (d.key != .none) {
             var keys: std.ArrayList(KeyEntry) = .empty;
             for (map.keys(), map.values()) |key, k| {
-                if (k.value.eql(.initial(d.kind))) continue;
+                if (k.value.eql(d.start())) continue;
                 var ke: KeyEntry = switch (d.key) {
                     .items => |items| .{ .item = items[@intCast(key)] }, // safe: a key of items is an item's index
                     else => .{ .ref_key = key },

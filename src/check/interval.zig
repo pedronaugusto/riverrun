@@ -1,8 +1,8 @@
 //! What an int expression can be: its least and its most, worked out from
 //! what the checker typed. A number and an int constant are themselves; a
-//! bounded fact is its bounds and 0, the value it holds until it is first
-//! set (a fact kept per thing holds 0 for every key not set); any other int
-//! is anything an int holds; a sum adds its sides' least and most, and a
+//! bounded fact is its bounds, which it holds from the start (it starts at
+//! the value in its range nearest 0, as a fact kept per thing does for every
+//! key not set); any other int is anything an int holds; a sum adds its sides' least and most, and a
 //! difference takes the other side's most from its least and its least from
 //! its most. Every value the expression gives at run time lies between the
 //! two, the store holding each bounded fact inside its bounds, so what is
@@ -73,10 +73,10 @@ pub fn of(c: *const Checker, e: *const ast.Expr) ?Interval {
             .int => |n| .one(n),
             else => null,
         },
-        // a bounded fact holds its bounds once set, and 0 until then
+        // a bounded fact holds its bounds from the start
         .fact, .own, .keyed => |id| if (c.facts.items[id.raw()].bounds) |bounds| .{
-            .least = @min(bounds.min, 0),
-            .most = @max(bounds.max, 0),
+            .least = bounds.min,
+            .most = bounds.max,
         } else .int,
         else => .int,
     };

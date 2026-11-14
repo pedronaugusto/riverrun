@@ -290,7 +290,8 @@ test "any sum evaluates as plain arithmetic does, left to right, or to the named
 
 const Bounded = struct { least: i64, most: i64 };
 
-// What a generated condition reads: three bounded ints, an unbounded one, a `one of` and a constant.
+// What a generated condition reads: three bounded ints, an unbounded one, a `one of` and a constant. The
+// reference does not read the facts from a store: it takes every value each can hold.
 const Assignment = struct { ints: [3]i64, u: i64, mood: ?u8, k: i64 };
 
 const Cond = union(enum) {
@@ -409,11 +410,10 @@ fn truth(c: *const Cond, x: *const Assignment) ?bool {
     };
 }
 
-// Every value a bounded int can hold: its bounds, and 0 before it is first set.
+// Every value a bounded int can hold: its bounds, which it starts inside.
 fn holdable(b: Bounded, out: *std.ArrayList(i64), a: std.mem.Allocator) !void {
     var n = b.least;
     while (n <= b.most) : (n += 1) try out.append(a, n);
-    if (b.least > 0 or b.most < 0) try out.append(a, 0);
 }
 
 test "what the checker decides of a condition over bounded ints holds for every value they can have" {

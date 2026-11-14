@@ -46,6 +46,11 @@ pub const Decl = struct {
     /// For a bounded int: the least and the most it holds.
     bounds: ?value.Bounds = null,
 
+    /// What the fact holds before anything sets it: `Value.start`.
+    pub fn start(d: Decl) value.Value {
+        return .start(d.kind, d.bounds);
+    }
+
     pub fn itemNamed(d: Decl, name: []const u8) ?u16 {
         for (d.items, 0..) |item, i| {
             if (std.mem.eql(u8, item, name)) return @intCast(i); // safe: items are at most max_items
