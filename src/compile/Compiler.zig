@@ -50,6 +50,61 @@ places: u32 = 0,
 /// Where the declaration or the statement being compiled is written: where a limit of the compiled format it
 /// meets is reported (`refuse`).
 at: syntax.Span = .none,
+/// Where each step is written, by its node id, and each choice, by its place in the story's choices: what `at`
+/// held when it was made.
+steps_at: std.ArrayList(syntax.Span) = .empty,
+choices_at: std.ArrayList(syntax.Span) = .empty,
+
+/// A step of the graph, made where the statement being compiled is written (`at`).
+pub fn node(c: *Compiler, n: story.Node) Error!story.NodeId {
+    const id = try c.b.node(n);
+    try mark(c.arena, &c.steps_at, id.raw(), c.at);
+    return id;
+}
+
+/// A step reserved before (a label's gather), defined where the statement being compiled is written.
+pub fn define(c: *Compiler, id: story.NodeId, n: story.Node) Error!void {
+    c.b.define(id, n);
+    try mark(c.arena, &c.steps_at, id.raw(), c.at);
+}
+
+/// Choices offered together, each written where its statement is.
+pub fn choiceList(c: *Compiler, list: []const story.Choice, spans: []const syntax.Span) Error!story.Range {
+    const r = try c.b.choiceList(list);
+    for (spans, 0..) |s, k| try mark(c.arena, &c.choices_at, r.start + @as(u32, @intCast(k)), s); // safe: below max_choices
+    return r;
+}
+
+fn mark(arena: std.mem.Allocator, list: *std.ArrayList(syntax.Span), i: usize, span: syntax.Span) error{OutOfMemory}!void {
+    if (list.items.len <= i) try list.appendNTimes(arena, .none, i + 1 - list.items.len);
+    list.items[i] = span;
+}
+
+/// Where every step and every choice of the graph is written, for the `count` of each the builder made: a step or a
+/// choice a package's pass made through the builder alone is written nowhere (`Span.none`).
+pub fn written(c: *const Compiler, gpa: std.mem.Allocator) error{OutOfMemory}!Where {
+    const steps = try gpa.alloc(syntax.Span, c.b.nodes.items.len);
+    errdefer gpa.free(steps);
+    const choices = try gpa.alloc(syntax.Span, c.b.choices.items.len);
+    for (steps, 0..) |*s, i| s.* = if (i < c.steps_at.items.len) c.steps_at.items[i] else .none;
+    for (choices, 0..) |*s, i| s.* = if (i < c.choices_at.items.len) c.choices_at.items[i] else .none;
+    return .{ .steps = steps, .choices = choices };
+}
+
+/// Where a compiled story's steps and choices are written in its files: what a tool shows a step by, a run-time
+/// error's place among them. Kept beside the compiled story in memory, never in the format.
+pub const Where = struct {
+    /// By node id.
+    steps: []const syntax.Span,
+    /// By a choice's place in the story's choices.
+    choices: []const syntax.Span,
+
+    pub fn deinit(w: *Where, gpa: std.mem.Allocator) void {
+        gpa.free(w.steps);
+        gpa.free(w.choices);
+        w.* = undefined;
+    }
+};
 
 /// Reports an error where the story is written; the story is then refused.
 pub fn err(c: *Compiler, span: syntax.Span, comptime fmt: []const u8, args: anytype) Error!void {
@@ -160,5 +215,5 @@ pub fn lineId(c: *const Compiler, s: *const ast.Stmt) []const u8 {
 
 /// A fresh step that hands the flow back: what a choice with no words of its own goes to.
 pub fn back(c: *Compiler) Error!story.NodeId {
-    return c.b.node(.{ .step = .ret });
+    return c.node(.{ .step = .ret });
 }

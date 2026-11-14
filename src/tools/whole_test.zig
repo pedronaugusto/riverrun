@@ -320,7 +320,7 @@ pub fn storyOf(s: *shakedown.Source, a: std.mem.Allocator) ![]const Manuscript.P
 }
 
 /// The proof's eight files, a whole game's story.
-const proof = [_]Manuscript.Page{
+pub const proof = [_]Manuscript.Page{
     .{ .path = "cast.river", .text = @embedFile("../syntax/testdata/proof/cast.river") },
     .{ .path = "1969.river", .text = @embedFile("../syntax/testdata/proof/1969.river") },
     .{ .path = "1985.river", .text = @embedFile("../syntax/testdata/proof/1985.river") },

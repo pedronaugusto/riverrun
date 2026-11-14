@@ -180,7 +180,10 @@ pub fn next(s: *Session, id: FlowId) Error!Step {
             f.ended = true;
             return .end;
         };
-        if (try s.walk(f, at)) |step| return step;
+        if (try s.walk(f, at)) |step| {
+            f.told = at;
+            return step;
+        }
     }
     return error.NoProgress;
 }
@@ -215,6 +218,28 @@ pub fn choose(s: *Session, id: FlowId, i: usize) Error!void {
     try s.count(c.visits);
     f.at = c.target;
     f.pending = .none;
+}
+
+/// The choices `next` offered, offered again as the facts now hold them: their conditions evaluated anew, a
+/// choice opened or closed by what the host wrote since. For a host whose facts change while its player chooses;
+/// the next `next` offers them, and goes past them as it would when none is open.
+pub fn offerAgain(s: *Session, id: FlowId) Error!void {
+    const f = try s.startedFlow(id);
+    if (f.pending != .choices) return error.NoChoicePending;
+    f.at = f.pending.choices.node;
+    f.pending = .none;
+}
+
+/// Where `flow` is: the step it goes on from, which is the step a named error `next` returned is about; null when
+/// it hands back, or has ended.
+pub fn cursor(s: *Session, id: FlowId) Error!?story_.NodeId {
+    return (try s.flowAt(id)).at;
+}
+
+/// The step `next` last handed over (a line, choices, effects or an action): where what the host does with it is
+/// written, an effect it applies among them; null before any, or after a start, a stop or the end.
+pub fn told(s: *Session, id: FlowId) Error!?story_.NodeId {
+    return (try s.flowAt(id)).told;
 }
 
 /// The outcome of the action `next` handed over: written into its result fact, and the flow goes on.
@@ -273,8 +298,10 @@ fn walk(s: *Session, f: *Flow, at: NodeId) Error!?Step {
     const n = s.story.node(at);
     switch (n.step) {
         .line => |l| {
+            // made first, so a named error in its words or effects leaves the flow at the line it is about
+            const said = try s.line(f, at, l, n.tags);
             f.at = l.next;
-            return try s.line(f, at, l, n.tags);
+            return said;
         },
         .choices => |c| {
             if (try s.offer(f, at, c.choices)) |list| return .{ .choices = list };

@@ -1,0 +1,10 @@
+// A story that stops at run time: an int moved past what 64 bits hold.
+facts (world):
+  big: int
+const:
+  most = 9223372036854775807
+== market
+[big = most]
+Almost.
+[big += 1]
+-> end

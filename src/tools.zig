@@ -17,6 +17,9 @@ pub const tag = @import("tools/tag.zig");
 pub const walk = @import("tools/walk.zig");
 pub const trial = @import("tools/trial.zig");
 pub const excerpts = @import("tools/excerpts.zig");
+pub const Play = @import("tools/Play.zig");
+pub const transcript = @import("tools/transcript.zig");
+pub const script = @import("tools/script.zig");
 
 test {
     _ = Manuscript;
@@ -25,6 +28,10 @@ test {
     _ = walk;
     _ = trial;
     _ = excerpts;
+    _ = Play;
+    _ = transcript;
+    _ = script;
+    _ = @import("tools/play_test.zig");
     _ = @import("tools/tag_test.zig");
     _ = @import("tools/whole_test.zig");
 }

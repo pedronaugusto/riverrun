@@ -6,6 +6,25 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Added
 
+- `riverrun play`: a story played as its game would play it, the writer in the game's place, in a terminal or from
+  a script of inputs (`--script`, `--input`, standard input) that writes a plain, stable transcript and exits 0 at
+  the story's end, 3 waiting for an input the script did not give, 4 on a run-time error, 1 when a row cannot be
+  taken. It starts at the game's entry or `--from SECTION`, with `--set` and `--wait` for what the game has set;
+  runs the story's rules and its packages' runtimes; answers each query with what the player set, else its type's
+  first value, told where it is asked; waits for a choice or an action's outcome; applies a line's effects when the
+  line is delivered; follows a section's tag that leads on; and places a run-time error at the step it is about. In
+  play: `:facts`, `:set` (a fact, a fact kept per thing, a query's answer), `:wait`, `:back`, `:restart`, `:quit`,
+  `:help`.
+- `riverrun-tools`: `Play`, the one session the terminal, scripts and the editor drive (`next` gives what the game
+  is given, `give` takes what it gives back, `back`, `restart`, `startWith`); `transcript`, the written form;
+  `script`, rows read against a play. `walk.Loaded` answers queries through `answers`, starts a new game
+  (`fresh`) and names things; `walk` gives each line's owed outcomes and reports each step (`Options.seen`).
+- `riverrun.Running`, in `Package.running`: a package's runtime as a story is played without the game (`start`,
+  `step`, `advance`, `bump`, `builtins`), saying what it did as news; `join` collects them into `Joined.running`.
+- `compile.Compiled.where`: where each step and choice of the graph is written, for tools.
+- `run.Session.offerAgain` (choices offered again as the facts now hold), `cursor` (where a flow goes on from: the
+  step a named error is about) and `told` (the step last handed over); `facts.Effect.dupe` and `facts.dupeValue`.
+
 - `riverrun`, the program a writer runs, its arguments read by ensign: `riverrun check` checks a story exactly as
   the game's build does (read, checked with the vocabulary's packages, compiled in memory, nothing written),
   `riverrun tag` writes ` ^id` at the end of every line and choice that has none and changes nothing else
@@ -74,6 +93,8 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Changed
 
+- A line whose words or effects meet a named error leaves its flow at the line, so the error is placed there.
+- `walk` gives the outcomes a line's effects owe (each its type's first value), where it stopped the section.
 - `addStory` compiles with the `riverrun` program (`tools/riverrun.zig`, `riverrun compile`), which replaces
   `tools/compile.zig` and its hand-read arguments; its diagnostics take the program's form, with the range's end.
 - A key stands once where it is, all its values in its one bracket: a second `[forks …]` on a section, or a

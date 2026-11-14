@@ -1,7 +1,8 @@
 //! A package for addStory's test, as a game's would be: a kind of section
 //! whose parts are wares, each a fact the story reads; a tag naming one,
 //! which the package judges; a check that a stock has wares; and a pass
-//! that writes the package's block.
+//! that writes the package's block; and, played without the game, a stall
+//! that opens with its wares.
 
 const std = @import("std");
 const riverrun = @import("riverrun-compiler");
@@ -18,7 +19,24 @@ pub const package: riverrun.Package = .{
     .keys = &keys,
     .check = .{ .run = stocked },
     .compile = .{ .name = "stall", .run = block },
+    .running = .{ .name = "stall", .start = open, .stop = close },
 };
+
+// Played without the game: the stall opens with the wares its block counts.
+const Stall = struct { wares: u8 };
+
+fn open(gpa: std.mem.Allocator, game: riverrun.Running.Game, told: *riverrun.Running.Told) error{ OutOfMemory, Stopped }!?*anyopaque {
+    const b = game.story.block("stall") orelse return null;
+    if (b.bytes.len != 1) return told.stop("the stall's block is not one count", .{});
+    const s = try gpa.create(Stall);
+    s.* = .{ .wares = b.bytes[0] };
+    try told.say(.{ .what = "opens", .name = "stall", .words = &.{try told.arena.print("{d} wares", .{s.wares})} });
+    return s;
+}
+
+fn close(gpa: std.mem.Allocator, state: *anyopaque) void {
+    gpa.destroy(@as(*Stall, @ptrCast(@alignCast(state))));
+}
 
 fn isStock(s: check.symbols.Section) bool {
     return s.kind == .other and std.mem.eql(u8, s.kind.other, stock.name);

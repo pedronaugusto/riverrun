@@ -298,6 +298,48 @@ fn programTests(b: *std.Build, test_step: *std.Build.Step) void {
     untagged.expectStdOutMatch("sample.river:11:1-11:35: error: this has no id: `riverrun tag` writes one\n");
     untagged.expectStdOutMatch("sample.river:13:1-13:19: error: this has no id: `riverrun tag` writes one\n");
     test_step.dependOn(&untagged.step);
+    // played from a script: the transcript, and a status that says how it ended
+    const played = playRun(b, program, &.{ "--set", "furs = 2", "-i", "1" }, p.path("tools/testdata/sample.river"));
+    played.expectExitCode(0);
+    played.expectStdOutEqual(
+        \\> :set furs = 2
+        \\! opens stall
+        \\  2 wares
+        \\== market
+        \\  [stall] [sells furs]
+        \\HILDE: Ten pelts before the frost.
+        \\HILDE: You have furs already.
+        \\* 1 I'll bring them.
+        \\* 2 Not this year.
+        \\> 1
+        \\[pelts += 10]
+        \\HILDE: Good.
+        \\-> end
+        \\
+    );
+    test_step.dependOn(&played.step);
+    const waiting = playRun(b, program, &.{}, p.path("tools/testdata/sample.river"));
+    waiting.expectExitCode(3);
+    waiting.expectStdErrEqual("riverrun: the story waits for a choice, and the script gives no more\n");
+    test_step.dependOn(&waiting.step);
+    const unoffered = playRun(b, program, &.{ "-i", "3" }, p.path("tools/testdata/sample.river"));
+    unoffered.expectExitCode(1);
+    unoffered.expectStdOutMatch("> 3\nriverrun: error: the input `3`: there is no choice 3: 2 are offered\n");
+    test_step.dependOn(&unoffered.step);
+    const broken = playRun(b, program, &.{}, p.path("tools/testdata/broken.river"));
+    broken.expectExitCode(4);
+    broken.expectStdOutMatch("broken.river:9:1-9:11: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)\n");
+    test_step.dependOn(&broken.step);
+}
+
+// `riverrun play` over a story with `args`, its standard input empty, so a script is all it is given.
+fn playRun(b: *std.Build, program: *std.Build.Step.Compile, args: []const []const u8, story: std.Build.LazyPath) *std.Build.Step.Run {
+    const run = b.addRunArtifact(program);
+    run.addArg("play");
+    run.addArgs(args);
+    run.addFileArg2(story, .{});
+    run.setStdIn(.{ .bytes = "" });
+    return run;
 }
 
 /// The stories riverrun's documentation shows: each a file the program checks with the documentation's vocabulary,

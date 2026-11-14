@@ -46,19 +46,19 @@ fn stmt(c: *Compiler, s: *const ast.Stmt, after: Next) Error!Next {
         .cond => |*k| {
             const then = if (k.on_row) try stmt(c, &k.body[0], after) else try chain(c, k.body, after);
             const otherwise = if (k.otherwise.len > 0) try chain(c, k.otherwise, after) else after;
-            return try c.b.node(.{ .step = .{ .branch = .{ .cond = try exprs.condition(c, &k.cond), .then = then, .otherwise = otherwise } } });
+            return try c.node(.{ .step = .{ .branch = .{ .cond = try exprs.condition(c, &k.cond), .then = then, .otherwise = otherwise } } });
         },
         .gather => |*g| {
             const then = if (g.then) |t| try stmt(c, t, after) else after;
             if (g.label == null) return then;
             const l = labelOf(c, s);
             const id = c.labels[l.raw()];
-            c.b.define(id, .{ .step = .{ .gather = .{ .visits = c.visits[c.checked.labels[l.raw()].visit.raw()].?, .next = then } } });
+            try c.define(id, .{ .step = .{ .gather = .{ .visits = c.visits[c.checked.labels[l.raw()].visit.raw()].?, .next = then } } });
             return id;
         },
         .effect => return try effectRun(c, s[0..1], after),
         .flow => |*f| return try flow(c, f, after),
-        .flow_if => |*f| return try c.b.node(.{ .step = .{ .branch = .{
+        .flow_if => |*f| return try c.node(.{ .step = .{ .branch = .{
             .cond = try exprs.condition(c, &f.cond),
             .then = try flow(c, &f.then, after),
             .otherwise = try flow(c, &f.otherwise, after),
@@ -73,12 +73,14 @@ fn line(c: *Compiler, s: *const ast.Stmt, l: *const ast.Line, after: Next) Error
         else => unreachable, // unreachable: a speaker names a speaker
     } else null;
     const effects = try effectList(c, l.effects);
-    return try c.b.node(.{ .tags = try c.tags(c.checked.tagsOf(s), c.lineId(s)), .step = .{ .line = .{ .text = try text.text(c, c.lineId(s), l.text), .speaker = speaker, .effects = effects, .next = after } } });
+    return try c.node(.{ .tags = try c.tags(c.checked.tagsOf(s), c.lineId(s)), .step = .{ .line = .{ .text = try text.text(c, c.lineId(s), l.text), .speaker = speaker, .effects = effects, .next = after } } });
 }
 
 fn choices(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeId {
     const list = try c.arena.alloc(story.Choice, stmts.len);
-    for (stmts, list) |*s, *out| {
+    const spans = try c.arena.alloc(syntax.Span, stmts.len);
+    for (stmts, list, spans) |*s, *out, *span| {
+        span.* = s.span;
         const ch = &s.kind.choice;
         const id = c.lineId(s);
         const target = try chain(c, ch.body, after) orelse try c.back();
@@ -93,12 +95,12 @@ fn choices(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeI
         };
     }
     c.at = stmts[0].span;
-    return c.b.node(.{ .step = .{ .choices = .{ .choices = try c.b.choiceList(list), .next = after } } });
+    return c.node(.{ .step = .{ .choices = .{ .choices = try c.choiceList(list, spans), .next = after } } });
 }
 
 fn effectRun(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeId {
     c.at = stmts[0].span.join(stmts[stmts.len - 1].span);
-    return c.b.node(.{ .step = .{ .effects = .{ .effects = try effectList(c, stmts), .next = after } } });
+    return c.node(.{ .step = .{ .effects = .{ .effects = try effectList(c, stmts), .next = after } } });
 }
 
 fn effectList(c: *Compiler, stmts: []const ast.Stmt) Error!story.Range {
@@ -165,11 +167,11 @@ fn own(c: *const Compiler, n: *const ast.Name) ?sym.FactId {
 // Where a flow goes: a step that goes there, or the step itself for a label.
 fn flow(c: *Compiler, f: *const ast.Flow, after: Next) Error!Next {
     switch (f.kind) {
-        .ret => return try c.b.node(.{ .step = .ret }),
+        .ret => return try c.node(.{ .step = .ret }),
         .jump => |*n| return switch (targetOf(c, n)) {
-            .end => try c.b.node(.{ .step = .end }),
-            .section => |id| try c.b.node(.{ .step = .{ .jump = c.section(id) } }),
-            .part => |p| try c.b.node(.{ .step = .{ .jump = c.part(p).? } }),
+            .end => try c.node(.{ .step = .end }),
+            .section => |id| try c.node(.{ .step = .{ .jump = c.section(id) } }),
+            .part => |p| try c.node(.{ .step = .{ .jump = c.part(p).? } }),
             .label => |id| c.labels[id.raw()],
         },
         .call => |*n| {
@@ -178,7 +180,7 @@ fn flow(c: *Compiler, f: *const ast.Flow, after: Next) Error!Next {
                 .part => |p| c.part(p).?,
                 .end, .label => unreachable, // unreachable: the checker refuses calling `end` or a label
             };
-            return try c.b.node(.{ .step = .{ .call = .{ .section = to, .next = after } } });
+            return try c.node(.{ .step = .{ .call = .{ .section = to, .next = after } } });
         },
     }
 }

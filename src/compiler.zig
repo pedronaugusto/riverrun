@@ -11,6 +11,11 @@ pub const check = @import("check.zig");
 pub const compile = @import("compile.zig");
 pub const json = @import("json.zig");
 
+const runtime = @import("riverrun");
+const facts = runtime.facts;
+const story = runtime.story;
+const run = runtime.run;
+
 /// What a package adds to a story's language and its build, registered as one in a vocabulary's `packages`: its
 /// kinds of section, the tags it adds anywhere beside the host's, its check of the whole story and its compile pass.
 pub const Package = struct {
@@ -18,12 +23,92 @@ pub const Package = struct {
     keys: []const check.Schema.Key = &.{},
     check: ?check.Pass = null,
     compile: ?compile.Pass = null,
+    /// Its runtime, as a story is played without the game (`riverrun play`): run as the game runs it.
+    running: ?Running = null,
 };
 
-/// A vocabulary as the compiler takes it: the check's options and the compile passes.
+/// A package's runtime as riverrun's tools run it when a story is played with no game (`riverrun play`, and the
+/// editor's play button): started over the loaded story, stepped whenever the facts change, a clock it keeps moved
+/// by it, and what happened said, each time, as news the player sees. So a story with a package's quests or time
+/// plays as it would in a game, and the package is the one that says what its runtime did.
+pub const Running = struct {
+    /// The package's name, as its news is shown under.
+    name: []const u8,
+    /// The kinds of section the package registered, whose builtins `builtins` answers: filled in by `join`.
+    kinds: []const check.Kind = &.{},
+    /// Its runtime started over the story `game` holds, its state returned; null when the story has nothing of the
+    /// package's (no block of its own). What it refuses stops the play, said in `told.stopped`.
+    start: *const fn (gpa: std.mem.Allocator, game: Game, told: *Told) error{ OutOfMemory, Stopped }!?*anyopaque,
+    stop: *const fn (gpa: std.mem.Allocator, state: *anyopaque) void,
+    /// What answers the builtins it registered, which the story's conditions and words call.
+    builtins: ?*const fn (state: *anyopaque) run.Builtins = null,
+    /// After the facts changed: what that did, as news into `told`, with the effects the game would apply.
+    step: ?*const fn (state: *anyopaque, told: *Told) error{ OutOfMemory, Stopped }!void = null,
+    /// The player said what a query answers now: `family` is the stamp it declared, `keyed` its keyed arguments,
+    /// as a game bumps a stamp when what the query reads changes.
+    bump: ?*const fn (state: *anyopaque, family: []const u8, keyed: []const facts.Value) error{ OutOfMemory, Stopped }!void = null,
+    /// The clock fact `clock` moved on `by` ticks by the player: moved by the package, its facts written and what
+    /// came due told, when it keeps that clock; false when it does not, and the player moves the fact itself.
+    advance: ?*const fn (state: *anyopaque, clock: facts.FactId, by: u64, told: *Told) error{ OutOfMemory, Stopped }!bool = null,
+
+    /// What the runtime runs over: the loaded story, its facts and its bound host, as a game holds them.
+    pub const Game = struct {
+        story: *const story.Story,
+        words: *const story.Strings,
+        store: facts.Store,
+        host: *const run.Host,
+        owners: *const [facts.max_scopes]u64,
+        /// A thing standing in for one of the game's, where a role or a value needs one and the game would give
+        /// it: a handle the player names it by.
+        stand_in: StandIn,
+    };
+
+    pub const StandIn = struct {
+        ctx: ?*anyopaque,
+        give: *const fn (ctx: ?*anyopaque, kind: []const u8, name: []const u8) error{OutOfMemory}!u64,
+    };
+
+    /// One thing the runtime did: `what` happened to `name` (`reached` `the_stranger.noticed`, `due` `ramen`), the
+    /// words a player is shown for it (a journal's lines), the effects it emits for the game to apply, and a
+    /// section the game would tell now (a scheduled scene come due).
+    pub const News = struct {
+        what: []const u8,
+        name: []const u8,
+        words: []const []const u8 = &.{},
+        effects: []const facts.Effect = &.{},
+        section: ?story.SectionId = null,
+    };
+
+    /// Where a runtime says what it did: its news in order, copied by `say` onto the player's arena, and why it
+    /// stopped, if it did (`Stopped`).
+    pub const Told = struct {
+        arena: std.mem.Allocator,
+        news: std.ArrayList(News) = .empty,
+        stopped: ?[]const u8 = null,
+
+        /// News, its words and effects copied.
+        pub fn say(t: *Told, n: News) error{OutOfMemory}!void {
+            const words = try t.arena.alloc([]const u8, n.words.len);
+            for (words, n.words) |*to, from| to.* = try t.arena.dupe(u8, from);
+            const effects = try t.arena.alloc(facts.Effect, n.effects.len);
+            for (effects, n.effects) |*to, from| to.* = try from.dupe(t.arena);
+            try t.news.append(t.arena, .{ .what = try t.arena.dupe(u8, n.what), .name = try t.arena.dupe(u8, n.name), .words = words, .effects = effects, .section = n.section });
+        }
+
+        /// Stops the play: what the runtime refused or could not do, in words a writer acts on.
+        pub fn stop(t: *Told, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, Stopped } {
+            t.stopped = try t.arena.print(fmt, args);
+            return error.Stopped;
+        }
+    };
+};
+
+/// A vocabulary as the compiler takes it: the check's options and the compile passes, and the packages' runtimes
+/// as a story is played without its game.
 pub const Joined = struct {
     options: check.Options,
     passes: []const compile.Pass,
+    running: []const Running = &.{},
 };
 
 /// A vocabulary's `options` and `passes` with each of its `packages` joined in after the host's own: their kinds,
@@ -37,19 +122,25 @@ pub fn join(comptime vocabulary: type) Joined {
         var options: check.Options = vocabulary.options;
         var passes: []const compile.Pass = if (@hasDecl(vocabulary, "passes")) vocabulary.passes else &.{};
         var keys: []const check.Schema.Key = if (options.schema) |s| s.keys else &.{};
+        var running: []const Running = &.{};
         for (packages) |p| {
             options.kinds = options.kinds ++ p.kinds;
             keys = keys ++ p.keys;
             if (p.check) |c| options.passes = options.passes ++ &[_]check.Pass{c};
             if (p.compile) |c| passes = passes ++ &[_]compile.Pass{c};
+            if (p.running) |r| {
+                var with = r;
+                with.kinds = p.kinds;
+                running = running ++ &[_]Running{with};
+            }
         }
         // every pair compared: a host's schema of a few dozen keys is past the default quota
         @setEvalBranchQuota(1000 + 200 * (keys.len * keys.len + options.kinds.len * options.kinds.len));
         distinct(options.kinds, keys);
-        if (options.schema == null and keys.len == 0) return .{ .options = options, .passes = passes };
+        if (options.schema == null and keys.len == 0) return .{ .options = options, .passes = passes, .running = running };
         const schema: check.Schema = .{ .keys = keys };
         options.schema = &schema;
-        return .{ .options = options, .passes = passes };
+        return .{ .options = options, .passes = passes, .running = running };
     }
 }
 

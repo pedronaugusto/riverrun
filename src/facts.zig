@@ -38,6 +38,7 @@ pub const SetError = store.SetError;
 pub const Effect = store.Effect;
 pub const Call = store.Call;
 pub const apply = store.apply;
+pub const dupeValue = store.dupeValue;
 
 pub const Changes = changes.Changes;
 pub const Mark = changes.Mark;

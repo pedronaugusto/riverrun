@@ -63,6 +63,8 @@ pub const Flow = struct {
     pending: Pending = .none,
     /// The line handed over and still held: until the next step, a start, a stop or an interruption.
     hand: ?Hand = null,
+    /// The step `next` last handed over: a line, choices, effects or an action.
+    told: ?story.NodeId = null,
     /// What a step hands the host: valid until this flow's next step.
     arena: std.heap.ArenaAllocator,
 
@@ -74,5 +76,6 @@ pub const Flow = struct {
         f.depth = 0;
         f.pending = .none;
         f.hand = null;
+        f.told = null;
     }
 };

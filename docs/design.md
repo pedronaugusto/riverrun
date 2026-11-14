@@ -383,8 +383,8 @@ Built: all of it, `addStory` included.
 
 ## The program
 
-`riverrun` is what a writer runs, or an AI writing for one: `riverrun check`, `riverrun tag` and `riverrun
-compile`, its arguments read by ensign. A vocabulary is Zig, since a package's kinds, judges, checks and passes are
+`riverrun` is what a writer runs, or an AI writing for one: `riverrun check`, `riverrun tag`, `riverrun play` and
+`riverrun compile`, its arguments read by ensign. A vocabulary is Zig, since a package's kinds, judges, checks and passes are
 functions, so no program can read one when it starts: the game's build makes the program with its vocabulary and
 its packages compiled in, `riverrun.addProgram(b, dep, .{ .vocabulary, .packages })`, and that program is the one
 `addStory` compiles the story with. `addStory` hands it back, `Story.program`, with `Story.check`, a step that runs
@@ -410,6 +410,9 @@ of names beside the Zig, to fall out of step with it. *Protects:* a story that c
   is as it was, an id once written never changes, every new id is new to all the files given, and a second run
   changes nothing. A file the reader refuses is reported and nothing is written: an id goes only where the reader
   reads a line. `--check` changes nothing and reports each line and choice without an id, for a release's CI.
+- **`riverrun play [--from SECTION] [--set FACT=VALUE…] [--wait N…] [--script PATH] [--input INPUT…] FILE…`**
+  checks the story as `check` does, compiles it in memory, and plays it as the game would, the writer in the
+  game's place ("Playing", below): in the terminal, or from a script of inputs, writing a transcript.
 - **`riverrun compile --graph PATH --words PATH [--release] FILE…`** is what `addStory` runs: `check`, then the
   graph and the string table written, the diagnostics to standard error.
 
@@ -446,9 +449,105 @@ writer copies is text that checks.
 
 **Its logic is `riverrun-tools`** (`riverrun.tools(dep)`), the model every tool shows: `Manuscript`, a story's files
 read to their trees with every diagnostic, checked and compiled as the build does; `report`, the form above; `tag`,
-the ids (`missing`, `give`); `walk`, a compiled story loaded and told a bounded number of steps; `trial`, a story put
-through all of it, as the whole compiler's property does; and `excerpts`. The program parses its command line and
-reads and writes files, and nothing else: the editor to come holds a `Manuscript` and calls the same functions.
+the ids (`missing`, `give`); `walk`, a compiled story loaded as a game loads it and told a bounded number of steps;
+`trial`, a story put through all of it, as the whole compiler's property does; `excerpts`; and `Play`,
+`transcript` and `script`, a story played. The program parses its command line, reads and writes files and the
+terminal, and nothing else: the editor to come holds a `Manuscript`, plays it with the same `Play`, and calls the
+same functions.
+
+### Playing
+
+A writer cannot see a story run without a game, and an AI writing one needs to run it without a terminal. `riverrun
+play` plays it as its game would, with the writer, or the AI, in the game's place.
+
+**One session, three fronts.** `Play` (in `riverrun-tools`) is the story played: the runtime's own session over the
+story loaded as a game loads it (`walk.Loaded`), its rules fired over the facts (`react.Rules`), and each package's
+runtime run beside it, as in the game. It gives, in order, what a game is given (`next`): a section's heading as
+the flow comes to it; a line with its speaker, delivery, tags and effects; an effects step; the choices on offer,
+closed ones marked; an action whose outcome the game decides; each query the story asked and what it was
+answered; a rule that fired; what a package's runtime did (a quest's stage reached with its journal line, a
+schedule come due); the end; or a run-time error. It takes what a game gives back (`give`): a choice, an outcome,
+a fact set, a query's answer, a clock moved. The terminal prints it and reads the player's rows; a script gives
+the rows up front and the transcript is written; the editor's play button will draw the same events and give the
+same inputs. There is no second runtime: `Play` drives `run.Session` as `walk` does, and a property holds that the
+two tell the same for the same choices. *Protects:* what a writer plays is what the game tells.
+
+**The game's side.** What the game *keeps*, its `(game)` facts, its queries' answers and its clocks, is the
+player's to set; it stands until changed, and it is shown wherever the story reads it: a query asked is told with
+its answer, the type's first value until the player sets one (`? lived(go) = false (not set)`). What the game
+*decides at a moment*, a choice or an action's outcome, is waited for: the terminal asks the player then, a script
+gives its next row, the editor shows the question. One model for every front, and it is the runtime's own: a
+query is pure and asked any time, so it reads state the player keeps; an action's outcome stops the flow until it
+is given, so it is asked. Asking a query's answer each time it is evaluated would ask the same question over and
+over in conditions, rules and quests, and could not be asked mid-evaluation at all; a default never shown would
+steer the story unseen. *Protects:* a played story never stops on what a game would know, and never hides what it
+assumed.
+
+**How the game would run it.** The play starts where the game starts the story (the vocabulary's first entry, or
+the first section nothing leads to), or at `--from SECTION`, with what the game has set when it starts (`--set`,
+`--wait`). A line's effects are applied when the line is delivered: once the next thing is asked for, after the
+line was shown, so a rule its effect wakes fires after it. A section that runs out, or ends, with a tag the
+vocabulary marks `leads` naming a section goes on there, as the game's mechanic would. A package's runtime is
+started over the loaded story and stepped whenever the facts change; a clock it keeps is moved by it, and a
+section it says came due is told into the flow as an interruption, as a game tells a scene that comes up. Nothing
+is random and nothing reads the time, so a play is its inputs: going back one input is playing again from the
+start with the inputs but the last (`back`).
+
+**What a package offers.** A package's `riverrun.Package` carries `running` (`riverrun.Running`): `start` over the
+loaded story and its facts (null when the story has nothing of the package's), `step` after the facts changed,
+`advance` for a clock it keeps, `bump` for a query's answer set, `builtins` for its builtins, each saying what it
+did as news (`what`, `name`, a player's words, the effects the game would apply, a section come due). cairn's
+quests and tide's time are run so; a vocabulary that lists the package plays it with nothing more.
+
+**In the terminal** a line reads as a line, `SPEAKER (delivery): words`; what the game is told stands in brackets
+under it, as the story writes it; choices are numbered; colour only when the output is a terminal. A writer types
+a choice's number, an outcome when one is asked, or one of a few commands, each there because trying a scene
+needs it and no other way gives it: `:facts [FACT…]` (what moved since the start, or the facts named),
+`:set FACT = VALUE` (a fact, `+=` and `-=` to add or take, `FACT(KEY)` for a fact kept per thing, or
+`QUERY(ARGS) = VALUE` for what a query answers from now on: the game's state, which a scene tried alone needs),
+`:wait N [CLOCK]` (time passing, the one way a clock moves), `:back` and `:restart` (try the other way), `:quit`,
+`:help`. A fact set while choices wait offers them again as they now hold.
+
+**From a script** every input is given up front, one row each, exactly as typed (`--script PATH`, `--input` for
+each, or standard input when it is not a terminal), and the play is written as a transcript to standard output:
+
+```
+> 4
+DAD: Go on. Go.
+22:31. The bus stop is four minutes away.
+== fork_1985
+  [fork] [seam]
+? lived(go) = false (not set)
+? lived(stay) = false (not set)
+* 1 Get on
+  [side go] [picture fork_go] [line "the scholarship · the city · whoever she'd be"]
+* 2 Stay
+  [side stay] [picture fork_stay] [line "her father · the shop · whoever she already is"]
+> 2
+[life = stay]
+== day_1998
+  [day] [slots morning, noon, afternoon, evening] [then day_end_1998]
+```
+
+Each row says what it is by how it begins: `==` a section the flow came to (`=` a part), its tags indented under
+it; `NAME (delivery): words` a line, words alone narration (`\` before narration that begins with one of these
+marks), ` ^id` at its end where it has one; `[…]` rows indented under a line or a choice its tags and then its
+effects, at the margin effects reached on their own (actions among them, `[give(letter)]`); `* N` a choice, `* N
+(closed)` one that cannot be taken; `? query(args) = value` a query and its answer, `(not set)` where the player
+set none, and `? action(args) -> kind` an outcome waited for; `!` what fired or happened (`! rule section.rule`,
+`! reached the_stranger.noticed` with the journal's words under it, `! due ramen`); `> row` an input as given;
+`-> end` the end; and a run-time error in the diagnostics' one form, placed at the step it is about
+(`story/kitchen.river:12:1-12:30: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)`). The
+same script, start and story always give the same transcript: it holds no handle, address or time. It is what a
+test pins and what an AI reads back. The exit status says how it ended: 0 the story came to its end; 3 it waits
+for an input the script did not give (said on standard error); 4 it stopped on a run-time error; 1 the story does
+not check, or a row could not be taken (`script.play:4:1-4:2: error: there is no choice 5: 3 are offered`, or
+`riverrun: error: the input `5`: …` for an `--input`); 2 the command line is mistaken.
+
+**Bounded.** A play stops, named, rather than run on: more than 10,000 steps without waiting for the player
+(`Endless`: a loop that says something every time round), and every bound the runtime names.
+
+Built: all of it. Not built: saving a play session, the editor's front.
 
 Built: all of it.
 
@@ -598,7 +697,7 @@ Built.
   in WebAssembly as well as in a game.
 - **A C ABI,** `ffi/riverrun.h`: opaque handles, the caller's allocator, facts and the host's queries and actions by
   callbacks, and a version handshake at load. That reaches C and C++, Rust, C#, GDExtension, Unreal and Swift.
-- **The `riverrun` program:** `check`, `tag`, `dump`, `explore` (walks every branch on a deterministic clock and
+- **The `riverrun` program:** `check`, `tag`, `play`, `dump`, `explore` (walks every branch on a deterministic clock and
   proves every section and choice reachable, no dead end and no line that can never be said) and `compile`. Hosts
   reload `.river` files live through lookout.
 

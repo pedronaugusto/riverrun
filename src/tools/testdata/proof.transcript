@@ -1,0 +1,241 @@
+> :set spot = door
+== cold_open
+  [card]
+Every life ends the same way.
+  [pause 0.4]
+What it meant is still open.
+  [pause 0.6]
+== hide_1969
+  [listen] [count 20] [beat 1.35] [then found_1969]
+MUM: She was at the piano again today. She found middle C on her own.
+  [at 2.5] [heard piano, door]
+DAD: Then lock it.
+  [at 6.5] [heard door]
+MUM: You could still play, Frank.
+  [at 9.5] [heard piano, door, landing]
+  [carried += play]
+DAD: Who'd listen?
+  [at 12.5] [heard piano]
+  [carried += play]
+MUM: You gave up the conservatory for us. You don't get to give her up too.
+  [at 16] [heard door]
+  [carried += gave]
+DAD: I'd do it again.
+  [at 21] [heard door, landing]
+MUM: She has your hands, you know. Look at them sometime.
+  [at 24] [heard landing]
+  [carried += hands]
+== found_1969
+  [card] [picture hide]
+The kitchen door opens. Dad looks down at her for a long time.
+DAD: How long have you been there?
+He doesn't wait for an answer.
+In the morning the piano is locked.
+  [pause 0.5]
+== kitchen_1985
+  [talk] [picture kitchen_1985]
+The scholarship letter has been on the fridge for a month. The last bus north leaves at 22:40. Her case has been packed since Sunday.
+Dad has been ill since the spring. He doesn't look up.
+  [pause 0.3]
+DAD: Go.
+* 1 Who'll run the shop?
+* 2 You're not well.
+* 3 You could still play, Dad.
+  [known play]
+* 4 You gave yours up.
+  [known gave]
+* 5 Pick up the case.
+> 3
+DAD: Who'd listen?
+The same two words. You were eight, behind the piano. He doesn't know you heard them.
+* 1 Who'll run the shop?
+* 2 You're not well.
+* 3 You gave yours up.
+  [known gave]
+* 4 Pick up the case.
+> 4
+DAD: Go on. Go.
+22:31. The bus stop is four minutes away.
+== fork_1985
+  [fork] [seam]
+? lived(go) = false (not set)
+? lived(stay) = false (not set)
+* 1 Get on
+  [side go] [picture fork_go] [line "the scholarship · the city · whoever she'd be"]
+* 2 Stay
+  [side stay] [picture fork_stay] [line "her father · the shop · whoever she already is"]
+> 2
+[life = stay]
+== day_1998
+  [day] [slots morning, noon, afternoon, evening] [then day_end_1998]
+Six things want her today. There is time for four.
+  [prompt]
+* 1 Ruth's fever
+  [at morning] [who Ruth]
+* 2 The stocktake at the shop
+  [at morning, noon] [who "the shop"]
+* 3 Visit Dad at St Anne's
+  [at noon, afternoon] [who Dad] [marked]
+* 4 Tom's football final
+  [at afternoon] [who Tom]
+* 5 Danny's birthday dinner
+  [at evening] [who Danny]
+* 6 An hour at the piano, alone
+  [at noon, evening] [who herself]
+> 3
+St Anne's is a bus and a walk. She runs the walk.
+[kept += dad]
+== deathbed_1998
+  [talk] [picture deathbed_1998]
+He is very thin. He knows her straight away.
+DAD: You came.
+* 1 Of course I came.
+* 2 How are you feeling?
+* 3 Play something for me, Dad.
+  [known play]
+* 4 You gave it up for me.
+  [known gave]
+* 5 Sleep, Dad. I'm here.
+> 1
+DAD: Your mother used to say that. 'Of course.' As if nothing cost anything.
+* 1 How are you feeling?
+* 2 Play something for me, Dad.
+  [known play]
+* 3 You gave it up for me.
+  [known gave]
+* 4 Sleep, Dad. I'm here.
+> 1
+DAD: Like a man in a bed.
+* 1 Play something for me, Dad.
+  [known play]
+* 2 You gave it up for me.
+  [known gave]
+* 3 Sleep, Dad. I'm here.
+> 1
+[said += play]
+He lifts his hands off the blanket. His fingers move on nothing, slow and sure, the way they must have once.
+DAD: There. Did you hear it?
+* 1 You gave it up for me.
+  [known gave]
+* 2 Sleep, Dad. I'm here.
+> 1
+[said += gave]
+DAD: I'd do it again.
+  [pause 0.2]
+DAD: Don't you dare give yours up.
+* 1 I already did.
+> 1
+He closes his eyes for so long she thinks he's asleep.
+DAD: Then you've got it to give back.
+* 1 Sleep, Dad. I'm here.
+> 1
+He sleeps. She stays.
+Frank Marlowe died at ten past nine that night, with the radio on and her hand on the blanket.
+  [pause 0.4]
+== day_1998
+  [day] [slots morning, noon, afternoon, evening] [then day_end_1998]
+There is nothing she can do with the . She sits in the kitchen and lets it pass.
+  [idle]
+== day_end_1998
+  [card]
+Everything she didn't do also happened.
+  [pause 0.2]
+Ruth spends the morning at the neighbour's, watching the door.
+  [who Ruth]
+The stocktake waits. The bank doesn't.
+  [who "the shop"]
+Tom looks for her in the stand until half-time.
+  [who Tom]
+Danny eats at the table alone and wraps her plate in foil.
+  [who Danny]
+The piano stays shut. It has been shut for thirteen years.
+  [who herself]
+== found_1998
+  [card]
+A week after the funeral she clears the till drawer at the shop. Under the float, an envelope, soft from being opened and folded and opened.
+Royal College of Music, 1958: “…pleased to offer Mr F. Marlowe a place, beginning in the autumn term…”
+  [quoted]
+She already knew. It doesn't help.
+  [pause 0.3]
+[carried += gave]
+== years
+  [years]
+Tom stops ringing on Sundays. Then starts again, years later, about nothing.
+  [year 1999]
+The bank takes the shop. She says it was the stocktake. It wasn't the stocktake.
+  [year 2003]
+Ruth moves to Toronto. She rings at odd hours and never says why.
+  [year 2007]
+She sells the piano to the primary school and goes once to hear the children. She leaves at the interval.
+  [year 2016]
+Danny starts eating earlier. She starts eating later. They meet in the middle at the sink.
+  [year 2024]
+She takes the lid off the piano at the school, once, at night. Then she puts it back.
+  [year 2035]
+Iris died on a Tuesday.
+  [year 2039] [pause 1.2] [bold]
+== wake
+  [rooms front, kitchen, stairs] [hours 20, 22, 0, 2, 4, 6] [pool wake_night] [then dawn]
+? lived(stay) = false (not set)
+? lived(go) = false (not set)
+The front room. Everyone she ever kept is here.
+A man nobody knows stands at the foot of the coffin. He has been there since eight.
+MARGARET: Who is he?
+  [who "her sister"]
+TOM: Mum never said anything about a cousin.
+  [who "her eldest"]
+GOT_ON: you know exactly who he is.
+== dawn
+  [card]
+Dawn. They carry the chairs back to the kitchen. Tom stands by the coffin with a folded page.
+== eulogy
+  [card] [picture title] [dim 0.35]
+TOM: Mum stayed. That's the first thing anyone says about her, and she hated it, so I'll say it first and get it over with.
+== eulogy_kept
+She was there when Grandad died. She never told us what he said.
+== eulogy_missed
+She wasn't always there. Ruth had a fever once and watched the door all morning.
+== eulogy
+  [card] [picture title] [dim 0.35]
+That's it. That's Mum. There isn't a better version of her somewhere. There's this one, and we had it.
+  [pause 0.4]
+== dawn
+  [card]
+* 1 Go back
+  [choose] [picture title]
+* 2 Let her rest here
+> 1
+== her_life
+  [tree] [forks "1969 locked", "1985 open", "1998 locked"]
+Go back to a fork and live it the other way. The life you leave goes on without you.
+  [hint]
+* 1 Go back to 1985
+> 1
+Danny, Tom, Ruth and Ellie go on without you.
+  [warn]
+* 1 Go back
+* 2 Stay a little longer
+* 3 Let her rest
+> 3
+== eulogy
+  [card] [picture title] [dim 0.35]
+TOM: Mum stayed. That's the first thing anyone says about her, and she hated it, so I'll say it first and get it over with.
+== eulogy_kept
+She was there when Grandad died. She never told us what he said.
+== eulogy_missed
+She missed my final. I've decided that's fine. It took me forty years.
+== eulogy
+  [card] [picture title] [dim 0.35]
+That's it. That's Mum. There isn't a better version of her somewhere. There's this one, and we had it.
+  [pause 0.4]
+== rest
+  [card] [picture title] [dim 0.35] [rests]
+The burial never changes. The same hill, the same rain, whoever is holding the umbrellas.
+  [pause 0.6]
+-> end
+> :facts
+  life = stay
+  kept = dad
+  said = play, gave
+  spot = door
+  carried = play, gave, hands

@@ -106,7 +106,28 @@ pub const Effect = union(enum) {
     change: struct { fact: FactId, key: ?Key = null, by: i64 },
 
     pub const Item = struct { fact: FactId, key: ?Key = null, item: u16 };
+
+    /// The effect with what it borrows copied into `a`, so it outlives the step that emitted it: an action's
+    /// arguments, a text value.
+    pub fn dupe(e: Effect, a: std.mem.Allocator) error{OutOfMemory}!Effect {
+        var out = e;
+        switch (out) {
+            .set => |*x| x.value = try dupeValue(a, x.value),
+            .call => |*c| {
+                const args = try a.alloc(Value, c.args.len);
+                for (args, c.args) |*to, from| to.* = try dupeValue(a, from);
+                c.args = args;
+            },
+            .add, .remove, .change => {},
+        }
+        return out;
+    }
 };
+
+/// A value with its text copied into `a`.
+pub fn dupeValue(a: std.mem.Allocator, v: Value) error{OutOfMemory}!Value {
+    return if (v == .text) .{ .text = try a.dupe(u8, v.text) } else v;
+}
 
 pub const Call = struct {
     action: ExternId,

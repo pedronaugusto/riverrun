@@ -45,17 +45,22 @@ pub const Options = struct {
     passes: []const Pass = &.{},
 };
 
-/// The compiled graph and its string table, owned by the caller.
+/// The compiled graph and its string table, and where each step and choice is written, owned by the caller.
 pub const Compiled = struct {
     graph: []u8,
     words: []u8,
+    /// Where the graph's steps and choices are written in the story's files: for tools, never in the format.
+    where: Where,
 
     pub fn deinit(c: *Compiled, gpa: std.mem.Allocator) void {
         gpa.free(c.graph);
         gpa.free(c.words);
+        c.where.deinit(gpa);
         c.* = undefined;
     }
 };
+
+pub const Where = Compiler.Where;
 
 /// Compiles `checked`, which `diags` must hold no error for; each pass reports into `diags`.
 pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, checked: *const check.Checked, options: Options) Error!Compiled {
@@ -102,7 +107,9 @@ fn build(c: *Compiler, options: Options) Error!Compiled {
     const graph = try b.bytes(c.gpa);
     errdefer c.gpa.free(graph);
     const written: story.Story = try .init(graph, .{ .verify_hash = false });
-    return .{ .graph = graph, .words = try b.stringBytes(c.gpa, options.locale, written.hash()) };
+    const words = try b.stringBytes(c.gpa, options.locale, written.hash());
+    errdefer c.gpa.free(words);
+    return .{ .graph = graph, .words = words, .where = try c.written(c.gpa) };
 }
 
 // A package's pass, which never fails silently: an error it reports refuses the story, and a failure it does not
@@ -141,7 +148,7 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
         .scene, .other => {
             // a scene with parts and no body of its own opens with its first part
             const opens = s.node.body.len == 0 and s.parts.len > 0;
-            const entry = if (opens) try c.b.node(.{ .step = .{ .jump = c.parts[id.raw()][0].? } }) else try body.chain(c, s.node.body, null) orelse try c.back();
+            const entry = if (opens) try c.node(.{ .step = .{ .jump = c.parts[id.raw()][0].? } }) else try body.chain(c, s.node.body, null) orelse try c.back();
             c.b.enter(to, entry);
             for (s.parts, c.parts[id.raw()]) |p, ps| {
                 c.at = p.node.name.span;
@@ -152,7 +159,7 @@ fn section(c: *Compiler, id: check.symbols.SectionId, s: *const check.symbols.Se
             const base = try c.qualified(s.module, s.name);
             for (s.parts) |p| {
                 // a rule's body is its effects, fired as one step; one with none fires nothing
-                const entry = try body.chain(c, p.node.body, null) orelse try c.b.node(.{ .step = .end });
+                const entry = try body.chain(c, p.node.body, null) orelse try c.node(.{ .step = .end });
                 c.at = p.node.name.span;
                 try c.b.candidate(to, .{
                     .name = p.name,
