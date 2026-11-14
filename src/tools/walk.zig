@@ -27,11 +27,10 @@ pub const Options = struct {
     seen: ?Seen = null,
 };
 
-/// Each step a walk is told, in order, and the choice it then takes (an index into the choices offered).
+/// Each step a walk is told, in order.
 pub const Seen = struct {
     ctx: ?*anyopaque,
     step: *const fn (ctx: ?*anyopaque, step: run.Step) void,
-    chose: *const fn (ctx: ?*anyopaque, index: usize) void,
 };
 
 /// What answers a query when there is no game: by default its type's first value; a player gives its own.
@@ -167,7 +166,6 @@ fn tell(s: *const story.Story, session: *run.Session, store: facts.Store, flow: 
                 var left = chooser.pick(chooser.ctx, open) % open;
                 var i: usize = 0;
                 while (!list[i].open or left > 0) : (i += 1) left -= @intFromBool(list[i].open);
-                if (options.seen) |seen| seen.chose(seen.ctx, i);
                 try session.choose(flow, i);
                 told.chosen += 1;
             },

@@ -287,6 +287,27 @@ test "a query is answered with what the player set, else its type's first value,
     );
 }
 
+test "what the player set a query to answer is what the story reads from then on, and is shown so" {
+    var p = try played(plain, &.{.{ .path = "story.river", .text =
+        \\extern:
+        \\  price(ref of item) -> int
+        \\== a
+        \\{ price(pelt) > 3 } It costs {price(pelt)}.
+        \\{ price(letter) > 3 } It costs too much.
+        \\-> end
+    }}, .{ .given = &.{":set price(pelt) = 5"} }, &.{});
+    defer p.deinit();
+    try std.testing.expectEqualStrings(
+        \\> :set price(pelt) = 5
+        \\== a
+        \\? price(pelt) = 5
+        \\It costs 5.
+        \\? price(letter) = 0 (not set)
+        \\-> end
+        \\
+    , p.text);
+}
+
 test "going back plays again from the start with the inputs but the last, and tells again what the input before it told" {
     try expectPlayed(plain,
         \\facts:
@@ -574,8 +595,6 @@ const Recording = struct {
             r.failed = true;
         };
     }
-
-    fn chose(_: ?*anyopaque, _: usize) void {}
 };
 
 test "what play tells is what walk tells for the same choices: one runtime, two fronts" {
@@ -603,7 +622,7 @@ test "what play tells is what walk tells for the same choices: one runtime, two 
                 }
             };
             var picker: Picker = .{ .picks = picks };
-            const told = try walk.walk(gpa, &b.loaded, .{ .sections = 1, .steps = 64, .seen = .{ .ctx = &walked, .step = Recording.seen, .chose = Recording.chose } }, .{ .ctx = &picker, .pick = Picker.pick });
+            const told = try walk.walk(gpa, &b.loaded, .{ .sections = 1, .steps = 64, .seen = .{ .ctx = &walked, .step = Recording.seen } }, .{ .ctx = &picker, .pick = Picker.pick });
             try std.testing.expect(!walked.failed);
             // the play: the same section, the same choices, every outcome its type's first value as the walk gives
             var played_: Recording = .{ .a = a };
