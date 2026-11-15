@@ -371,6 +371,25 @@ test "any text through the reader, the checker with a package registered and the
     }.one, .{ .cases = 1500, .seed = 0x3f00d, .reach = &reached });
 }
 
+test "the proof with one byte changed, a choice now on its gather's row, checks and compiles: the proof property's lost crash" {
+    // `- (ask)` and `* Who'll run the shop?` on one row, the newline between them changed to a space as the proof
+    // property's changes can: the checker's flow pass reached `unreachable` here (stage 3b's and 3c's fuzz crashes, a
+    // 0-byte input that did not replay)
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const pages = try a.dupe(Manuscript.Page, &proof);
+    for (pages) |*p| if (std.mem.eql(u8, p.path, "1985.river")) {
+        const cut = try std.mem.replaceOwned(u8, a, p.text, "- (ask)\n* Who", "- (ask) * Who");
+        try std.testing.expect(cut.len == p.text.len and !std.mem.eql(u8, cut, p.text));
+        p.text = cut;
+    };
+    var m, var out = try Manuscript.build(gpa, pages, wake, .development);
+    defer m.deinit();
+    defer if (out) |*o| o.deinit(gpa);
+    try std.testing.expect(out != null);
+}
+
 test "the proof, any of its files changed, through the reader, the checker and the compiler with its host is a story that is told, or diagnostics; never a crash" {
     try shakedown.check(gpa, {}, struct {
         fn one(_: void, case: *shakedown.Case) anyerror!void {
