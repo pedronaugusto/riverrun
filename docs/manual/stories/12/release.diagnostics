@@ -1,0 +1,11 @@
+toll.river:17:1-17:79: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:18:1-18:55: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:20:1-20:32: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:22:3-22:27: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:24:1-24:43: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:25:3-25:36: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:28:1-28:29: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:29:3-29:51: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:31:1-31:28: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:35:1-35:39: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them
+toll.river:36:13-36:92: error: a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them

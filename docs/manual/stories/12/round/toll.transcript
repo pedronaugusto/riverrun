@@ -1,0 +1,10 @@
+== toll
+  [music fair_far_off]
+A gate across the path, and a man in a box beside it with a lamp and a ledger.
+A TOLLMAN: A penny to pass. Fair night, no exceptions.
+* 1 (closed) Pay the penny.
+* 2 (closed) Ask Otto to speak for you.
+* 3 Ask what the fair is like.
+> 3
+A TOLLMAN: Loud. Muddy. Worth a penny, some say.
+toll.river:19:1-19:8: error: the story walked 100,000 steps and said nothing: jumps in a loop (NoProgress)

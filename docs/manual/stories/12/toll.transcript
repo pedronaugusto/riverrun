@@ -1,0 +1,21 @@
+> :set coins = 1
+== toll
+  [music fair_far_off]
+A gate across the path, and a man in a box beside it with a lamp and a ledger.
+A TOLLMAN: A penny to pass. Fair night, no exceptions.
+* 1 Pay the penny.
+* 2 (closed) Ask Otto to speak for you.
+* 3 Ask what the fair is like.
+* 4 Go back down to the boat.
+> 3
+A TOLLMAN: Loud. Muddy. Worth a penny, some say.
+* 1 Pay the penny.
+* 2 (closed) Ask Otto to speak for you.
+* 3 Ask what the fair is like.
+* 4 Go back down to the boat.
+> 1
+[pay(1)]
+A TOLLMAN: Mind the mud.
+== fair
+Up the hill, the lights and the noise.
+-> end

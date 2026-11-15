@@ -1,0 +1,4 @@
+toll.river:17:1-17:112: error: the line is 111 columns wide, past the game's 100
+toll.river:18:1-18:7: error: `TOLMAN` is not a speaker: speakers come from `cast:` and `extras:`
+toll.river:21:4-21:7: error: `pay` is an action, not a tag: run it with `[pay(…)]`
+toll.river:24:5-24:14: warning: this choice can never be offered: its condition can never hold

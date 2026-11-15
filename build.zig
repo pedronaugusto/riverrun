@@ -401,6 +401,7 @@ const manual = struct {
         "docs/manual/07-the-games-vocabulary.md",
         "docs/manual/08-pools.md",
         "docs/manual/09-rules.md",
+        "docs/manual/12-what-the-checker-proves.md",
     };
     const stories = [_][]const u8{
         "docs/manual/stories/01/ferry.river",
@@ -415,6 +416,9 @@ const manual = struct {
         "docs/manual/stories/08/ferry.river",
         "docs/manual/stories/08/inn.river",
         "docs/manual/stories/09/ferry.river",
+        "docs/manual/stories/12/draft/toll.river",
+        "docs/manual/stories/12/toll.river",
+        "docs/manual/stories/12/round/toll.river",
     };
     const runs = [_]ShownRun{
         .{ .dir = "docs/manual/stories/01", .args = &.{ "play", "ferry.river" }, .output = "ferry.transcript" },
@@ -444,6 +448,13 @@ const manual = struct {
         .{ .dir = "docs/manual/mistakes/08", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
         .{ .dir = "docs/manual/stories/09", .args = &.{ "play", "--set", "rain = pouring", "--script", "ferry.play", "ferry.river" }, .output = "ferry.transcript" },
         .{ .dir = "docs/manual/mistakes/09", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/mistakes/12", .args = &.{ "check", "toll.river" }, .output = "toll.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/mistakes/12/limits", .args = &.{ "check", "stall.river" }, .output = "stall.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/12", .args = &.{ "check", "--release", "toll.river" }, .output = "release.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/12/round", .args = &.{ "play", "-i", "3", "toll.river" }, .output = "toll.transcript", .status = 4 },
+        .{ .dir = "docs/manual/stories/12/draft", .args = &.{ "check", "toll.river" }, .output = "toll.diagnostics" },
+        .{ .dir = "docs/manual/stories/12/draft", .args = &.{ "play", "--set", "coins = 1", "--script", "toll.play", "toll.river" }, .output = "toll.transcript", .status = 1 },
+        .{ .dir = "docs/manual/stories/12", .args = &.{ "play", "--set", "coins = 1", "--script", "toll.play", "toll.river" }, .output = "toll.transcript" },
     };
     const tagged = [_]TaggedStory{.{ .before = "docs/manual/stories/06/bank.river", .after = "docs/manual/stories/06/tagged/bank.river" }};
 };

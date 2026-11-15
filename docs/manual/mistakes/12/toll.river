@@ -1,0 +1,37 @@
+// The toll gate on the far bank: a penny to pass up to the fair.
+cast:
+  otto   "Otto"   — a pedlar, going over for the fair
+extras: a tollman
+
+facts (player):
+  coins: int from 0 to 9   (game)
+facts:
+  trust: int from -3 to 3   (game)   // what Otto makes of you
+  vouched: bool
+
+extern:
+  pay(int)
+
+== toll
+  [music fair_far_off]
+A gate across the path, and a man in a box beside it with a lamp, a ledger, a dog and a great deal of patience.
+TOLMAN: A penny to pass. Fair night, no exceptions.
+- (ask)
+* { coins > 1 } Pay the penny.
+  [pay 1]
+  A TOLLMAN: Mind the mud.
+  -> fair
+* { trust > 3 } Ask Otto to speak for you.
+  OTTO: This one's with me, Walter.
+  [vouched = true]
+  -> fair
++ Ask what the fair is like.
+  A TOLLMAN: Loud. Muddy. Worth a penny, some say.
+  -> ask
+* Go back down to the boat.
+  -> end
+
+== fair
+Up the hill, the lights and the noise.
+{ vouched } Otto steers you past the gate with a hand on your shoulder, as if you were his.
+-> end

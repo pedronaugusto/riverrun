@@ -1,0 +1,73 @@
+// Otto's stall, every ware a choice, written out from his list.
+cast:
+  otto   "Otto"   — a pedlar, at his stall
+
+== stall
+OTTO: What'll it be?
+- (wares)
+* The needles.
+  -> wares
+* The thread.
+  -> wares
+* The buttons.
+  -> wares
+* The ribbon.
+  -> wares
+* The lace.
+  -> wares
+* The thimbles.
+  -> wares
+* The pins.
+  -> wares
+* The scissors.
+  -> wares
+* The combs.
+  -> wares
+* The mirrors.
+  -> wares
+* The soap.
+  -> wares
+* The candles.
+  -> wares
+* The matches.
+  -> wares
+* The string.
+  -> wares
+* The buckles.
+  -> wares
+* The hooks.
+  -> wares
+* The laces.
+  -> wares
+* The tape.
+  -> wares
+* The wool.
+  -> wares
+* The yarn.
+  -> wares
+* The felt.
+  -> wares
+* The beads.
+  -> wares
+* The brooches.
+  -> wares
+* The hairpins.
+  -> wares
+* The pegs.
+  -> wares
+* The spoons.
+  -> wares
+* The ladles.
+  -> wares
+* The knives.
+  -> wares
+* The whistles.
+  -> wares
+* The marbles.
+  -> wares
+* The tops.
+  -> wares
+* The almanacs.
+  -> wares
+* Nothing tonight.
+  -> end
