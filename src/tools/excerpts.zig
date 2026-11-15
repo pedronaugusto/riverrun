@@ -222,15 +222,16 @@ test "a run a document shows is held whole to what it printed, and a refused blo
     try std.testing.expectEqual(Kind.refused, found[2].kind);
     try std.testing.expectEqual(Kind.run, found[3].kind);
     try std.testing.expectEqual(@as(usize, 0), (try unshown(a, &.{doc}, .{ .stories = &.{story}, .runs = &runs })).len);
-    // a run shown in part, a command not run, a refused block of a story that checks, and a run nobody shows
+    // a run shown in part, a command not run, a refused block of a story that checks: and so neither run is shown
     const wrong: Named = .{ .path = "2.md", .text = "```console\n$ riverrun play a.river\n== a\nGo.\n```\n\n```console\n$ riverrun play b.river\n```\n\n" ++
         "```river refused\n== a\nGo.\n-> end\n```\n" };
     const missed = try unshown(a, &.{wrong}, .{ .stories = &.{story}, .runs = &runs });
-    try std.testing.expectEqual(@as(usize, 4), missed.len);
+    try std.testing.expectEqual(@as(usize, 5), missed.len);
     try std.testing.expectEqualStrings("the rows under this command are not all it printed, as pinned", missed[0].why);
     try std.testing.expectEqualStrings("this command is not one the test step runs and pins", missed[1].why);
     try std.testing.expectEqualStrings("this refused block is not rows of a story a shown `riverrun check` refuses", missed[2].why);
-    try std.testing.expectEqualStrings("riverrun check a.river", missed[3].path);
+    try std.testing.expectEqualStrings("riverrun play a.river", missed[3].path);
+    try std.testing.expectEqualStrings("riverrun check a.river", missed[4].path);
     try std.testing.expect(whole(&.{}, ""));
     try std.testing.expect(!whole(&.{""}, ""));
     // one command run in two folders, each printing its own: each block is held to the run whose output it shows
