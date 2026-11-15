@@ -219,11 +219,13 @@ const Walk = struct {
 
     // The rules fired to a fixed point over what changed, each one's effects applied in turn; the outcomes their
     // actions owe given, each its type's first value, once they settle, and the rules settled again after.
+    // Rounds are counted across the outcomes given, as a play counts them across the outcomes a player gives: rules
+    // that keep asking an outcome that sets them off again are rules that keep setting each other off.
     fn settle(w: *Walk) !void {
+        var rounds: u32 = 0;
         while (true) {
             var owed: std.ArrayList(facts.FactId) = .empty;
             defer owed.deinit(w.rules.watch.gpa);
-            var rounds: u32 = 0;
             while (true) : (rounds += 1) {
                 const fired = try w.rules.step();
                 if (fired.len == 0) break;

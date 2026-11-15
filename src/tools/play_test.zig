@@ -809,7 +809,10 @@ test "what play tells is what walk tells for the same choices: one runtime, two 
             defer p.deinit();
             var chosen: usize = 0;
             var stopped = false;
-            while (played_.list.items.len < walked.list.items.len + 1) {
+            var given: usize = 0;
+            while (played_.list.items.len < walked.list.items.len + 1) : (given += 1) {
+                // every input moves the play on or ends it: rules that keep asking are stopped, never given forever
+                if (given == 10_000) return error.TestPlayNeverEnds;
                 while (try p.next()) |e| switch (e) {
                     .line => |l| try played_.add(.{ .line = l }),
                     .choices => |list| {
@@ -999,4 +1002,45 @@ test "a run-time error is placed at the effect that met it, wherever that effect
             if (bad > 0) case.reached("not the first");
         }
     }.one, .{ .cases = 200, .seed = 0xe44, .reach = &.{ "run", "line", "rule", "not the first" } });
+}
+
+test "rules that keep asking the game an outcome that sets them off again are stopped, in play and in walk alike" {
+    const text =
+        \\facts:
+        \\  r: bool
+        \\extern:
+        \\  pay() -> bool (action)
+        \\== a
+        \\Hello.
+        \\-> end
+        \\== loop (rules)
+        \\= unset  when { not r }
+        \\  [r = true]
+        \\= ask    when { r }
+        \\  [r = pay()]
+    ;
+    var m, var out = try Manuscript.build(gpa, &.{.{ .path = "story.river", .text = text }}, plain, .development);
+    defer m.deinit();
+    defer if (out) |*o| o.deinit(gpa);
+    var loaded: walk.Loaded = undefined;
+    try loaded.init(gpa, out.?.graph, out.?.words);
+    defer loaded.deinit();
+    const Never = struct {
+        fn pick(_: ?*anyopaque, _: usize) usize {
+            return 0;
+        }
+    };
+    const told = try walk.walk(gpa, &loaded, .{ .sections = 1 }, .{ .ctx = null, .pick = Never.pick });
+    try std.testing.expectEqual(@as(u32, 1), told.stopped);
+    var p: Play = undefined;
+    try p.init(gpa, &loaded, .{ .start = loaded.story.sectionNamed("a").? });
+    defer p.deinit();
+    var given: usize = 0;
+    while (given < 1000) : (given += 1) {
+        while (try p.next()) |_| {}
+        if (p.waitingFor().? != .outcome) break;
+        try p.give(.{ .outcome = .{ .boolean = false } });
+    }
+    try std.testing.expectEqual(Play.Waiting.stopped, p.waitingFor().?);
+    try std.testing.expect(given < 100);
 }

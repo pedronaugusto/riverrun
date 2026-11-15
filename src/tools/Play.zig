@@ -233,6 +233,10 @@ due: std.ArrayList(story.SectionId) = .empty,
 /// Steps taken since the last input, and the sections their lines were told in, with how often.
 steps: u32 = 0,
 stretch: std.ArrayList(struct { section: story.SectionId, lines: u32 }) = .empty,
+/// Rounds the rules and packages fired since the flow last moved or the player last gave anything but an outcome
+/// a rule or a package owes: rules that keep asking the game an outcome that sets them off again go round once per
+/// outcome, and are stopped as rules that keep setting each other off are.
+rounds: u32 = 0,
 /// Why the last input was refused.
 refusal: []const u8 = "",
 refusal_arena: std.heap.ArenaAllocator,
@@ -438,6 +442,7 @@ fn begin(p: *Play) GiveError!void {
     p.part = null;
     p.due.clearRetainingCapacity();
     p.steps = 0;
+    p.rounds = 0;
     p.stretch.clearRetainingCapacity();
     p.stopping_why = null;
     p.met = null;
@@ -570,6 +575,7 @@ fn advance(p: *Play) Failure!void {
         return p.settle();
     }
     p.steps += 1;
+    p.rounds = 0;
     const bound = p.options.steps orelse (p.loaded.story.len(.nodes) +| round);
     if (p.steps > bound) return p.endless();
     const step = try p.session.next(flow);
@@ -688,8 +694,8 @@ fn settle(p: *Play) Failure!void {
 }
 
 fn settleRounds(p: *Play) Failure!void {
-    var rounds: u32 = 0;
-    while (true) : (rounds += 1) {
+    while (true) : (p.rounds += 1) {
+        const rounds = p.rounds;
         var moved = false;
         const fired = p.rules.step() catch |e| {
             p.met = p.rules.metAt();
@@ -862,6 +868,8 @@ fn stopAt(p: *Play, failure: Failure) error{OutOfMemory}!void {
 fn take(p: *Play, input: Input) GiveError!void {
     const waiting = p.waitingFor() orelse return p.refuse("the story is not waiting for anything yet", .{});
     if (waiting == .stopped) return p.refuse("the story stopped: go back (:back) or start again (:restart)", .{});
+    // an outcome a rule or a package owes goes on with the rounds that asked it
+    if (!(input == .outcome and waiting == .outcome and !p.owed.items[p.owed_given].flow)) p.rounds = 0;
     switch (input) {
         .choose => |n| {
             if (waiting != .choice) return p.refuse("{s}", .{whatIsWaited(waiting)});
