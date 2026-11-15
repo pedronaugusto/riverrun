@@ -398,6 +398,8 @@ const manual = struct {
         "docs/manual/04-telling-the-game.md",
         "docs/manual/05-scenes-and-flow.md",
         "docs/manual/06-text-that-varies.md",
+        "docs/manual/07-the-games-vocabulary.md",
+        "docs/manual/08-pools.md",
     };
     const stories = [_][]const u8{
         "docs/manual/stories/01/ferry.river",
@@ -408,6 +410,9 @@ const manual = struct {
         "docs/manual/stories/06/ferry.river",
         "docs/manual/stories/06/bank.river",
         "docs/manual/stories/06/tagged/bank.river",
+        "docs/manual/stories/07/ferry.river",
+        "docs/manual/stories/08/ferry.river",
+        "docs/manual/stories/08/inn.river",
     };
     const runs = [_]ShownRun{
         .{ .dir = "docs/manual/stories/01", .args = &.{ "play", "ferry.river" }, .output = "ferry.transcript" },
@@ -426,6 +431,15 @@ const manual = struct {
         .{ .dir = "docs/manual/stories/06", .args = &.{ "tag", "--check", "bank.river" }, .output = "bank.diagnostics", .status = 1 },
         .{ .dir = "docs/manual/stories/06/tagged", .args = &.{ "check", "--release", "bank.river" }, .output = "bank.diagnostics" },
         .{ .dir = "docs/manual/stories/06/tagged", .args = &.{ "play", "-i", "1", "bank.river" }, .output = "bank.transcript" },
+        .{ .dir = "docs/manual/stories/07", .args = &.{ "play", "--set", "rain = easing", "--set", "coins = 1", "--set", "crossings_left() = 1", "--script", "ferry.play", "ferry.river" }, .output = "ferry.transcript" },
+        .{ .dir = "docs/manual/mistakes/07", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/07/fair", .args = &.{ "check", "fair.river", "stall.river" }, .output = "fair.diagnostics" },
+        .{ .dir = "docs/manual/mistakes/07/fair", .args = &.{ "check", "fair.river", "stall.river" }, .output = "fair.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/07/fair", .args = &.{ "play", "--set", "owes(miller) = 3", "--set", "price(needles) = 2", "--wait", "21", "-i", "1", "fair.river", "stall.river" }, .output = "fair.transcript" },
+        .{ .dir = "docs/manual/stories/08", .args = &.{ "play", "--set", "rain = easing", "--set", "near = otto, boy", "--script", "ferry.play", "ferry.river" }, .output = "ferry.transcript" },
+        .{ .dir = "docs/manual/stories/08", .args = &.{ "play", "-i", "1", "inn.river" }, .output = "inn.transcript" },
+        .{ .dir = "docs/manual/stories/08", .args = &.{ "play", "--from", "inn_night", "--set", "room = taproom", "--set", "hour = 22", "--set", "stood_a_drink = true", "inn.river" }, .output = "night.transcript" },
+        .{ .dir = "docs/manual/mistakes/08", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
     };
     const tagged = [_]TaggedStory{.{ .before = "docs/manual/stories/06/bank.river", .after = "docs/manual/stories/06/tagged/bank.river" }};
 };

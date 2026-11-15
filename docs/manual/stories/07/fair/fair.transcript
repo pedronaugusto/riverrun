@@ -1,0 +1,20 @@
+> :set owes(miller) = 3
+> :set price(needles) = 2
+> :wait 21
+== fair
+  [music fair_far_off]
+Lamps on poles, mud underfoot, and somebody's pig loose among the stalls.
+OTTO: Last hour. Then I'm for my bed.
+== stall.open
+OTTO: Needles, thread, buttons!
+OTTO: And you still owe me 3, Mrs Miller.
+MILLER: A card of needles. Put it on the slate.
+* 1 Let her owe it.
+* 2 Tell her it's money tonight.
+> 1
+? price(needles) = 2
+[owes(miller) += 2] [sell(needles, miller)] [stall.sold += 1]
+== fair
+  [music fair_far_off]
+OTTO: One sale tonight. Could be worse.
+-> end

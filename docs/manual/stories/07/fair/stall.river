@@ -1,0 +1,16 @@
+module stall
+facts:
+  sold: int from 0 to 99   // what Otto has sold tonight
+
+== open
+OTTO: Needles, thread, buttons!
+{ owes(miller) > 0 } OTTO: And you still owe me {owes(miller)}, Mrs Miller.
+MILLER: A card of needles. Put it on the slate.
+* Let her owe it.
+  [owes(miller) += price(needles)]
+  [sell(needles, miller)]
+  [sold += 1]
+  <-
+* Tell her it's money tonight.
+  OTTO: Money tonight. The slate's full.
+  <-

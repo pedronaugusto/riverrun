@@ -1,0 +1,62 @@
+// The Bell at Hollin, the night the rain kept the ferry tied up: a night the game plays room by room.
+cast:
+  ada    "Ada"    — keeps the ferry
+  otto   "Otto"   — a pedlar, going over for the fair
+extras: a drover, the cook
+
+facts:
+  room: one of taproom, kitchen, stairs   (game)
+  hour: int   (game)
+  stood_a_drink: bool
+
+// The game moves the player from room to room, two hours at a time, and at each move asks the pool for what
+// happens in that room at that hour. When the night is over it goes on to `morning`.
+== inn
+  [rooms taproom, kitchen, stairs] [hours 20, 22, 0] [pool inn_night] [then morning]
+The Bell is full of people the rain has kept from crossing, and all of them are wet.
+OTTO: A night here, then. I've slept in worse.
+* Buy Otto a drink.
+  [stood_a_drink = true]
+  OTTO: Now that's manners.
+* Find a corner by the stairs.
+  You find a bench out of the draught.
+
+== inn_night (pool)
+// the taproom
+= cards           when { room = taproom and hour = 20 }
+  [weight 3]
+  Otto is losing at cards to a drover, and smiling about it.
+= rumour          when { room = taproom and hour = 20 }
+  A DROVER: They say the far bank's flooded to the church door.
+= singing         when { room = taproom and hour = 22 }
+  Somebody starts a song about the river. Everyone knows the words but you.
+= singing_otto    when { room = taproom and hour = 22 and stood_a_drink }
+  Somebody starts a song about the river, and Otto, a drink inside him, teaches you the words.
+// the kitchen
+= stew            when { room = kitchen and hour = 20 }
+  THE COOK: There's the end of the stew, if you're not fussy.
+= ada_eats        when { room = kitchen and hour = 22 }
+  Ada eats standing up, by the back door, watching the rain.
+  ADA: It'll ease by morning. It always does.
+// the stairs
+= creak           when { room = stairs }
+  The stairs creak under somebody going up to bed.
+// anywhere after midnight
+= late            when { hour = 0 }
+  Everyone who can sleep is asleep. The fire ticks.
+= ada_asleep      when { room = taproom and hour = 0 }
+  Ada is asleep in the corner with her boots on.
+
+== morning
+The rain has stopped. Down at the landing, Ada is bailing out the boat.
+-> at_breakfast ->
+-> end
+
+// two things said at breakfast
+== at_breakfast (pool 2)
+= otto_song       when { stood_a_drink }
+  OTTO: You can't sing, but you can stand a drink. That'll do.
+= ada_hurry
+  ADA: Ten minutes. I'm not waiting.
+= otto_head
+  OTTO: My head.

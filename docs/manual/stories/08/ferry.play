@@ -1,0 +1,10 @@
+// Otto and the boy are both standing by: look at the river, twice
+4
+4
+// sit with Otto, which puts him in a good mood, then look again
+5
+4
+// they both go off up the lane: look once more, then go home
+:set near = none
+4
+6

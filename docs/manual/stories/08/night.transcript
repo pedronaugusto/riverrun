@@ -1,0 +1,6 @@
+> :set room = taproom
+> :set hour = 22
+> :set stood_a_drink = true
+== inn_night
+Somebody starts a song about the river, and Otto, a drink inside him, teaches you the words.
+-> end

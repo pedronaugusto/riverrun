@@ -1,0 +1,26 @@
+// The fair on the far bank, in two files: this one, and Otto's stall in stall.river.
+cast:
+  otto     "Otto"         — a pedlar, at his stall
+  miller   "Mrs Miller"   — from the mill, who buys on the slate
+
+facts:
+  hour: int   (clock)                // the fair's clock: the game moves it on
+  owes(person): int from 0 to 20     // what each person owes Otto
+
+const:
+  closing = 22
+
+extern:
+  price(of: ref of item) -> int
+  sell(what: ref of item, to: ref of person)
+
+== fair
+  [music fair_far_off]
+{ hour >= closing }
+  The stalls are shutting. Otto is packing his needles away.
+  -> end
+Lamps on poles, mud underfoot, and somebody's pig loose among the stalls.
+{ hour >= closing - 1 } OTTO: Last hour. Then I'm for my bed.
+-> stall.open ->
+OTTO: {stall.sold as one: One sale | other: {stall.sold} sales} tonight. Could be worse.
+-> end

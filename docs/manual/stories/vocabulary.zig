@@ -19,7 +19,19 @@ const schema: riverrun.check.Schema = .{
         .{ .name = "marked", .on = .{ .choice = true } },
         // how a line is said, `ADA (quietly):`: words for the actor and the translator
         .{ .name = "delivery", .on = .{ .line = true }, .value = .text },
+        // a night the game plays room by room: the rooms the player may be in, the hours it moves them through, the
+        // pool it asks what happens in each room at each hour, and the scene it goes on to when the night is over
+        .{ .name = "rooms", .on = .{ .section = true }, .value = .{ .values_of = "room" }, .count = .many },
+        .{ .name = "hours", .on = .{ .section = true }, .value = .number, .count = .many },
+        .{ .name = "pool", .on = .{ .section = true }, .value = .section },
+        .{ .name = "then", .on = .{ .section = true }, .value = .section, .leads = true },
     },
 };
 
-pub const options: riverrun.check.Options = .{ .schema = &schema, .delivery = "delivery" };
+// the game's things a story names by id, `[give(lantern)]`: each kind with every id the game knows
+const things: []const riverrun.check.Things = &.{
+    .{ .kind = "item", .ids = &.{ "lantern", "needles", "thread", "buttons" } },
+    .{ .kind = "person", .ids = &.{ "ada", "otto", "miller" } },
+};
+
+pub const options: riverrun.check.Options = .{ .schema = &schema, .delivery = "delivery", .things = things };

@@ -1,0 +1,10 @@
+// ask the price
+1
+// offer Ada the one coin: the game says whether she takes it, and here she does not
+2
+false
+// take that back, and have her take it this time
+:back
+true
+// across, holding still in the fog
+1

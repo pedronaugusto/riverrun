@@ -1,0 +1,3 @@
+ferry.river:50:4-50:13: error: `talk_down` has an outcome, which a fact keeps: `[fact = talk_down(…)]`
+ferry.river:66:9-66:16: error: the game has no item called `lanturn`
+ferry.river:16:3-16:14: warning: nothing sets `talked_down`: declare it `(game)` if the game writes it

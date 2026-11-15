@@ -1,0 +1,103 @@
+> :set rain = easing
+> :set near = otto, boy
+== landing
+  [music rain_on_water] [picture landing_night]
+Rain on the river, thinning.
+A lantern on a post, and a boat tied up under it.
+A BOY: Ferry! Last ferry over!
+OTTO: She heard you the first time.
+ADA (without looking up): Nearly. Give it a minute.
+? crossings_left() = 0 (not set)
+Otto hums to himself.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 (closed) Offer her the one coin you have.
+* 4 Look at the river.
+* 5 Sit with Otto.
+* 6 (closed) Pay, and get in.
+  [marked]
+* 7 Go home.
+> 4
+Black water, moving fast under the rain.
+== waiting
+OTTO: My feet have gone to sleep.
+== landing
+  [music rain_on_water] [picture landing_night]
+Otto counts the buttons on his coat.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 (closed) Offer her the one coin you have.
+* 4 Look at the river.
+* 5 Sit with Otto.
+* 6 (closed) Pay, and get in.
+  [marked]
+* 7 Go home.
+> 4
+Still black. Still moving.
+== waiting
+A BOY: Ferry! Ferry!
+== landing
+  [music rain_on_water] [picture landing_night]
+Otto looks at the sky.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 (closed) Offer her the one coin you have.
+* 4 Look at the river.
+* 5 Sit with Otto.
+* 6 (closed) Pay, and get in.
+  [marked]
+* 7 Go home.
+> 5
+You sit down beside him on the wet bench.
+OTTO: You'll want this, over there.
+  [pause 1.5]
+  [trust += 1]
+He puts a tin lantern in your hands.
+[give(lantern)] [carrying += lantern]
+Otto hums to himself.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 (closed) Offer her the one coin you have.
+* 4 Look at the river.
+* 5 (closed) Pay, and get in.
+  [marked]
+* 6 Go home.
+> 4
+The river is not going anywhere, and nor, it seems, are you.
+== waiting
+OTTO: Come back from the edge, will you. You're making me nervous.
+== landing
+  [music rain_on_water] [picture landing_night]
+Otto counts the buttons on his coat.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 (closed) Offer her the one coin you have.
+* 4 Look at the river.
+* 5 (closed) Pay, and get in.
+  [marked]
+* 6 Go home.
+> :set near = none
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 (closed) Offer her the one coin you have.
+* 4 Look at the river.
+* 5 (closed) Pay, and get in.
+  [marked]
+* 6 Go home.
+> 4
+The river is not going anywhere, and nor, it seems, are you.
+== waiting
+Nobody says anything. The rain says enough.
+== landing
+  [music rain_on_water] [picture landing_night]
+Otto looks at the sky.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 (closed) Offer her the one coin you have.
+* 4 Look at the river.
+* 5 (closed) Pay, and get in.
+  [marked]
+* 6 Go home.
+> 6
+You turn up the lane, the way the boy went.
+-> end

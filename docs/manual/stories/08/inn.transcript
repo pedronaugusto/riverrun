@@ -1,0 +1,15 @@
+== inn
+  [rooms taproom, kitchen, stairs] [hours 20, 22, 0] [pool inn_night] [then morning]
+The Bell is full of people the rain has kept from crossing, and all of them are wet.
+OTTO: A night here, then. I've slept in worse.
+* 1 Buy Otto a drink.
+* 2 Find a corner by the stairs.
+> 1
+[stood_a_drink = true]
+OTTO: Now that's manners.
+== morning
+The rain has stopped. Down at the landing, Ada is bailing out the boat.
+== at_breakfast
+OTTO: You can't sing, but you can stand a drink. That'll do.
+ADA: Ten minutes. I'm not waiting.
+-> end
