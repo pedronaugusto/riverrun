@@ -119,7 +119,7 @@ pub fn within(rows: []const []const u8, story: []const u8) bool {
 /// spaces more (a row with no words, by none): what a block shows of the inside of a function.
 pub fn withinIndented(arena: std.mem.Allocator, rows: []const []const u8, text: []const u8) error{OutOfMemory}!bool {
     if (within(rows, text)) return true;
-    const spaces = " " ** 40;
+    const spaces: [40]u8 = @splat(' ');
     const shifted = try arena.alloc([]const u8, rows.len);
     var indent: usize = 1;
     while (indent <= spaces.len) : (indent += 1) {
