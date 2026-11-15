@@ -324,6 +324,25 @@ test ":facts lists a fact kept per thing for every key it holds, a stand-in's by
     );
 }
 
+test "choices written together at one depth are one point, the first on a gather's row: the gather says where the flow rejoins" {
+    try expectPlayed(plain,
+        \\== a
+        \\- (ask) * Run.
+        \\  -> ask
+        \\* Hide.
+        \\  -> end
+    , &.{ "1", "1" }, .ended,
+        \\== a
+        \\* 1 Run.
+        \\* 2 Hide.
+        \\> 1
+        \\* 1 Hide.
+        \\> 1
+        \\-> end
+        \\
+    );
+}
+
 test "a line may begin with a value: `{coins} coins` says the value, then the words" {
     try expectPlayed(plain,
         \\facts:

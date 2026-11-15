@@ -30,7 +30,21 @@ pub fn chain(c: *Compiler, stmts: []const ast.Stmt, next: Next) Error!Next {
             // a run of choices is one point; a run of effects one step
             var j = i;
             while (j > 0 and std.meta.activeTag(stmts[j - 1].kind) == kind) j -= 1;
-            after = if (kind == .choice) try choices(c, stmts[j .. i + 1], after) else try effectRun(c, stmts[j .. i + 1], after);
+            if (kind == .effect) {
+                after = try effectRun(c, stmts[j .. i + 1], after);
+                i = j;
+                continue;
+            }
+            // a choice on the gather's row before them is the point's first: the gather says where the flow rejoins
+            const gathered = if (j > 0) gatherChoice(&stmts[j - 1]) else null;
+            const list = try c.arena.alloc(*const ast.Stmt, i + 1 - j + @intFromBool(gathered != null));
+            if (gathered) |g| list[0] = g;
+            for (list[@intFromBool(gathered != null)..], stmts[j .. i + 1]) |*out, *x| out.* = x;
+            after = try choices(c, list, after);
+            if (gathered != null) {
+                j -= 1;
+                after = try gather(c, &stmts[j], after);
+            }
             i = j;
             continue;
         }
@@ -54,14 +68,7 @@ fn stmt(c: *Compiler, s: *const ast.Stmt, after: Next) Error!Next {
             const otherwise = if (k.otherwise.len > 0) try chain(c, k.otherwise, after) else after;
             return try c.node(.{ .step = .{ .branch = .{ .cond = try exprs.condition(c, &k.cond), .then = then, .otherwise = otherwise } } });
         },
-        .gather => |*g| {
-            const then = if (g.then) |t| try stmt(c, t, after) else after;
-            if (g.label == null) return then;
-            const l = labelOf(c, s);
-            const id = c.labels[l.raw()];
-            try c.define(id, .{ .step = .{ .gather = .{ .visits = c.visits[c.checked.labels[l.raw()].visit.raw()].?, .next = then } } });
-            return id;
-        },
+        .gather => |*g| return try gather(c, s, if (g.then) |t| try stmt(c, t, after) else after),
         .effect => return try effectRun(c, s[0..1], after),
         .flow => |*f| return try flow(c, f, after),
         .flow_if => |*f| return try c.node(.{ .step = .{ .branch = .{
@@ -69,8 +76,24 @@ fn stmt(c: *Compiler, s: *const ast.Stmt, after: Next) Error!Next {
             .then = try flow(c, &f.then, after),
             .otherwise = try flow(c, &f.otherwise, after),
         } } }),
-        .choice => return try choices(c, s[0..1], after),
+        .choice => return try choices(c, &.{s}, after),
     }
+}
+
+// A gather's choice, written on its row (`- (ask) * Run.`): the first of the choice point the rows after it go on.
+fn gatherChoice(s: *const ast.Stmt) ?*const ast.Stmt {
+    if (s.kind != .gather) return null;
+    const then = s.kind.gather.then orelse return null;
+    return if (then.kind == .choice) then else null;
+}
+
+// A gather going on to `then`: a labelled one the step its label names, else nothing of its own.
+fn gather(c: *Compiler, s: *const ast.Stmt, then: Next) Error!Next {
+    if (s.kind.gather.label == null) return then;
+    const l = labelOf(c, s);
+    const id = c.labels[l.raw()];
+    try c.define(id, .{ .step = .{ .gather = .{ .visits = c.visits[c.checked.labels[l.raw()].visit.raw()].?, .next = then } } });
+    return id;
 }
 
 fn line(c: *Compiler, s: *const ast.Stmt, l: *const ast.Line, after: Next) Error!Next {
@@ -82,10 +105,10 @@ fn line(c: *Compiler, s: *const ast.Stmt, l: *const ast.Line, after: Next) Error
     return try c.node(.{ .tags = try c.tags(c.checked.tagsOf(s), c.lineId(s)), .step = .{ .line = .{ .text = try text.text(c, c.lineId(s), l.text), .speaker = speaker, .effects = effects, .next = after } } });
 }
 
-fn choices(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeId {
+fn choices(c: *Compiler, stmts: []const *const ast.Stmt, after: Next) Error!story.NodeId {
     const list = try c.arena.alloc(story.Choice, stmts.len);
     const spans = try c.arena.alloc(syntax.Span, stmts.len);
-    for (stmts, list, spans) |*s, *out, *span| {
+    for (stmts, list, spans) |s, *out, *span| {
         span.* = s.span;
         const ch = &s.kind.choice;
         const id = c.lineId(s);

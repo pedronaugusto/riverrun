@@ -301,11 +301,17 @@ const Ways = struct {
                 w.unreached = true;
                 return;
             }
-            if (s.kind == .choice) {
-                // a choice point: the choices written together
-                var j = i;
+            // a choice point: the choices written together at one depth, the first of them on a gather's row or not
+            const gathered: ?*const ast.Stmt = if (s.kind == .gather) if (s.kind.gather.then) |t| (if (t.kind == .choice) t else null) else null else null;
+            if (s.kind == .choice or gathered != null) {
+                if (gathered != null) try w.only(w.g.c.row(s.span));
+                var j = i + @intFromBool(gathered != null);
                 while (j < stmts.len and stmts[j].kind == .choice) j += 1;
-                try w.point(stmts[i..j]);
+                const first = i + @intFromBool(gathered != null);
+                const list = try w.g.c.arena.alloc(*const ast.Stmt, j - first + @intFromBool(gathered != null));
+                if (gathered) |g| list[0] = g;
+                for (list[@intFromBool(gathered != null)..], stmts[first..j]) |*out, *x| out.* = x;
+                try w.point(list);
                 i = j;
                 continue;
             }
@@ -354,17 +360,17 @@ const Ways = struct {
                 // a statement on the gather's row, a choice among them (`- (ask) * Run.`), comes after it
                 if (g.then) |then| try w.stmt(then);
             },
-            .choice => try w.point(s[0..1]),
+            .choice => try w.point(&.{s}),
         }
     }
 
     // A choice point: each choice's body runs from its row, and the flow goes past the point, from its last
     // choice's row, when every choice there can be used up or closed, as the runtime goes past choices when none is
     // open.
-    fn point(w: *Ways, choices: []const ast.Stmt) Error!void {
+    fn point(w: *Ways, choices: []const *const ast.Stmt) Error!void {
         const g = w.g;
         const c = g.c;
-        const key = &choices[0];
+        const key = choices[0];
         if (g.first) {
             const got = try g.reach.getOrPut(c.arena, key);
             if (!got.found_existing) got.value_ptr.* = try .initEmpty(c.arena, g.count);
@@ -373,7 +379,7 @@ const Ways = struct {
         var after: Ways = try .init(g);
         var used = true;
         var passes = true;
-        for (choices) |*s| {
+        for (choices) |s| {
             const ch = &s.kind.choice;
             var way = try w.branch(c.row(s.span));
             way.ends.clearRetainingCapacity();

@@ -6,12 +6,12 @@
     .paths = .{ "build.zig", "build.zig.zon", "src", "tools", "README.md", "LICENSE", "CHANGELOG.md" },
     .dependencies = .{
         .aegis = .{
-            .url = "git+https://github.com/pedronaugusto/aegis#dc3ed602f9c18b4473e9c649d1b1f36403603018",
-            .hash = "aegis-0.2.4-rsxouheoDQB7ckAmyiNbPdOdlqJnN1Sj56bM7_iPKhpY",
+            .url = "git+https://github.com/pedronaugusto/aegis#f52eabef3ec6534c3a74bea3a3b7d95a91ce2581",
+            .hash = "aegis-0.2.4-rsxouoquDQApwYDuGdd2YyEeTeNp6CnJoOZKdVCfc3jt",
         },
         .xenoglyph = .{
-            .url = "git+https://github.com/pedronaugusto/xenoglyph#ef20e2d20b0f07f165e708650861f177199db876",
-            .hash = "xenoglyph-0.5.1-YKXZldz2UwBKwlVX96IhMl4S19PRhaW6e21TmW7GG4b5",
+            .url = "git+https://github.com/pedronaugusto/xenoglyph#ab4d38189cb723e4f102b611ed818380da56c750",
+            .hash = "xenoglyph-0.5.1-YKXZlcMCVABOnefwWET72nJLsmnBsMepiQwrB2Ll5HI9",
             .lazy = true,
         },
 
@@ -22,8 +22,8 @@
         },
 
         .ensign = .{
-            .url = "git+https://github.com/pedronaugusto/ensign#f72eec5499083934e2365ba55022b270e10630d2",
-            .hash = "ensign-0.3.1-6eMTD_K2BQBha7Q8pycMbn7Nc_ebZ2mLKDhywSq2RP4f",
+            .url = "git+https://github.com/pedronaugusto/ensign#1e6ff3cbf3fa7fa6024ecc5e6e485a884af3b953",
+            .hash = "ensign-0.3.1-6eMTD4C3BQBEku2xvEmP1XX4xd4egoiEI4ztNGqx3foe",
             .lazy = true,
         },
     },

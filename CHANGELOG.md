@@ -162,7 +162,9 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
   sets (`ast.File.unread_writes`).
 - The program writes standard output and standard error as streams through ensign's `stdout` and `stderr`, so
   output appended to a file (`>> log`) is appended and the two sharing a file follow each other. Pins ensign
-  f72eec5 and shakedown 5dad84d.
+  1e6ff3c (on ensign main 9689f8e) and shakedown 5dad84d, and with them the family move's aegis f52eabe and
+  xenoglyph ab4d381.
+- `Running.StandIn.name`: the name the play knows a thing by, so a package's news can say whom a role holds.
 - `walk` fires the story's rules as a game does, so play and walk are held equal on stories with rules.
 - `Play.Stop.at` (a `story.At`) replaces `Stop.step`; `Play.Options.steps` is null for the story's own bound.
 - The checker's messages say "the game" where they said "the host": `` `x` is not a tag the game knows ``, `the game
@@ -235,7 +237,8 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
   quest's instance) by its kind and number.
 
 - The checker crashed (`reached unreachable code`) on a choice written on a gather's row (`- * Go.`, `- (ask) *
-  Run.`): it checks as a choice point of that one choice, as it compiles. The whole compiler's generator writes such
+  Run.`): it checks. Choices written together at one depth are one choice point, a gather's row's choice the first
+  of them (`- (ask) * Run.` then `* Hide.` offer both); a choice on a condition's row stays that row's. The whole compiler's generator writes such
   rows.
 - A line or a choice wider than the game allows is reported on its own row, and a line id used twice on the id
   itself, where both were placed over the statement and every row under it.

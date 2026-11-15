@@ -425,7 +425,7 @@ test "the flow goes past a choice point once every choice there is used up or cl
     try std.testing.expectEqual(@as(usize, 0), on.diags.list.items.len);
 }
 
-test "a gather or a condition with a choice on its row checks as a choice point of that one choice" {
+test "a gather or a condition with a choice on its row checks: a gather's choice is the first of the point the choices after it go on" {
     var o = try checkOne(
         \\facts:
         \\  met: bool   (game)

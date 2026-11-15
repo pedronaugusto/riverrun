@@ -1233,7 +1233,12 @@ fn keepArgs(a: std.mem.Allocator, list: []const Arg) error{OutOfMemory}![]const 
 
 fn game(p: *Play) Running.Game {
     const l = p.loaded;
-    return .{ .story = &l.story, .words = &l.strings, .store = l.memory.store(), .host = &l.host, .owners = &p.owners, .stand_in = .{ .ctx = p, .give = standInFor } };
+    return .{ .story = &l.story, .words = &l.strings, .store = l.memory.store(), .host = &l.host, .owners = &p.owners, .stand_in = .{ .ctx = p, .give = standInFor, .name = nameFor } };
+}
+
+fn nameFor(ctx: ?*anyopaque, kind: []const u8, handle: u64) ?[]const u8 {
+    const p: *const Play = @ptrCast(@alignCast(ctx.?)); // safe: made by `game`
+    return p.thingName(kind, handle);
 }
 
 fn standInFor(ctx: ?*anyopaque, kind: []const u8, name: []const u8) error{OutOfMemory}!u64 {

@@ -108,6 +108,9 @@ pub const Running = struct {
     pub const StandIn = struct {
         ctx: ?*anyopaque,
         give: *const fn (ctx: ?*anyopaque, kind: []const u8, name: []const u8) error{OutOfMemory}!u64,
+        /// The name the player knows a thing by: the story's id for it, or the name a stand-in was given; null for
+        /// a handle neither names.
+        name: *const fn (ctx: ?*anyopaque, kind: []const u8, handle: u64) ?[]const u8,
     };
 
     /// One thing the runtime did: `what` happened to `name` (`reached` `the_stranger.noticed`, `due` `ramen`), the

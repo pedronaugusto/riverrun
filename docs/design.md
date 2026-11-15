@@ -228,7 +228,10 @@ the package that defines the key (`[every week]` names one of a calendar's units
 
 - **Choices:** `*` is offered once, `+` stays; `{ condition }` before the text gates one. A gated choice is still
   returned, marked closed, so a host can show it locked. A gather `-` joins the branches; `- (label)` names it.
-  Nesting is by indentation alone.
+  Nesting is by indentation alone. Choices written together at one depth are one choice point, the first of them
+  on a gather's row or not: `- (ask) * Run.` and then `* Hide.` offer Run and Hide together, and the gather's mark
+  says only where the flow rejoins (`-> ask` comes back to the point). A choice on a condition's row (`{ met } *
+  Wave.`) is that row's, gated by it as one point of its own.
 - **Conditions:** `{ condition } line` for one line; `{ condition }` above an indented block, with `{ else }` after
   it. Inline conditions are for words, blocks for whole lines. Braces at a row's start holding a value a line can
   say, a name or a query's answer that is words, a number or a value of a list (not a visit count, which a
@@ -437,8 +440,8 @@ functions; the compiler is built for the machine doing the building, with the vo
      holds), as the runtime goes past choices when none is open; "nothing reaches this" only where that cannot
      happen, as behind a `+` always open. A way past choices all used up by the scene's own flows coming back can
      run off its end; one past choices the game's facts close, or used up only by way of another section or a
-     caller, is not counted so, since whether that happens is the game's to say. A choice written on a gather's row
-     or a condition's (`- (ask) * Run.`, `{ met } * Wave.`) is a choice point of that one choice, as it is compiled.
+     caller, is not counted so, since whether that happens is the game's to say. Choice points are read as
+     compiled ("Choices, gathers and conditions").
      A property holds the two together: over generated stories, no row a play reaches is one the checker said
      nothing reaches;
    - narration that reads like a line (its first words a speaker's id, name or an extra's words, then a colon:
