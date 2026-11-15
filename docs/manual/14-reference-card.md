@@ -209,7 +209,7 @@ In a play, as input:
 | `:set FACT(KEY) = VALUE` | sets a fact kept per thing, for one thing |
 | `:set QUERY(ARGS) = VALUE` | what the game answers a query with, from then on |
 | `:wait N [CLOCK]` | moves a clock on N |
-| `:facts [FACT…]` | the facts that moved since the start, or those named |
+| `:facts [FACT…]` | the facts not at the value they start at, or those named |
 | `:back`, `:restart`, `:quit`, `:help` | back one input; from the start again; stop; list these |
 
 A transcript's rows, each known by how it begins:

@@ -136,7 +136,7 @@ pouring }` does, so a reader of the story sees which lines are said when.
 
 The game sets its facts before the story starts, and changes them while it runs. In a play, you are the game. `--set`
 sets a fact before the story starts, and `:set` sets one at any point in the play, as a row of input. `:facts` prints
-every fact that has moved since the start.
+every fact that holds something other than the value it starts at.
 
 With many inputs, a script is easier than `-i`: a file of inputs, one to a row, exactly as you would type them, with
 `//` before a comment. This is `stories/03/ferry.play`:

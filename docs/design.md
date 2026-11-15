@@ -582,7 +582,7 @@ do to it.
 **In the terminal** a line reads as a line, `SPEAKER (delivery): words`; what the game is told stands in brackets
 under it, as the story writes it; choices are numbered; colour only when the output is a terminal. A writer types
 a choice's number, an outcome when one is asked, or one of a few commands, each there because trying a scene
-needs it and no other way gives it: `:facts [FACT…]` (what moved since the start, or the facts named),
+needs it and no other way gives it: `:facts [FACT…]` (the facts not at the value they start at, or those named),
 `:set FACT = VALUE` (a fact, `+=` and `-=` to add or take, `FACT(KEY)` for a fact kept per thing, or
 `QUERY(ARGS) = VALUE` for what a query answers from now on: the game's state, which a scene tried alone needs),
 `:wait N [CLOCK]` (time passing, the one way a clock moves), `:back` and `:restart` (try the other way), `:quit`,

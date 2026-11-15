@@ -45,7 +45,7 @@ pub const help =
     \\  :set FACT(KEY) = VALUE    a fact kept per thing, for one thing
     \\  :set QUERY(ARGS) = VALUE  what the game answers a query with, from now on
     \\  :wait N [CLOCK]           move a clock on N
-    \\  :facts [FACT ...]         the facts that moved since the start, or those named
+    \\  :facts [FACT ...]         the facts not at the value they start at, or those named
     \\  :back                     back one input
     \\  :restart                  from the start again
     \\  :quit                     stop playing
