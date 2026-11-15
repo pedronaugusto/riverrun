@@ -147,7 +147,7 @@ pub fn effect(cx: Context, e: story.Effect) Error!facts.Effect {
 pub fn keyOf(v: Value) ?facts.Key {
     return switch (v) {
         .ref => |r| if (r == Value.no_ref) null else r,
-        .one_of => |i| if (i == Value.none) null else i,
+        .one_of => |i| i,
         else => null,
     };
 }
@@ -245,9 +245,8 @@ fn holds(set: Value, item: Value) bool {
     return item.one_of < facts.max_items and set.set_of.isSet(item.one_of);
 }
 
-// Equality, where a `one of` or a `ref` that holds nothing equals nothing.
+// Equality, where a `ref` that holds no thing equals nothing.
 fn same(a: Value, b: Value) bool {
-    if (a == .one_of and (a.one_of == Value.none or b.one_of == Value.none)) return false;
     if (a == .ref and (a.ref == Value.no_ref or b.ref == Value.no_ref)) return false;
     return a.eql(b);
 }
@@ -262,7 +261,7 @@ fn query(cx: Context, t: Term, stack: *[story.max_stack]Value, n: *usize) Error!
     if (ret.enumeration) |e| {
         const items = cx.story.items(e).len;
         const fits = switch (answer) {
-            .one_of => |i| i == Value.none or i < items,
+            .one_of => |i| i < items,
             .set_of => |set| if (set.findLastSet()) |last| last < items else true,
             else => true,
         };

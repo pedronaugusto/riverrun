@@ -65,7 +65,7 @@ pub const Set = std.bit_set.Static(max_items);
 pub const Value = union(Kind) {
     boolean: bool,
     int: i64,
-    /// The index of the value among the fact's items, or `none`.
+    /// The index of the value among the fact's items: a `one of` always holds one of its values.
     one_of: u16,
     set_of: Set,
     /// Borrowed: from a store, valid until the fact is set again.
@@ -73,24 +73,24 @@ pub const Value = union(Kind) {
     /// The host's handle, or `no_ref`.
     ref: u64,
 
-    /// A `one of` that holds no value yet: every `=` is false of it.
-    pub const none: u16 = std.math.maxInt(u16);
-    /// A `ref` that holds no thing yet: every `=` is false of it too.
+    /// A `ref` that holds no thing yet: every `=` is false of it.
     pub const no_ref: u64 = 0;
 
     /// What a fact holds before anything sets it, and after its scope is reset: its kind's initial value, and for
-    /// a bounded int the value in its range nearest 0, so a fact's value always lies in its range.
+    /// a bounded int the value in its range nearest 0, so a fact's value always lies in its range, as a `one of`
+    /// always holds one of its values.
     pub fn start(kind: Kind, bounds: ?Bounds) Value {
         if (kind == .int) if (bounds) |b| return .{ .int = b.clamp(0) };
         return initial(kind);
     }
 
-    /// What a fact of `kind` holds before anything sets it, where no bounds narrow it.
+    /// What a fact of `kind` holds before anything sets it, where no bounds narrow it: false, 0, a `one of`'s first
+    /// value, an empty set, no words, no thing. A query's answer the game has not given is this too.
     pub fn initial(kind: Kind) Value {
         return switch (kind) {
             .boolean => .{ .boolean = false },
             .int => .{ .int = 0 },
-            .one_of => .{ .one_of = none },
+            .one_of => .{ .one_of = 0 },
             .set_of => .{ .set_of = .empty },
             .text => .{ .text = "" },
             .ref => .{ .ref = no_ref },
@@ -111,7 +111,7 @@ pub const Value = union(Kind) {
 };
 
 test "values start empty and compare by kind and content" {
-    try std.testing.expect(Value.initial(.one_of).eql(.{ .one_of = Value.none }));
+    try std.testing.expect(Value.initial(.one_of).eql(.{ .one_of = 0 }));
     var kept: Set = .empty;
     kept.set(3);
     try std.testing.expect(!Value.initial(.set_of).eql(.{ .set_of = kept }));

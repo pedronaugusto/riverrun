@@ -48,6 +48,13 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
     try declare.run(&c);
     try walk.run(&c);
     try flow.run(&c);
+    // a fact an effect the reader refused would have written is set, as far as this warning goes
+    for (c.files, 0..) |file, i| {
+        const module = c.moduleOf(@intCast(i)); // safe: a FileId numbers the files
+        for (file.unread_writes) |n| if (c.valueNamed(module, n)) |named| if (named == .fact) {
+            c.facts.items[named.fact.raw()].set = true;
+        };
+    }
     for (c.facts.items) |f| if (!f.game and !f.moment and !f.set) {
         try c.warn(f.span, "nothing sets `{s}`: declare it `(game)` if the game writes it", .{f.name});
     };

@@ -112,6 +112,7 @@ Otto counts the buttons on his coat.
 > 2
 ? talk_down(ada, 1) -> true or false
 > false
+[talked_down = false]
 ADA: Two. I don't haggle in the rain.
 Otto looks at the sky.
 * 1 I haven't got two coins.
@@ -123,13 +124,12 @@ Otto looks at the sky.
 > :back
 ? talk_down(ada, 1) -> true or false
 > true
+[talked_down = true]
 ADA: One, then. Don't tell the boy.
 [pay(1)]
 == crossing
   [music oars]
 The boat pushes off. Behind you the lantern on the post grows small.
-== crossing
-  [music oars]
 = midstream
   [picture fog]
 Halfway over, the fog comes down, and the far bank is gone.
@@ -144,8 +144,6 @@ ADA: You don't need to. I do.
 * 1 Hold still.
 * 2 Stand up to look.
 > 1
-== crossing
-  [music oars]
 = landfall
 The keel scrapes on stones.
 ADA: Out you get.
@@ -166,9 +164,9 @@ set)` after it, so a play never goes one way on an answer you did not see.
 
 **An outcome** is waited for: `? talk_down(ada, 1) -> true or false` says the story is waiting, and for what. The
 next input is the outcome, as the game would give it: `true` or `false` here, a number for an int, one of the
-words for a `one of`. In a terminal the play asks you then. The fact the outcome is kept in is not printed; `:facts`
-shows it. `:back` takes back the last input, so `:back` then `true` has Ada take the coin after all: a script, too,
-can try both ways.
+words for a `one of`. In a terminal the play asks you then. The outcome is then written into the fact that keeps it,
+and printed so, `[talked_down = true]`, as an effect is. `:back` takes back the last input, so `:back` then `true`
+has Ada take the coin after all: a script, too, can try both ways.
 
 ## When the checker says no
 
@@ -274,8 +272,8 @@ which between them declare what this part is about:
 
 ```river
 cast:
-  otto     "Otto"         — a pedlar, at his stall
-  miller   "Mrs Miller"   — from the mill, who buys on the slate
+  otto     "Otto"         a pedlar, at his stall
+  miller   "Mrs Miller"   from the mill, who buys on the slate
 
 facts:
   hour: int   (clock)                // the fair's clock: the game moves it on

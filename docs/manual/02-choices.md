@@ -93,7 +93,8 @@ section ends.
 
 Keep one way out of a loop that the player can always take, a `+` choice or a `*` choice that goes elsewhere, as
 `Go home.` does here. When every choice offered has been taken and none stays, the story goes on past them, to the
-row after the last choice.
+row after the last choice; the checker knows it, and where every choice of a loop is a `*` that comes back, it asks
+for a row after them, a way out for when they are all used up.
 
 ## Playing choices
 

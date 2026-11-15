@@ -1,7 +1,7 @@
 // The night the river came up: a storm the game sends, a rule that keeps time, and a rope that may not hold.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, sheltering at the landing
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, sheltering at the landing
 
 facts:
   minute: int   (clock)                  // the game's clock

@@ -17,7 +17,7 @@ const gpa = std.testing.allocator;
 test "a kitchen: lines, choices open and closed, a gather, a jump and the end" {
     const t = try Told.init(gpa, &.{
         \\cast:
-        \\  dad  "Dad"  — Frank, her father
+        \\  dad  "Dad"  Frank, her father
         \\facts (player):
         \\  carried: set of play, gave
         \\== kitchen
@@ -379,7 +379,7 @@ test "a lever puzzle: in order it opens, a wrong lever or a slow hand starts it 
     const t = try Told.init(gpa, &.{
         \\facts (world):
         \\  seconds: int                          (clock)
-        \\  pulled:  one of a, b, c               (moment)
+        \\  pulled:  one of nothing, a, b, c      (moment)
         \\  levers:  one of idle, one, two, open
         \\  door:    bool
         \\== chapel (rules)
@@ -403,7 +403,8 @@ test "a lever puzzle: in order it opens, a wrong lever or a slow hand starts it 
     const pulled = t.fact("pulled");
     const lever = struct {
         fn pull(told: *Told, r: *react.Rules, which: u16) !void {
-            try told.memory.set(told.fact("pulled"), .{ .one_of = which });
+            // the lever's value: `nothing` is the moment's first, what it holds when nothing happens
+            try told.memory.set(told.fact("pulled"), .{ .one_of = which + 1 });
             try settle(told, r);
         }
     }.pull;
@@ -411,8 +412,8 @@ test "a lever puzzle: in order it opens, a wrong lever or a slow hand starts it 
     try settle(t, &rules);
     try lever(t, &rules, 0);
     try std.testing.expectEqual(@as(u16, 1), t.memory.get(levers).one_of);
-    // the moment is over: it holds nothing once every rule has seen it
-    try std.testing.expectEqual(facts.Value.none, t.memory.get(pulled).one_of);
+    // the moment is over: it holds its first value, `nothing`, once every rule has seen it
+    try std.testing.expectEqual(@as(u16, 0), t.memory.get(pulled).one_of);
     try lever(t, &rules, 1);
     try std.testing.expectEqual(@as(u16, 0), t.memory.get(levers).one_of);
     try lever(t, &rules, 0);

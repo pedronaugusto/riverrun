@@ -1,6 +1,6 @@
 // Otto's stall, every ware a choice, written out from his list.
 cast:
-  otto   "Otto"   — a pedlar, at his stall
+  otto   "Otto"   a pedlar, at his stall
 
 == stall
 OTTO: What'll it be?

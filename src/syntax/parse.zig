@@ -88,6 +88,8 @@ const Reader = struct {
     i: usize = 0,
     /// The ids a line or a choice has taken, by where each starts; any other is refused once the file is read.
     taken: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// The facts the effects it refused would have written: `File.unread_writes`.
+    unread_writes: std.ArrayList([]const u8) = .empty,
 
     fn name(r: *const Reader, p: Placed) ast.Name {
         return .{ .text = p.text, .span = p.span(r.file) };
@@ -133,7 +135,7 @@ const Reader = struct {
         for (r.lines) |l| if (l.id.text.len > 0 and !r.taken.contains(l.id.at)) {
             try r.reportAt(l.id.span(r.file), "an id ends a line or a choice: `{s}` stands at the end of neither", .{l.id.text});
         };
-        return .{ .path = path, .span = .none, .module = module, .decls = try decls.toOwnedSlice(r.arena), .sections = try sections.toOwnedSlice(r.arena) };
+        return .{ .path = path, .span = .none, .module = module, .decls = try decls.toOwnedSlice(r.arena), .sections = try sections.toOwnedSlice(r.arena), .unread_writes = r.unread_writes.items };
     }
 
     // `module name`, if the file's first line says so.
@@ -236,7 +238,8 @@ const Reader = struct {
         }
     }
 
-    // Each entry, `id "Name" — who they are`, and the rows of brackets under it, its tags.
+    // Each entry, `id "Name" who they are`, and the rows of brackets under it, its tags. The note is the rest of the
+    // row after the quoted name: no mark a keyboard may lack, and the quotes end the name without doubt.
     fn castEntries(r: *Reader, ls: []const Line) Error![]const ast.CastEntry {
         var out: std.ArrayList(ast.CastEntry) = .empty;
         var k: usize = 0;
@@ -268,7 +271,7 @@ const Reader = struct {
             }
             const rest = t.from(sp).trim().text;
             if (rest.len < 2 or rest[0] != '"') {
-                try r.report(l, "a cast entry is `id \"Name\"`, with an optional `— who they are`", .{});
+                try r.report(l, "a cast entry is `id \"Name\"`, then if you like a note on who they are: `ada \"Ada\" keeps the ferry`", .{});
                 continue;
             }
             const close = std.mem.findScalarPos(u8, rest, 1, '"') orelse {
@@ -276,13 +279,22 @@ const Reader = struct {
                 continue;
             };
             const after = std.mem.trim(u8, rest[close + 1 ..], " ");
-            const relation: ?[]const u8 = if (std.mem.startsWith(u8, after, "—")) std.mem.trim(u8, after["—".len..], " ") else if (after.len == 0) null else blk: {
-                try r.report(l, "after the name comes `— who they are`, or nothing", .{});
+            const relation: ?[]const u8 = if (after.len == 0) null else if (dashed(after)) |note| blk: {
+                try r.report(l, "the note after the name takes no dash: `{s} \"{s}\" {s}`", .{ t.text[0..sp], rest[1..close], note });
                 break :blk null;
-            };
+            } else after;
             try out.append(r.arena, .{ .span = r.over(l, last), .id = r.name(t.to(sp)), .display = rest[1..close], .relation = relation, .tags = try tags.toOwnedSlice(r.arena) });
         }
         return out.toOwnedSlice(r.arena);
+    }
+
+    // A note written after a dash, as the cast's first form had it (`— who they are`, or `-`, `–`): the note.
+    fn dashed(after: []const u8) ?[]const u8 {
+        for ([_][]const u8{ "—", "–", "-" }) |dash| if (std.mem.startsWith(u8, after, dash)) {
+            const rest = after[dash.len..];
+            if (rest.len == 0 or rest[0] == ' ') return std.mem.trim(u8, rest, " ");
+        };
+        return null;
     }
 
     fn factEntries(r: *Reader, ls: []const Line) Error![]const ast.Fact {
@@ -521,6 +533,18 @@ const Reader = struct {
         return e;
     }
 
+    // In a parameter's `one of …` or `set of …`, the first value written as a type would be (`int`, `ref of person`).
+    fn listedType(ty: []const u8) ?[]const u8 {
+        if (!std.mem.startsWith(u8, ty, "one of ") and !std.mem.startsWith(u8, ty, "set of ")) return null;
+        var it = std.mem.splitScalar(u8, ty["one of ".len..], ',');
+        while (it.next()) |raw| {
+            const v = std.mem.trim(u8, raw, " ");
+            for ([_][]const u8{ "bool", "int", "text" }) |w| if (std.mem.eql(u8, v, w)) return v;
+            for ([_][]const u8{ "ref of ", "one of ", "set of ", "int from " }) |w| if (std.mem.startsWith(u8, v, w)) return v;
+        }
+        return null;
+    }
+
     // Parameters: `type` alone, or `name: type, name: type`. A comma starts a new parameter only before `name:`,
     // so `one of a, b` keeps its commas.
     fn paramsOf(r: *Reader, l: Line, inner: Placed) Fail![]const ast.Param {
@@ -544,6 +568,11 @@ const Reader = struct {
             } else if (std.mem.findScalar(u8, piece.text, ',') != null and !std.mem.startsWith(u8, piece.text, "one of ") and !std.mem.startsWith(u8, piece.text, "set of ")) {
                 // `pay(int, int)`: a comma begins a parameter only before a name, so these read as one type
                 try r.reportAt(piece.span(r.file), "`{s}` is more than one parameter: two or more are each named, `who: ref of person, coins: int`", .{piece.text});
+                return error.Invalid;
+            }
+            // `f(one of a, b, int)`: a list's commas are its own, so a type among its values would be read as a value
+            if (listedType(ty.text)) |t| {
+                try r.reportAt(piece.span(r.file), "`{s}` reads as one parameter, `{s}` among its values: two or more parameters are each named, `mood: one of calm, angry, times: int`", .{ piece.text, t });
                 return error.Invalid;
             }
             try out.append(r.arena, .{ .span = piece.span(r.file), .name = n, .type = try r.typeOf(l, ty, &.{}), .type_span = ty.span(r.file) });
@@ -944,7 +973,7 @@ const Reader = struct {
                 return error.Invalid;
             }
             if (sign) |c| return if (c == '+') .{ .add = try r.change(l, t, k - 1) } else .{ .remove = try r.change(l, t, k - 1) };
-            const value = try expr.parse(r.arena, r.gpa, r.diags, r.file, t.from(k + 1).trim());
+            const value = expr.parse(r.arena, r.gpa, r.diags, r.file, t.from(k + 1).trim()) catch |e| return r.unwritten(t.to(k), e);
             const w = try r.written(l, t.to(k));
             return .{ .set = .{ .span = span, .fact = w.fact, .key = w.key, .value = value.* } };
         }
@@ -958,9 +987,18 @@ const Reader = struct {
 
     // `fact += amount` or `fact -= amount`, the operator at `k`: a set's item, or an int, which the checker tells.
     fn change(r: *Reader, l: Line, t: Placed, k: usize) Fail!ast.Change {
-        const amount = try expr.parse(r.arena, r.gpa, r.diags, r.file, t.from(k + 2).trim());
+        const amount = expr.parse(r.arena, r.gpa, r.diags, r.file, t.from(k + 2).trim()) catch |e| return r.unwritten(t.to(k), e);
         const dest = try r.written(l, t.to(k));
         return .{ .span = t.span(r.file), .fact = dest.fact, .key = dest.key, .amount = amount.* };
+    }
+
+    // An effect whose value was refused: the fact it writes, where that reads as one, kept as written all the same,
+    // so the refusal is the one thing said and the fact is not also called one nothing sets.
+    fn unwritten(r: *Reader, t: Placed, e: Fail) Fail {
+        const w = t.trim();
+        const n = if (std.mem.findScalar(u8, w.text, '(')) |open| w.to(open).trim() else w;
+        if (isQualified(n.text)) try r.unread_writes.append(r.arena, n.text);
+        return e;
     }
 
     // What an effect writes: a fact, or a fact kept per thing and the key it writes, `opinion(wife)`.
@@ -1291,7 +1329,7 @@ test "a small story reads into sections, statements and tags" {
     defer diags.deinit(gpa);
     const story =
         \\cast:
-        \\  dad  "Dad"  — Frank, her father
+        \\  dad  "Dad"  Frank, her father
         \\facts (player):
         \\  carried: set of play, gave,
         \\           hands
@@ -1520,8 +1558,11 @@ test "an extern's parameters are one type alone, or each named" {
         \\  talk_down(ref of person, int) -> bool (action)
         \\  lived(one of stay, go) -> bool
         \\  sell(what: ref of item, to: ref of person)
+        \\  feel(one of calm, angry, int) -> bool
     );
-    try std.testing.expectEqual(@as(usize, 1), diags.list.items.len);
+    try std.testing.expectEqual(@as(usize, 2), diags.list.items.len);
+    // a list's commas are its own: a type among its values is a second parameter written unnamed
+    try std.testing.expectEqualStrings("`one of calm, angry, int` reads as one parameter, `int` among its values: two or more parameters are each named, `mood: one of calm, angry, times: int`", diags.list.items[1].message);
     const d = diags.list.items[0];
     try std.testing.expectEqualStrings("`ref of person, int` is more than one parameter: two or more are each named, `who: ref of person, coins: int`", d.message);
     try std.testing.expectEqual(source.Place{ .line = 2, .col = 13 }, f.place(d.span));
@@ -1555,6 +1596,8 @@ test "each mark design B refuses is reported where it is written, naming the for
         .{ .text = "cast:\n  mum  \"Mum\"\n    hello\n", .line = 3, .col = 5, .message = "under a cast entry stand its tags, in brackets: `[gender feminine]`" },
         .{ .text = "cast:\n  mum  \"Mum\"\n    [x = 1]\n", .line = 3, .col = 5, .message = "a cast entry takes tags, never effects" },
         .{ .text = "cast:\n  [voice]\n", .line = 2, .col = 3, .message = "a cast entry's tags stand on a row indented under it" },
+        .{ .text = "cast:\n  ada  \"Ada\"  — keeps the ferry\n", .line = 2, .col = 3, .message = "the note after the name takes no dash: `ada \"Ada\" keeps the ferry`" },
+        .{ .text = "cast:\n  ada  \"Ada\"  - keeps the ferry\n", .line = 2, .col = 3, .message = "the note after the name takes no dash: `ada \"Ada\" keeps the ferry`" },
         .{ .text = "== a\n[x]\n- (ask)\n  [t]\n", .line = 3, .col = 1, .message = "nothing can be indented under a gather" },
     };
     for (cases) |case| {
@@ -1583,7 +1626,7 @@ test "a row of brackets under a line, a choice and a heading is theirs: tags, th
     defer diags.deinit(gpa);
     const story =
         \\cast:
-        \\  marta  "Marta"   — the merchant
+        \\  marta  "Marta"   the merchant
         \\    [gender feminine] [voice]
         \\== a (pool 2)
         \\  [card]
@@ -1604,6 +1647,8 @@ test "a row of brackets under a line, a choice and a heading is theirs: tags, th
     const f = try parseFile(arena.allocator(), gpa, &diags, 0, "a.river", story);
     try std.testing.expectEqual(@as(usize, 0), diags.list.items.len);
     try std.testing.expectEqual(@as(usize, 2), f.decls[0].kind.cast[0].tags.len);
+    // the note is the rest of the row after the quoted name
+    try std.testing.expectEqualStrings("the merchant", f.decls[0].kind.cast[0].relation.?);
     const s = f.sections[0];
     try std.testing.expectEqual(@as(usize, 2), s.tags.len);
     try expectWritten(story, s.kind_span.?, "(pool 2)");

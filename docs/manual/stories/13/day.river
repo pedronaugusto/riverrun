@@ -1,7 +1,7 @@
 // A day at the fair: three hours before the last ferry home, and five things that want them.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, at his stall
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, at his stall
 
 facts (player):
   coins: int from 0 to 9   (game)
@@ -41,6 +41,7 @@ The church clock says {hours + 10} o'clock.
   The ferry goes over and comes back. Ada does not wave. Then she does.
   [done += river] [hours += 1]
   -> hour
+-> last_ferry
 
 == last_ferry
 ADA: Last one. In you get.

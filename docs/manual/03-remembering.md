@@ -56,9 +56,9 @@ and what kind of value it holds.
 
 - `bool`: true or false. It starts false.
 - `int`: a whole number. `int from 0 to 9` holds only those, and starts at the one nearest 0.
-- `one of pouring, easing, stopped`: one of the words listed, separated by commas. It holds none of them until
-  something sets it, so `{ rain = pouring }` is false at first; a fact the game writes, the game sets before the
-  story asks.
+- `one of pouring, easing, stopped`: one of the words listed, separated by commas. It always holds one of them,
+  the first until something sets it, so `{ rain = pouring }` is true at first; a fact the game writes, the game
+  sets before the story asks. A story that needs "not yet" lists a word for it, first.
 - `set of …`: none, some or all of the words listed. [Chapter 4](04-telling-the-game.md) puts things in one.
 
 A fact's name, and each word of a list, is letters, digits and `_`. Every file of a story sees every fact it

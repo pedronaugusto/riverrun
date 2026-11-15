@@ -1,7 +1,7 @@
 // The fair on the far bank, in two files: this one, and Otto's stall in stall.river.
 cast:
-  otto     "Otto"         — a pedlar, at his stall
-  miller   "Mrs Miller"   — from the mill, who buys on the slate
+  otto     "Otto"         a pedlar, at his stall
+  miller   "Mrs Miller"   from the mill, who buys on the slate
 
 facts:
   hour: int   (clock)                // the fair's clock: the game moves it on

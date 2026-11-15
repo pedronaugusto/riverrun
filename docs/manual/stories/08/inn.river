@@ -1,7 +1,7 @@
 // The Bell at Hollin, the night the rain kept the ferry tied up: a night the game plays room by room.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, going over for the fair
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, going over for the fair
 extras: a drover, the cook
 
 facts:

@@ -21,7 +21,7 @@ qualifies what stands before it. `->` is flow and nothing else, and the structur
 ```river
 cast:
   mum   "Mum"
-  dad   "Dad"     — Frank, her father
+  dad   "Dad"     Frank, her father
 facts (player):
   carried: set of play, gave, hands
 facts (life):
@@ -71,18 +71,21 @@ but a tab, or DEL) is an error over that byte; the row is kept as it is written.
 
 Seen by every file of the story:
 
-- `cast:` ids with a display name, a note after `—`, and tags in brackets on rows indented under the entry:
+- `cast:` ids with a display name in quotes, a note on who they are as the rest of the row, and tags in brackets on
+  rows indented under the entry. Nothing marks where the note begins, since the quotes end the name: a note after a
+  dash (`— the merchant`, the first form) is an error naming the form without it.
   ```
   cast:
-    marta  "Marta"  — the merchant
+    marta  "Marta"  the merchant
       [gender feminine]
   ```
   `extras:` people who speak once and need no name, separated by commas: `extras: a student, the youngest`. A
   speaker that is neither is an error. A cast entry takes tags, never effects.
 - `facts (scope):` typed facts in a scope the host names; `(game)` marks a fact only the host writes,
   `(clock)` an int it only advances, and `(moment)` what happened (a lever pulled, a shot heard), held until rules
-  and quests have seen it and never saved. Only they read a moment; `happened(m)` asks whether one happened at
-  all, its value aside.
+  and quests have seen it and never saved, then back where it starts ("Facts"). Only they read a moment;
+  `happened(m)` asks whether one happened at all, its value aside: whether it holds other than where it starts. So a
+  `one of` moment lists first the value that means nothing happened (`pulled: one of nothing, a, b, c`).
 - `ref of kind` is a type for one of the host's things (a person, an item kind, a place), named in the story by
   its stable id (`wolf_pelt`) and checked against the host's manifest.
 - **A fact kept per thing,** `opinion(person): int` or `mood(one of calm, angry): bool`, holds a value for each
@@ -93,7 +96,9 @@ Seen by every file of the story:
 - `const:` fixed points every run shares (`dies_at = "ten past nine"`).
 - `extern:` the host's vocabulary. `name(params) -> type` is a **query**, pure and callable anywhere; `name(params)`
   is an **action**, run when its line is reached; `name(params) -> type (action)` is an action with an **outcome**
-  the host decides (a roll, a check, a fight). Parameters may be named (`kind: ref of item_kind, n: int`); a
+  the host decides (a roll, a check, a fight). Parameters may be named (`kind: ref of item_kind, n: int`), and two
+  or more are: a `one of` or `set of` keeps the commas after it as its own, so a type among its values
+  (`f(one of a, b, int)`) is an error naming the form, never a value read silently; a
   query declares the stamp of what it reads, keyed by its parameters, `(reads stock(kind))`, so whatever
   evaluates it can be woken when that changes.
 - A list, of a type's values, an extern's parameters, a stamp's keys or `extras:`, is separated by commas.
@@ -186,6 +191,10 @@ to that row:
 - under a **part's heading,** its tags, and its effects are the part's first step (a rule's body is its effects).
 - under a **line,** its tags, and its effects, which happen when the host delivers the line: a host that does not
   deliver it does not apply them, so a memory overheard in hide and seek is carried only if the line is heard.
+  A line whose words come out empty when it is reached (a `{once: …}` used up, words chosen by a condition, a
+  plural or a gender with none) is not delivered: the game is never handed a line with nothing to say, and its tags
+  and effects go with it, unapplied. The checker warns where a line that can say nothing carries effects, so no
+  effect is lost unseen; a `{once: …}` alone on a line with none under it is how a story says a thing once.
   Nothing but brackets stands under a line. A statement written on the row of a condition or a gather
   (`{ met } Go.`, `- In the morning.`) is the row's, and the brackets under the row are its.
 - under a **choice,** its tags, and its effects, which are its first step once it is chosen.
@@ -364,6 +373,13 @@ A conversation with several speakers needs no construct of its own:
 
 ## Facts
 
+- **Where a value starts.** A fact always holds a value of its type, from the start: before anything sets it, after
+  a reset of its scope, and for every key of one kept per thing until that key is set. A `bool` starts false, an
+  `int` 0, a bounded int at the value in its range nearest 0, a `one of` at its first listed value, a set empty,
+  text with no words, a `ref` with no thing; a query's answer the game has not given is its type's first value the
+  same way. There is no hidden "none": `{ rain = none }` is refused unless `none` is a value of the list, and a
+  writer who wants "not yet" lists a value for it first (`rain: one of unknown, pouring, easing`). *Protects:* what
+  the story reads is always a value a writer wrote.
 - **Bounded ints,** `honor: int from -100 to 100`: a fact's value always lies in its range. It starts, and a reset
   of its scope puts it back, at the value in the range nearest 0 (0 where 0 is in it, 5 for `int from 5 to 10`, the
   upper bound of a range wholly below 0), as does every key of one kept per thing until that key is set; a change
@@ -410,10 +426,23 @@ functions; the compiler is built for the machine doing the building, with the vo
    - types;
    - every section reachable from where the host starts the story (its `entries`) and from every section of a
      registered kind, which its package runs and no vocabulary lists, a section a tag names counting as an edge;
-   - no path that runs off a scene without `-> end`, a return, a jump or a tag that leads on;
+   - no path that runs off a scene without `-> end`, a return, a jump or a tag that leads on, each way that runs off
+     reported at its last row and naming the scene or the part, one error to a row;
+   - what the flow reaches, as the runtime reaches it: past a choice point where every choice there can be used up
+     or closed (a `*` whose body leads back to the point, a choice whose condition the checker cannot show always
+     holds), as the runtime goes past choices when none is open; "nothing reaches this" only where that cannot
+     happen, as behind a `+` always open. A way past choices all used up by the scene's own flows coming back can
+     run off its end; one past choices the game's facts close, or used up only by way of another section or a
+     caller, is not counted so, since whether that happens is the game's to say. A choice written on a gather's row
+     or a condition's (`- (ask) * Run.`, `{ met } * Wave.`) is a choice point of that one choice, as it is compiled.
+     A property holds the two together: over generated stories, no row a play reaches is one the checker said
+     nothing reaches;
+   - narration that reads like a line (its first words a speaker's id, name or an extra's words, then a colon:
+     `Ada: …`, `ADA:No space`) is a warning naming the form a line takes;
    - no choice whose condition can never hold, where that is decidable: from constants, enumerations, and the
      least and most of ints ("Counting");
-   - `(game)` facts never set by the story, and a story fact nothing sets;
+   - `(game)` facts never set by the story, and a story fact nothing sets (a fact an effect the reader refused would
+     have written counts as set, so the refusal is said once);
    - tags against the host's schema, so a typo fails with a file and a line;
    - text width against the host's limit, measured by xenoglyph;
    - line ids unique; a release build refuses a line without one.
@@ -568,8 +597,12 @@ name), its parameters typed as an extern's are (a thing of a kind, a number, a v
 read against it and refused in words where it does not fit (``there is no quest `nope` to :start: bounty,
 the_stranger``; ``:start bounty takes target=PERSON: `target` is missing``), and the editor draws a control from it.
 A command is an input like any other: kept with the inputs, so `:back`, `:restart` and a script give it again, and
-told as the row typed. A thing a parameter names is the story's thing of that name, else one of the game's that the
-play stands in for under that name; a thing of another kind is refused. The package refuses what does not fit the
+told as the row typed. **A thing the game names that the story does not is the game's,** wherever the game reaches
+the story: a command's parameter, a fact or a key `:set` and `--set` write, a query's argument or answer, an
+outcome. Each names the story's thing of that name, else one of the game's that the play stands in for under that
+name, made when the input is taken (so `--set 'name(hilde) = "Hilde"'` and `--call 'start delivery giver=hilde'`
+name one hilde, in either order); a thing of another kind is refused. A name mistyped is then a new thing of the
+game's, which the transcript shows by its name. The package refuses what does not fit the
 story as it stands (a quest that runs once, started twice), before anything changed. riverrun knows commands and
 nothing of quests: cairn offers `:start QUEST ROLE=THING…` and `:bind QUEST ROLE=THING…`, the game's `start` and
 `bind`. No package's command takes a name of the play's own, or another's: `join` refuses it. A `(clock)` fact is
@@ -613,16 +646,22 @@ DAD: Go on. Go.
 ```
 
 Each row says what it is by how it begins: `==` a section the flow came to (`=` a part), its tags indented under
-it; `NAME (delivery): words` a line, words alone narration (`\` before narration that begins with one of these
+it, told where the place changes and only there, so a reader always knows where the flow is and no heading is told
+twice in a row: `== section` and then `= part` where the flow comes into a part from elsewhere (a play started at
+`section.part` among them, and coming back from a call), `= part` alone where it comes to a part of the section it
+is in; `NAME (delivery): words` a line, words alone narration (`\` before narration that begins with one of these
 marks), ` ^id` at its end where it has one; `[…]` rows indented under a line or a choice its tags and then its
 effects (a value in quotes only where it holds a comma, a bracket, a quote or `//`), at the margin effects
 reached on their own (actions among them, `[give(letter)]`); `* N` a choice, `* N (closed)` one that cannot be
 taken; `? query(args) = value` a query and its answer, `(not set)` where the player set none, and `? action(args)
--> kind` an outcome waited for; `!` what fired or happened (`! rule section.rule`, `! reached the_stranger.noticed`
+-> kind` an outcome waited for, and once given, `[fact = value]` at the margin, the outcome written into its fact;
+`!` what fired or happened (`! rule section.rule`, `! reached the_stranger.noticed`
 with the journal's words under it, `! due ramen`); `> row` an input as given; `-> end` the end; and a run-time error
 in the diagnostics' one form, placed where what met it is written (`story/kitchen.river:12:9-12:21: error: a sum,
 or a change, passed what an int holds (64 bits) (Overflow)`). Each row comes after what caused it: a query a line's
-words or a condition asks is told before the row it decides, and one a package asks while it works out what
+words or a condition asks is told before the row it decides, under the heading of the place it was asked (a
+condition in a section that then says nothing, before the flow goes on elsewhere, is told under that section's
+heading, not the next), and one a package asks while it works out what
 happened is told under that news, as part of it (`! reached the_stranger.named`, its journal line, then
 `  ? name(stranger) = "Tom"`). The
 same script, start and story always give the same transcript: it holds no handle, address or time. It is what a
@@ -739,7 +778,8 @@ saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapsho
   through. A line comes with its own effects, and says where it is written: its section, and its part where it is in
   one, however the flow came to it, so a host that chooses a mechanic by a section's tags needs no index of its own;
   choices come open or closed, a once-only choice gone after it is taken, and when none is open the flow goes past
-  them; an effects step on its own comes as `effects`.
+  them; an effects step on its own comes as `effects`; a line whose words come out empty is walked past, never
+  handed over, its effects with it.
 - **The host is bound by name at load.** The story's externs carry names and signatures; a Zig host binds a struct
   of functions, reflected by field name into a table indexed by extern id, and a host in another language binds a
   function pointer and its data per name through `Binder`. Every extern must be bound with its signature, or the
@@ -799,9 +839,8 @@ Built.
   in WebAssembly as well as in a game.
 - **A C ABI,** `ffi/riverrun.h`: opaque handles, the caller's allocator, facts and the host's queries and actions by
   callbacks, and a version handshake at load. That reaches C and C++, Rust, C#, GDExtension, Unreal and Swift.
-- **The `riverrun` program:** `check`, `tag`, `play`, `dump`, `explore` (walks every branch on a deterministic clock and
-  proves every section and choice reachable, no dead end and no line that can never be said) and `compile`. Hosts
-  reload `.river` files live through lookout.
+- **The `riverrun` program:** `check`, `tag`, `play` and `compile` ("The program"). Hosts reload `.river` files live
+  through lookout.
 
 ## Reacting to facts
 

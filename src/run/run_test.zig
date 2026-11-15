@@ -173,10 +173,11 @@ fn night() !testing.Built {
     var b: Builder = try .init(gpa);
     defer b.deinit();
     const life = try b.scope("life");
-    const rooms = try b.enumeration(&.{ "front", "kitchen" });
+    // the kitchen first: a `one of` starts at its first value
+    const rooms = try b.enumeration(&.{ "kitchen", "front" });
     const room = try b.fact(.{ .name = "room", .scope = life, .kind = .one_of, .enumeration = rooms, .role = .game });
     const hour = try b.fact(.{ .name = "hour", .scope = life, .kind = .int, .role = .game });
-    const at_front = [_]Term{ .of(.fact, room.raw()), Term.item(rooms.raw(), 0), .of(.eq, 0) };
+    const at_front = [_]Term{ .of(.fact, room.raw()), Term.item(rooms.raw(), 1), .of(.eq, 0) };
     const at_ten = [_]Term{ .of(.fact, hour.raw()), .of(.int, try b.int(22)), .of(.eq, 0) };
     const front_at_ten = [_]Term{ at_front[0], at_front[1], at_front[2], at_ten[0], at_ten[1], at_ten[2], .of(.@"and", 0) };
     const night_s = try b.section(.{ .name = "night", .kind = .pool, .visits = try b.visits("night") });
@@ -201,7 +202,7 @@ test "a pool gives the most specific candidate that holds, then takes turns amon
     try s.start(flow, t.section("night"));
     try t.expectLine(0, "The house is quiet.");
     try t.expectEnd(0);
-    try t.memory.set(t.fact("room"), .{ .one_of = 0 });
+    try t.memory.set(t.fact("room"), .{ .one_of = 1 });
     try s.start(flow, t.section("night"));
     try t.expectLine(0, "The front room is full.");
     try t.memory.set(t.fact("hour"), .{ .int = 22 });
@@ -246,7 +247,10 @@ test "alternatives go in sequence, in a cycle, once, and shuffled by the seed" {
     defer t.deinit();
     for ([_][]const u8{ "a", "b", "c", "c" }) |w| try std.testing.expectEqualStrings(w, try tellAgain(t, "sequence"));
     for ([_][]const u8{ "a", "b", "c", "a" }) |w| try std.testing.expectEqualStrings(w, try tellAgain(t, "cycle"));
-    for ([_][]const u8{ "a", "b", "c", "" }) |w| try std.testing.expectEqualStrings(w, try tellAgain(t, "once"));
+    for ([_][]const u8{ "a", "b", "c" }) |w| try std.testing.expectEqualStrings(w, try tellAgain(t, "once"));
+    // used up, the line says nothing and is not handed over: the flow goes on to its end
+    try t.session.start(.fromRaw(0), t.section("once"));
+    try t.expectEnd(0);
     try t.memory.set(t.story.seed(), .{ .int = 7 });
     for (0..2) |_| {
         var seen: [3]bool = @splat(false);

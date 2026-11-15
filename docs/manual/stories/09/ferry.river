@@ -2,9 +2,9 @@
 version: 2
 
 cast:
-  ada    "Ada"    — keeps the ferry
+  ada    "Ada"    keeps the ferry
     [gender feminine]
-  otto   "Otto"   — a pedlar, going over for the fair
+  otto   "Otto"   a pedlar, going over for the fair
     [gender masculine]
 extras: a boy
 

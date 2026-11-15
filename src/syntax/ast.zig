@@ -28,6 +28,25 @@ pub const File = struct {
     module: ?Name = null,
     decls: []const Decl,
     sections: []const Section,
+    /// The facts written by effects the reader refused for their values (`[owes += price * 2]`): the checker counts
+    /// them as set, so a refused effect is said once, not again as a fact nothing sets.
+    /// Names alone, not nodes of the tree: no place of their own beside the refusal's.
+    unread_writes: []const []const u8 = &.{},
+
+    /// The row `span` begins on, from where it begins to the end of the row's words, never past `span`: where what is
+    /// about a statement itself is placed, not what stands under it (a choice's row, not its body).
+    pub fn rowAt(f: *const File, span: Span) Span {
+        if (f.rows.len == 0 or span.start > f.span.end) return span;
+        var lo: usize = 0;
+        var hi: usize = f.rows.len;
+        while (hi - lo > 1) {
+            const mid = lo + (hi - lo) / 2;
+            if (f.rows[mid].start <= span.start) lo = mid else hi = mid;
+        }
+        const r = f.rows[lo];
+        const words_end: u32 = r.start + r.indent + @as(u32, @intCast(r.text.len)); // safe: a row is part of its file
+        return .{ .file = span.file, .start = span.start, .end = @max(span.start, @min(span.end, words_end)) };
+    }
 
     /// Where `span` starts, as a line and a column: its row, and its byte in the row.
     pub fn place(f: *const File, span: Span) source.Place {

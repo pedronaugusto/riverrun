@@ -159,9 +159,10 @@ const Cli = struct {
 pub fn main(init: std.process.Init) !u8 {
     const cli = ensign.parseOrExit(Cli, init);
     var out_buffer: [4096]u8 = undefined;
-    var out = std.Io.File.stdout().writer(init.io, &out_buffer);
+    // streams: what the shell appends to is appended to, and the two in one file follow each other
+    var out = ensign.stdout(init.io, &out_buffer);
     var err_buffer: [4096]u8 = undefined;
-    var err = std.Io.File.stderr().writer(init.io, &err_buffer);
+    var err = ensign.stderr(init.io, &err_buffer);
     const status = switch (cli.command) {
         .check => |c| try check(init, &out.interface, c),
         .tag => |t| try tag(init, &out.interface, t),
@@ -224,7 +225,12 @@ fn play(init: std.process.Init, out: *std.Io.Writer, err: *std.Io.Writer, p: Pla
     defer loaded.deinit();
     const a = init.arena.allocator();
     const start = if (p.from) |name| loaded.story.sectionNamed(name) orelse {
-        try err.print("{s}: error: the story has no section called `{s}` to start at (a part is `section.part`)\n", .{ report.program, name });
+        // a pool's candidate is named as a part is, and is the pool's to pick
+        if (std.mem.findScalarLast(u8, name, '.')) |dot| if (loaded.story.sectionNamed(name[0..dot])) |whole| if (loaded.story.section(whole).kind == .pool) {
+            try err.print("{s}: error: `{s}` is a candidate of the pool `{s}`, which picks it: a play starts at a section, or a part of a scene\n", .{ report.program, name, name[0..dot] });
+            return 1;
+        };
+        try err.print("{s}: error: the story has no section or part called `{s}` to start at\n", .{ report.program, name });
         return 1;
     } else tools.Play.entry(&m.checked.?, &loaded.story) orelse {
         try err.print("{s}: error: the story has no section to start at: name one with --from\n", .{report.program});

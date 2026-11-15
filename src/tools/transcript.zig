@@ -52,8 +52,10 @@ pub const Transcript = struct {
         switch (e) {
             .section => |at| {
                 const name = s.section(at.section).name;
-                try t.mark(w, .heading, "== {s}", .{name});
-                try t.tagsRow(w, s.section(at.section).tags, 2, null);
+                if (at.whole) {
+                    try t.mark(w, .heading, "== {s}", .{name});
+                    try t.tagsRow(w, s.section(at.section).tags, 2, null);
+                }
                 if (at.part) |part| {
                     const full = s.section(part).name;
                     const short = if (std.mem.startsWith(u8, full, name) and full.len > name.len) full[name.len + 1 ..] else full;
@@ -99,6 +101,7 @@ pub const Transcript = struct {
                 try t.tagsRow(w, c.tags, 2, null);
             },
             .effects => |list| try t.effectsRow(w, list, 0),
+            .outcome => |o| try t.effectsRow(w, &.{.{ .set = .{ .fact = o.fact, .value = o.value } }}, 0),
             .asks => |call| {
                 try t.on(w, .asked);
                 try w.writeAll("? ");
@@ -473,7 +476,6 @@ fn speakerLabel(w: *Writer, p: *const Play, who: story.CastId) Writer.Error!void
 }
 
 fn itemName(s: *const story.Story, e: story.EnumId, i: u16) []const u8 {
-    if (i == facts.Value.none) return "none";
     const r = s.items(e);
     if (i >= r.len) return "?";
     return s.item(r.start + i);

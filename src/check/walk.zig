@@ -5,6 +5,7 @@
 //! row's id and the brackets under it; a line's delivery is a tag of the
 //! key the host names for one.
 
+const std = @import("std");
 const syntax = @import("../syntax.zig");
 const sym = @import("symbols.zig");
 const Checker = @import("Checker.zig");
@@ -98,12 +99,62 @@ fn line(c: *Checker, u: *Unit, s: *const ast.Stmt, l: *const ast.Line) Error!voi
             try c.names.put(c.arena, who, .{ .speaker = id });
         } else try c.err(who.span, "`{s}` is not a speaker: speakers come from `cast:` and `extras:`", .{who.text});
     }
+    if (l.speaker == null) try lookalike(c, u, l);
     try exprs.text(c, u.scope, l.text);
     try width.check(c, ids.rowOf(s, l.text), l.text, c.options.width.line, "line");
     try tags.check(c, u.scope.module, u.scope.section, u.scope.part, try delivered(c, s, l), .line);
     try ids.give(c, s, u.path, key, l.text);
     u.path.ordinal += 1;
+    if (l.effects.len > 0 and l.text.len > 0 and canSayNothing(l.text)) {
+        const at: syntax.Span = .{ .file = l.text[0].span.file, .start = l.text[0].span.start, .end = l.text[l.text.len - 1].span.end };
+        try c.warn(at, "this line can say nothing (a `once` used up, or words chosen with none), and a line with nothing to say is not delivered: the effects under it are applied only when it says something", .{});
+    }
     for (l.effects) |*e| try stmt(c, u, e);
+}
+
+// Whether words can come out empty when said: every literal run blank, and every other piece able to say nothing, a
+// `{once: …}` once it is used up, words chosen by a condition, a plural or a gender with a branch of none, or
+// alternatives with an empty one. A value said (`{coins}`) is taken to say something.
+fn canSayNothing(t: ast.Text) bool {
+    for (t) |piece| {
+        const empty = switch (piece.kind) {
+            .literal => |w| std.mem.trim(u8, w, " \t").len == 0,
+            .value => false,
+            .choose => |ch| canSayNothing(ch.then) or canSayNothing(ch.otherwise),
+            .alternatives => |alt| alt.kind == .once or for (alt.options) |o| {
+                if (canSayNothing(o)) break true;
+            } else false,
+            .select => |sel| for (sel.branches) |b| {
+                if (canSayNothing(b.text)) break true;
+            } else false,
+        };
+        if (!empty) return false;
+    }
+    return true;
+}
+
+// Narration that reads like a line, a writer's slip a play would show only as words: its first words, in any case,
+// a speaker's id or name or an extra's words, a delivery after them or not, and then a colon (`Ada: …`, `ADA:No
+// space.`, `ADA : …`, `Ada (quietly): …`). Narration with a colon after other words (`Ada had one thing to say: no.`,
+// `The rule: pay first.`) is narration and nothing is said.
+fn lookalike(c: *Checker, u: *const Unit, l: *const ast.Line) Error!void {
+    if (l.text.len == 0 or l.text[0].kind != .literal) return;
+    const piece = l.text[0];
+    const words = piece.kind.literal;
+    const colon = std.mem.findScalar(u8, words, ':') orelse return;
+    var who = std.mem.trimEnd(u8, words[0..colon], " \t");
+    if (std.mem.endsWith(u8, who, ")")) if (std.mem.findScalarLast(u8, who, '(')) |open| {
+        who = std.mem.trimEnd(u8, who[0..open], " \t");
+    };
+    if (who.len == 0) return;
+    const id = c.speaker_names.find(u.scope.module, try c.lower(who)) orelse for (c.speakers.items, 0..) |sp, i| {
+        if (sp.display) |d| if (std.ascii.eqlIgnoreCase(d, who)) break sym.idOf(sym.SpeakerId, i);
+    } else return;
+    // over the words and the colon, where the literal is written as it reads (no escape before the colon)
+    const plain = piece.span.end - piece.span.start == words.len;
+    const at: syntax.Span = if (plain) .{ .file = piece.span.file, .start = piece.span.start, .end = piece.span.start + @as(u32, @intCast(colon)) + 1 } else piece.span; // safe: a row is far shorter than a u32
+    const upper = try std.ascii.allocUpperString(c.arena, c.speakers.items[id.raw()].key);
+    try c.warn(at, "`{s}` reads like a line, and is narration: a line is its speaker's id in capitals, then `:` and a space: `{s}: …`", .{ words[0 .. colon + 1], upper });
 }
 
 // A line's tags with its delivery among them, first, as a tag of the key the host names for one.

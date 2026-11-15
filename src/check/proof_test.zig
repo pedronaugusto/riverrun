@@ -150,19 +150,23 @@ test "without the host's schema, the mechanics' scenes run off their ends" {
     defer done(p);
     var checked = try check.run(std.testing.allocator, &p.diags, &p.trees, .{});
     defer checked.deinit();
-    // listening, the day and the rooms end by a tag that leads, which only a schema can say
-    var ends: [3][]const u8 = undefined;
+    // listening, the day and the rooms end by a tag that leads, which only a schema can say: each way of each that
+    // runs off is said once, at its last row
+    var scenes: [3][]const u8 = undefined;
     var n: usize = 0;
     for (p.diags.list.items) |d| {
         try std.testing.expectEqual(syntax.source.Severity.err, d.severity);
-        try std.testing.expect(std.mem.endsWith(u8, d.message, "can run off its end: end it with `-> end`, `<-` or a flow elsewhere"));
-        ends[n] = d.message;
+        try std.testing.expect(std.mem.endsWith(u8, d.message, "can run off its end after this row: end it with `-> end`, `<-` or a flow elsewhere"));
+        const scene = d.message[0 .. std.mem.findScalarPos(u8, d.message, "the scene `".len, '`').? + 1];
+        if (n > 0 and std.mem.eql(u8, scenes[n - 1], scene)) continue;
+        try std.testing.expect(n < scenes.len);
+        scenes[n] = scene;
         n += 1;
     }
     try std.testing.expectEqual(@as(usize, 3), n);
-    try std.testing.expect(std.mem.startsWith(u8, ends[0], "the scene `hide_1969`"));
-    try std.testing.expect(std.mem.startsWith(u8, ends[1], "the scene `day_1998`"));
-    try std.testing.expect(std.mem.startsWith(u8, ends[2], "the scene `wake`"));
+    try std.testing.expectEqualStrings("the scene `hide_1969`", scenes[0]);
+    try std.testing.expectEqualStrings("the scene `day_1998`", scenes[1]);
+    try std.testing.expectEqualStrings("the scene `wake`", scenes[2]);
 }
 
 test "a release refuses the proof, which has no written ids yet" {

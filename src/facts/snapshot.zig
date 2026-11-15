@@ -15,7 +15,7 @@
 //!     keyed    u32, then that many × { name str, kind u8, n u32, n × { key, value } }
 //!
 //!     str      u16 length, then that many bytes of UTF-8
-//!     value    boolean u8 (0 or 1) · int i64 · one_of str (empty: none)
+//!     value    boolean u8 (0 or 1) · int i64 · one_of str (its value's name)
 //!              · set_of u16 count, then count × str · text str
 //!              · ref u8 form, then form 0: u64 handle · form 1: str id
 //!     key      u8 form, then form 0: u64 handle · form 1: str id · form 2: str item
@@ -68,7 +68,7 @@ pub const Saved = struct {
 pub const SavedValue = union(Kind) {
     boolean: bool,
     int: i64,
-    one_of: ?[]const u8,
+    one_of: []const u8,
     set_of: []const []const u8,
     text: []const u8,
     ref: SavedRef,
@@ -170,7 +170,7 @@ fn writeValue(w: *std.Io.Writer, d: schema_.Decl, v: Value, names: RefNames) std
     switch (v) {
         .boolean => |x| try w.writeByte(@intFromBool(x)),
         .int => |x| try w.writeInt(i64, x, .little),
-        .one_of => |x| try str(w, if (x == Value.none) "" else d.items[x]),
+        .one_of => |x| try str(w, d.items[x]),
         .set_of => |x| {
             try w.writeInt(u16, @intCast(x.count()), .little); // safe: at most max_items
             var it = x.iterator(.{});
@@ -364,11 +364,11 @@ fn matched(arena: std.mem.Allocator, d: schema_.Decl, name: []const u8, saved: S
             if (x.len > value.max_text) return error.TextTooLong;
             return .{ .text = x };
         },
-        .one_of => |x| {
-            const item = x orelse return .{ .one_of = Value.none };
+        // a value the story no longer lists is lost, and the fact holds its first value, as it starts
+        .one_of => |item| {
             if (d.itemNamed(item)) |i| return .{ .one_of = i };
             try lost.append(arena, .{ .fact = name, .item = item });
-            return .{ .one_of = Value.none };
+            return .{ .one_of = 0 };
         },
         .set_of => |items| {
             var set: value.Set = .empty;
@@ -438,10 +438,7 @@ const Cursor = struct {
                 else => return error.BadBoolean,
             } },
             .int => .{ .int = try c.int(i64) },
-            .one_of => one: {
-                const item = try c.str(value.max_name, error.NameTooLong);
-                break :one .{ .one_of = if (item.len == 0) null else item };
-            },
+            .one_of => .{ .one_of = try c.str(value.max_name, error.NameTooLong) },
             .set_of => set: {
                 const n = try c.int(u16);
                 if (n > value.max_items) return error.TooManyItems;
@@ -483,7 +480,7 @@ test "a scope's snapshot restores exactly, and leaves the other scopes alone" {
     defer out.deinit();
     try write(&m, &out.writer, testing.life_scope, 0xfeed);
     m.reset(testing.life_scope);
-    try std.testing.expectEqual(Value.none, m.get(testing.life).one_of);
+    try std.testing.expectEqual(@as(u16, 0), m.get(testing.life).one_of);
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
     const report = try read(&m, arena.allocator(), testing.life_scope, 0xfeed, out.written());
@@ -621,7 +618,7 @@ test "a moment is never saved: it is over before any save" {
     const report = try read(&again, arena.allocator(), world, 1, out.written());
     try std.testing.expectEqual(@as(usize, 0), report.added.len + report.dropped.len);
     try std.testing.expect(again.get(.fromRaw(0)).boolean);
-    try std.testing.expectEqual(Value.none, again.get(.fromRaw(1)).one_of);
+    try std.testing.expectEqual(@as(u16, 0), again.get(.fromRaw(1)).one_of);
 }
 
 test "a fact kept per thing is saved key by key, each key named, and a key no longer known is lost" {

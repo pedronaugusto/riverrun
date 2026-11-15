@@ -1,8 +1,8 @@
 // The landing at Hollin, at night: a ferry, and two people waiting for it.
 cast:
-  ada    "Ada"    — keeps the ferry
+  ada    "Ada"    keeps the ferry
     [gender feminine]
-  otto   "Otto"   — a pedlar, going over for the fair
+  otto   "Otto"   a pedlar, going over for the fair
     [gender masculine]
 extras: a boy
 

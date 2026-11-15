@@ -70,6 +70,58 @@ test "a speaker comes from the cast or the extras" {
     try o.only(.err, 7, 1, "`MUM` is not a speaker: speakers come from `cast:` and `extras:`");
 }
 
+test "narration that reads like a line is a warning naming a line's form; narration with a colon after other words is not" {
+    var o = try checkOne(
+        \\cast:
+        \\  ada  "Ada Lane"
+        \\extras: a courier
+        \\== a
+        \\Ada: Not tonight.
+        \\ADA:No space.
+        \\ADA : Spaced.
+        \\Ada (quietly): Go.
+        \\A courier: Letter.
+        \\ada lane: The name.
+        \\Ada had one thing to say: no.
+        \\The rule: pay first.
+        \\Otto: Not in the cast.
+        \\-> end
+    , .{});
+    defer o.deinit();
+    const form = "reads like a line, and is narration: a line is its speaker's id in capitals, then `:` and a space: ";
+    try o.has(.warning, 5, 1, "`Ada:` " ++ form ++ "`ADA: …`");
+    try o.has(.warning, 6, 1, "`ADA:` " ++ form ++ "`ADA: …`");
+    try o.has(.warning, 7, 1, "`ADA :` " ++ form ++ "`ADA: …`");
+    try o.has(.warning, 8, 1, "`Ada (quietly):` " ++ form ++ "`ADA: …`");
+    try o.has(.warning, 9, 1, "`A courier:` " ++ form ++ "`A COURIER: …`");
+    try o.has(.warning, 10, 1, "`ada lane:` " ++ form ++ "`ADA: …`");
+    try std.testing.expectEqual(@as(usize, 6), o.diags.list.items.len);
+}
+
+test "a line that can say nothing and carries effects is a warning: such a line is not delivered" {
+    var o = try checkOne(
+        \\facts:
+        \\  waved: int
+        \\  rain: bool   (game)
+        \\== a
+        \\{once: The boy waves.}
+        \\  [waved += 1]
+        \\{ rain: Wet. | }
+        \\  [waved += 1]
+        \\{once: Once.} And always.
+        \\  [waved += 1]
+        \\{once: Said once, no effects.}
+        \\{seq: First. | Then.}
+        \\  [waved += 1]
+        \\-> end
+    , .{});
+    defer o.deinit();
+    const why = "this line can say nothing (a `once` used up, or words chosen with none), and a line with nothing to say is not delivered: the effects under it are applied only when it says something";
+    try o.has(.warning, 5, 1, why);
+    try o.has(.warning, 7, 1, why);
+    try std.testing.expectEqual(@as(usize, 2), o.diags.list.items.len);
+}
+
 test "a fact must be declared" {
     var o = try checkOne(
         \\== a
@@ -118,6 +170,23 @@ test "the story never sets a fact the game writes" {
     , .{});
     defer o.deinit();
     try o.only(.err, 4, 2, "`spot` is the game's, declared `(game)`: the story reads it and never sets it");
+}
+
+test "an effect the reader refuses for its value is said once: its fact is not also one nothing sets" {
+    var o: Outcome = .{ .arena = .init(std.testing.allocator), .diags = .{} };
+    defer o.deinit();
+    const tree = try o.arena.allocator().create(syntax.ast.File);
+    tree.* = try syntax.parse(o.arena.allocator(), std.testing.allocator, &o.diags, 0, "a.river",
+        \\facts:
+        \\  owes: int
+        \\  price: int   (game)
+        \\== a
+        \\[owes += price * 2]
+        \\-> end
+    );
+    o.files = tree[0..1];
+    o.checked = try check.run(std.testing.allocator, &o.diags, tree[0..1], .{});
+    try o.only(.err, 5, 16, "`*` multiplies, and a formula is the game's: a story adds and subtracts, and asks the game by name, through a query in `extern:`");
 }
 
 test "a fact nothing sets is a warning" {
@@ -213,7 +282,128 @@ test "a scene ends by a flow on every way through it" {
         \\  -> end
     , .{ .schema = &.{ .keys = &.{} } });
     defer o.deinit();
-    try o.only(.err, 3, 4, "the scene `kitchen` can run off its end: end it with `-> end`, `<-` or a flow elsewhere");
+    try o.only(.err, 6, 3, "the scene `kitchen` can run off its end after this row: end it with `-> end`, `<-` or a flow elsewhere");
+}
+
+test "a way that runs off is placed at its last row, one error to a way, naming the scene or the part" {
+    var o = try checkOne(
+        \\facts:
+        \\  met: bool   (game)
+        \\== a
+        \\-> p
+        \\= p
+        \\  { met }
+        \\    He looks up.
+        \\  * Stay.
+        \\    -> end
+        \\  * Go.
+        \\    He goes.
+    , .{});
+    defer o.deinit();
+    const off = "the part `p` can run off its end after this row: end it with `-> end`, `<-` or a flow elsewhere";
+    try o.has(.err, 11, 5, off);
+    try std.testing.expectEqual(@as(usize, 1), o.diags.list.items.len);
+}
+
+test "the flow goes past a choice point once every choice there is used up or closed, as the runtime does" {
+    // every choice taken comes back: what follows is reached, and the scene can run off after the point
+    var o = try checkOne(
+        \\== a
+        \\- (ask)
+        \\* One.
+        \\  -> ask
+        \\* Two.
+        \\  -> ask
+        \\- Nothing left.
+        \\-> end
+    , .{});
+    defer o.deinit();
+    try std.testing.expectEqual(@as(usize, 0), o.diags.list.items.len);
+    var off = try checkOne(
+        \\== a
+        \\- (ask)
+        \\* One.
+        \\  -> ask
+        \\* Two.
+        \\  -> ask
+    , .{});
+    defer off.deinit();
+    try off.only(.err, 5, 1, "the scene `a` can run off its end after this row: end it with `-> end`, `<-` or a flow elsewhere");
+    // past choices the game's facts close, what follows is reached, and the scene is not said to run off there
+    var closed = try checkOne(
+        \\facts:
+        \\  coins: int   (game)
+        \\== a
+        \\- (ask)
+        \\* One.
+        \\  -> ask
+        \\+ { coins > 0 } Pay.
+        \\  -> ask
+        \\
+        \\== b
+        \\* { coins > 0 } Pay.
+        \\  -> end
+        \\Nothing to pay with.
+        \\-> end
+    , .{});
+    defer closed.deinit();
+    try std.testing.expectEqual(@as(usize, 0), closed.diags.list.items.len);
+    // a sticky choice always open keeps the flow at its point; a choice that ends cannot be used up
+    var kept = try checkOne(
+        \\== a
+        \\- (ask)
+        \\* One.
+        \\  -> ask
+        \\+ Wait.
+        \\  -> ask
+        \\Never said.
+        \\== b
+        \\* Stay.
+        \\  -> end
+        \\* Go.
+        \\  -> b
+        \\Never said either.
+    , .{});
+    defer kept.deinit();
+    try kept.has(.warning, 7, 1, "nothing reaches this: the story always goes elsewhere before it");
+    try kept.has(.warning, 13, 1, "nothing reaches this: the story always goes elsewhere before it");
+    try std.testing.expectEqual(@as(usize, 2), kept.diags.list.items.len);
+    // a choice that only leads on to a place that never comes back is not used up there
+    var on = try checkOne(
+        \\== a
+        \\-> p
+        \\= p
+        \\  * Hold still.
+        \\    -> q
+        \\  * Stand up.
+        \\    -> p
+        \\= q
+        \\  -> b
+        \\== b
+        \\-> end
+    , .{});
+    defer on.deinit();
+    try std.testing.expectEqual(@as(usize, 0), on.diags.list.items.len);
+}
+
+test "a gather or a condition with a choice on its row checks as a choice point of that one choice" {
+    var o = try checkOne(
+        \\facts:
+        \\  met: bool   (game)
+        \\== a
+        \\- * Go.
+        \\  -> b
+        \\- (ask) * Run.
+        \\  -> ask
+        \\{ met } * Wave.
+        \\  -> end
+        \\-> end
+        \\== b
+        \\- * Stay.
+        \\  Said.
+    , .{});
+    defer o.deinit();
+    try o.only(.err, 13, 3, "the scene `b` can run off its end after this row: end it with `-> end`, `<-` or a flow elsewhere");
 }
 
 test "what follows a flow away is unreached, unless a label lets flow back" {
@@ -384,6 +574,7 @@ test "a choice that can never be offered is a warning" {
         \\  -> end
         \\* { kept has dad and kept has tom } Both kept.
         \\  -> end
+        \\-> end
     , .{});
     defer o.deinit();
     try o.has(.warning, 8, 5, "this choice can never be offered: its condition can never hold");

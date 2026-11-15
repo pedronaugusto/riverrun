@@ -81,6 +81,7 @@ const Plain = struct {
         .{ .name = "how", .on = .{ .line = true }, .value = .text },
         .{ .name = "side", .on = .{ .choice = true }, .value = .word },
         .{ .name = "then", .on = .{ .section = true }, .value = .section, .leads = true },
+        .{ .name = "music", .on = .{ .section = true, .part = true }, .value = .word },
     } };
     pub const options: check.Options = .{ .schema = &schema, .delivery = "how", .things = &.{.{ .kind = "item", .ids = &.{ "pelt", "letter" } }} };
 };
@@ -131,6 +132,166 @@ test "a story is played as a game plays it: lines, choices, effects when a line 
         \\  met = true
         \\  carried = play
         \\  told = 1
+        \\
+    );
+}
+
+// A crossing in two parts with a section's tags, a call out to another section and back, for where headings are told.
+const crossing =
+    \\== landing
+    \\Ada unties the boat.
+    \\-> crossing
+    \\== crossing
+    \\  [music oars]
+    \\The oars go in.
+    \\-> midstream
+    \\= midstream
+    \\  [music river]
+    \\  The current takes the bow.
+    \\  -> lamp ->
+    \\  The bank comes up.
+    \\  -> fog
+    \\= fog
+    \\  Nothing can be seen.
+    \\  -> end
+    \\
+    \\== lamp
+    \\The lamp is lit.
+    \\<-
+;
+
+test "a heading is told where the place changes, once: a part of the section the flow is in tells the part alone" {
+    try expectPlayed(plain, crossing, &.{}, .ended,
+        \\== landing
+        \\Ada unties the boat.
+        \\== crossing
+        \\  [music oars]
+        \\The oars go in.
+        \\= midstream
+        \\  [music river]
+        \\The current takes the bow.
+        \\== lamp
+        \\The lamp is lit.
+        \\== crossing
+        \\  [music oars]
+        \\= midstream
+        \\  [music river]
+        \\The bank comes up.
+        \\= fog
+        \\Nothing can be seen.
+        \\-> end
+        \\
+    );
+    // started at a part: its section's heading, then the part's, each once
+    var p = try played(plain, &.{.{ .path = "story.river", .text = crossing }}, .{ .from = "crossing.fog" }, &.{});
+    defer p.deinit();
+    try std.testing.expectEqualStrings(
+        \\== crossing
+        \\  [music oars]
+        \\= fog
+        \\Nothing can be seen.
+        \\-> end
+        \\
+    , p.text);
+}
+
+test "a query the flow asks is told under the heading of where it was asked, though nothing is said there" {
+    try expectPlayed(plain,
+        \\extern:
+        \\  left() -> int
+        \\== a
+        \\-> lamp ->
+        \\-> gate
+        \\== lamp
+        \\{ left() > 0 } The lamp is lit.
+        \\<-
+        \\== gate
+        \\The gate is shut.
+        \\-> end
+    , &.{}, .ended,
+        \\== a
+        \\== lamp
+        \\? left() = 0 (not set)
+        \\== gate
+        \\The gate is shut.
+        \\-> end
+        \\
+    );
+}
+
+test "a thing the game names that the story does not is the game's, stood in for, in a fact set and a query's answer alike" {
+    var p = try played(plain, &.{.{ .path = "story.river", .text =
+        \\facts:
+        \\  given: ref of item   (game)
+        \\extern:
+        \\  label(ref of item) -> text
+        \\== a
+        \\Here is {label(given)}.
+        \\-> end
+    }}, .{ .given = &.{ ":set given = ring", ":set label(ring) = \"a ring\"" } }, &.{":facts given"});
+    defer p.deinit();
+    try std.testing.expectEqualStrings(
+        \\> :set given = ring
+        \\> :set label(ring) = "a ring"
+        \\== a
+        \\? label(ring) = "a ring"
+        \\Here is a ring.
+        \\-> end
+        \\> :facts given
+        \\  given = ring
+        \\
+    , p.text);
+}
+
+test "a `one of` fact holds its first value until something sets it, and a query's answer the game has not given is its type's first value" {
+    try expectPlayed(plain,
+        \\facts:
+        \\  rain: one of pouring, easing   (game)
+        \\extern:
+        \\  weather() -> one of fair, foul
+        \\== a
+        \\{ rain = pouring } It pours.
+        \\{ weather() = fair } Fair, they say.
+        \\The {rain} goes on.
+        \\-> end
+    , &.{":facts rain"}, .ended,
+        \\== a
+        \\It pours.
+        \\? weather() = fair (not set)
+        \\Fair, they say.
+        \\The pouring goes on.
+        \\-> end
+        \\> :facts rain
+        \\  rain = pouring
+        \\
+    );
+}
+
+test "a line whose words come out empty is not delivered, and none of its effects is applied" {
+    try expectPlayed(plain,
+        \\facts:
+        \\  waved: int
+        \\== a
+        \\- (top)
+        \\{once: The boy waves.}
+        \\  [waved += 1]
+        \\+ Again.
+        \\  -> top
+        \\+ Stop.
+        \\  -> end
+    , &.{ "1", "2", ":facts" }, .ended,
+        \\== a
+        \\The boy waves.
+        \\  [waved += 1]
+        \\* 1 Again.
+        \\* 2 Stop.
+        \\> 1
+        \\* 1 Again.
+        \\* 2 Stop.
+        \\> 2
+        \\-> end
+        \\> :facts
+        \\  waved = 1
         \\
     );
 }
@@ -270,6 +431,7 @@ test "a query is answered with what the player set, else its type's first value,
         \\? price(pelt) = 0 (not set)
         \\? pay(0) -> true or false
         \\> true
+        \\[paid = true]
         \\[give(letter)]
         \\Paid.
         \\-> end
@@ -280,6 +442,7 @@ test "a query is answered with what the player set, else its type's first value,
         \\> :set price(pelt) = 5
         \\? pay(0) -> true or false
         \\> true
+        \\[paid = true]
         \\[give(letter)]
         \\Paid.
         \\-> end
@@ -723,6 +886,49 @@ test "any story played by any script gives a transcript and a named ending; neve
     }.one, .{ .cases = 600, .seed = 0x91a7, .reach = &.{ "played", "took an input", "came to its end", "took a package's command", "refused a package's command" } });
 }
 
+test "no row a play reaches is one the checker said nothing reaches: the checker's reach is the runtime's" {
+    try shakedown.check(gpa, {}, struct {
+        fn one(_: void, case: *shakedown.Case) anyerror!void {
+            var arena: std.heap.ArenaAllocator = .init(gpa);
+            defer arena.deinit();
+            const a = arena.allocator();
+            var b: Built = undefined;
+            if (!try b.of(a, case)) return;
+            defer b.deinit();
+            const s = &b.loaded.story;
+            if (s.len(.sections) == 0) return;
+            var unreached: std.ArrayList(river.syntax.Span) = .empty;
+            for (b.m.diags.list.items) |d| if (d.severity == .warning and std.mem.startsWith(u8, d.message, "nothing reaches this")) try unreached.append(a, d.span);
+            if (unreached.items.len > 0) case.reached("said nothing reaches a row");
+            const start = if (gen.boolean(case.source)) Play.entry(&b.m.checked.?, s) orelse return else s.sectionNamed(s.section(.fromRaw(gen.intRange(case.source, u32, 0, s.len(.sections) - 1))).name).?;
+            var p: Play = undefined;
+            try p.init(gpa, &b.loaded, .{ .start = start, .steps = 300, .running = whole.joined.running, .delivery = whole.joined.options.delivery });
+            defer p.deinit();
+            for (0..24) |_| {
+                while (try p.next()) |_| {
+                    const node = (p.session.told(.fromRaw(0)) catch null) orelse continue;
+                    const at = b.out.where.of(.{ .step = node }) orelse continue;
+                    for (unreached.items) |u| if (at.file == u.file and at.start >= u.start and at.end <= u.end) {
+                        std.debug.print("the play reached {d}..{d}, which the checker said nothing reaches ({d}..{d})\n", .{ at.start, at.end, u.start, u.end });
+                        return error.TestUnexpectedResult;
+                    };
+                }
+                switch (p.waitingFor() orelse break) {
+                    .choice => {
+                        var open: std.ArrayList(usize) = .empty;
+                        for (p.choosing, 1..) |c, n| if (c.open) try open.append(a, n);
+                        if (open.items.len == 0) break;
+                        p.give(.{ .choose = gen.oneOf(case.source, usize, open.items) }) catch break;
+                    },
+                    .outcome => p.give(.{ .outcome = .{ .value = facts.Value.initial(b.loaded.story.fact(p.asking().?.result.?).kind) } }) catch break,
+                    .end, .stopped => break,
+                }
+            }
+            case.reached("played");
+        }
+    }.one, .{ .cases = 600, .seed = 0x5eac, .reach = &.{ "played", "said nothing reaches a row" } });
+}
+
 fn isCommand(row: []const u8) bool {
     return std.mem.startsWith(u8, row, ":open") or std.mem.startsWith(u8, row, ":restock");
 }
@@ -823,7 +1029,7 @@ test "what play tells is what walk tells for the same choices: one runtime, two 
                     .effects => |list| try played_.list.append(a, .{ .effects = list.len }),
                     .end => try played_.list.append(a, .end),
                     .stopped => stopped = true,
-                    .section, .asked, .asks, .rule, .news => {},
+                    .section, .asked, .asks, .outcome, .rule, .news => {},
                 };
                 switch (p.waitingFor().?) {
                     .choice => {
@@ -838,7 +1044,7 @@ test "what play tells is what walk tells for the same choices: one runtime, two 
                         } else unreachable;
                         try p.give(.{ .choose = number });
                     },
-                    .outcome => try p.give(.{ .outcome = facts.Value.initial(b.loaded.story.fact(p.asking().?.result.?).kind) }),
+                    .outcome => try p.give(.{ .outcome = .{ .value = facts.Value.initial(b.loaded.story.fact(p.asking().?.result.?).kind) } }),
                     .end, .stopped => break,
                 }
             }
@@ -1039,7 +1245,7 @@ test "rules that keep asking the game an outcome that sets them off again are st
     while (given < 1000) : (given += 1) {
         while (try p.next()) |_| {}
         if (p.waitingFor().? != .outcome) break;
-        try p.give(.{ .outcome = .{ .boolean = false } });
+        try p.give(.{ .outcome = .{ .value = .{ .boolean = false } } });
     }
     try std.testing.expectEqual(Play.Waiting.stopped, p.waitingFor().?);
     try std.testing.expect(given < 100);

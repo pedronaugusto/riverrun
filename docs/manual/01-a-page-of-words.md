@@ -6,8 +6,8 @@ people waiting for the ferry to go.
 ```river
 // The landing at Hollin, at night: a ferry, and two people waiting for it.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, going over for the fair
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, going over for the fair
 extras: a boy
 
 == landing
@@ -53,8 +53,9 @@ after it, then a space, then the words. The words are exactly what follows the c
 written.
 
 A row is a line only in that shape. `Otto: Then we wait.` and `OTTO:Then we wait.` are narration (below), name and
-all, and the checker does not say so. In a terminal a play prints a speaker in bold, so a line that has lost its
-speaker shows.
+all, and the checker warns of each, naming the form a line takes: narration whose first words are someone in the
+cast, then a colon, reads like a line that lost its shape. Narration with a colon after other words, `Otto had one
+thing to say: wait.`, is narration and nothing is said.
 
 ## Narration
 
@@ -68,15 +69,16 @@ A row of words with no speaker is narration: what the player reads, or a narrato
 
 ```river
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, going over for the fair
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, going over for the fair
 ```
 
 Everyone who speaks more than once is in the cast. Each entry is a row indented under `cast:`: an id, the name the
-game shows in quotes, and after a dash, `—`, a note for whoever reads the story. The id is what a line names in
+game shows in quotes, and the rest of the row, a note for whoever reads the story. The id is what a line names in
 capitals: `ada` is spoken for by `ADA:`. An id is letters, digits and `_`, so `old_tom` would speak as `OLD_TOM:`.
 The note is for writers, translators and actors, and the game never shows it. It may be left out, and so may the
-spaces that line the entries up; the dash before a note is the long one, `—`, not a hyphen.
+spaces that line the entries up. Nothing marks where the note begins: the quotes end the name, and a dash written
+before the note is refused, with the row as it should be written.
 
 ## Extras
 
@@ -132,7 +134,7 @@ OTTO: Then we wait.
 ```console
 $ riverrun check ferry.river
 ferry.river:11:1-11:5: error: `ADDA` is not a speaker: speakers come from `cast:` and `extras:`
-ferry.river:7:4-7:11: error: the scene `landing` can run off its end: end it with `-> end`, `<-` or a flow elsewhere
+ferry.river:13:1-13:20: error: the scene `landing` can run off its end after this row: end it with `-> end`, `<-` or a flow elsewhere
 ```
 
 Each mistake is one row: the file, where the mistake starts and where it ends as line and column (`11:1-11:5` is

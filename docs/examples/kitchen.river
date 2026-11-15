@@ -1,7 +1,7 @@
 // The first example of riverrun's design: what a story looks like.
 cast:
   mum   "Mum"
-  dad   "Dad"     — Frank, her father
+  dad   "Dad"     Frank, her father
 facts (player):
   carried: set of play, gave, hands
 facts (life):

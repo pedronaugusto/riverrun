@@ -94,7 +94,8 @@ fn choices(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.NodeI
             .target = target,
         };
     }
-    c.at = stmts[0].span;
+    // the point is where its first choice's row is, not over that choice's body
+    c.at = if (stmts[0].span.file < c.checked.files.len) c.checked.files[stmts[0].span.file].rowAt(stmts[0].span) else stmts[0].span;
     return c.node(.{ .step = .{ .choices = .{ .choices = try c.choiceList(list, spans), .next = after } } });
 }
 

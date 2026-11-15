@@ -116,8 +116,6 @@ $ riverrun play --from crossing --set 'carrying = lantern' --set 'trust = 1' -i 
 == crossing
   [music oars]
 The boat pushes off. Behind you the lantern on the post grows small.
-== crossing
-  [music oars]
 = midstream
   [picture fog]
 Halfway over, the fog comes down.
@@ -144,8 +142,6 @@ OTTO: I can't see the bank.
 ADA: You don't need to. I do.
 * 1 Hold still.
 > 1
-== crossing
-  [music oars]
 = landfall
 The keel scrapes on stones.
 ADA: Out you get.
@@ -157,9 +153,11 @@ OTTO: Keep the lantern.
 -> end
 ```
 
-A play prints a section's heading, with its tags, each time the story comes to it, and `= part` under it for a
-part: back from `lamp` it prints `== crossing` and `= midstream` again, where the story goes on. Going back to
-`midstream` after standing up, the story does not print the heading again until it has been elsewhere.
+A play prints where the story is each time that changes, and only then: a section's heading, with its tags, when
+the story comes into the section, and `= part` under it for a part; `= part` alone when it moves to another part of
+the section it is in, as `= midstream` after `The boat pushes off.` and `= landfall` after `> 1`. Back from
+`lamp` it prints `== crossing` and `= midstream` again, where the story goes on. Going back to `midstream` after
+standing up, the story does not print the heading again until it has been elsewhere.
 
 In a terminal, `:back` takes back the last input and `:restart` starts again, to try the other way.
 
@@ -178,11 +176,11 @@ This copy, `mistakes/05/ferry.river`, has lost the row that takes the player bac
 
 ```console
 $ riverrun check ferry.river
-ferry.river:68:3-68:12: error: the part `midstream` can run off its end: end it with `-> end`, `<-` or a flow elsewhere
+ferry.river:77:5-77:70: error: the part `midstream` can run off its end after this row: end it with `-> end`, `<-` or a flow elsewhere
 ```
 
-The error is placed on the part's name, since it is the part that has a way out with nowhere to go; the way is the
-choice above whose rows stop.
+The error is placed on the last row of the way that runs off, here the last row under `Stand up to look.`, and
+names the part it runs off; each way that runs off is its own error, on its own last row.
 
 And this one, `mistakes/05/jump/ferry.river`, goes to `lamp` with `-> lamp` where it meant to call it:
 

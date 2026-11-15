@@ -131,7 +131,7 @@ fn written(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
     try out.appendSlice(a,
         \\cast:
         \\  mum   "Mum"
-        \\  dad   "Dad"   — her father
+        \\  dad   "Dad"   her father
         \\facts:
         \\  met: bool
         \\  n: int from -5 to 9
@@ -266,6 +266,15 @@ fn statement(s: *shakedown.Source, a: std.mem.Allocator, out: *std.ArrayList(u8)
             }
         },
         7 => try out.appendSlice(a, gen.oneOf(s, []const u8, &.{ "{ met } MUM: Inline.", "{ hour >= 2 } Late.", "// a writer's note", "" })),
+        // a choice on a gather's row or a condition's, its body under it
+        8 => {
+            try out.appendSlice(a, gen.oneOf(s, []const u8, &.{ "- * Go.", "- (again) * Again.", "{ met } * Wave.", "- (more) + More." }));
+            try out.append(a, '\n');
+            try indent(a, out, depth + 1);
+            if (gen.boolean(s)) {
+                try out.appendSlice(a, gen.oneOf(s, []const u8, &.{ "-> again", "-> more", "MUM: Again." }));
+            } else try out.print(a, "-> s{d}", .{gen.intRange(s, usize, 0, sections - 1)});
+        },
         else => try out.appendSlice(a, "MUM: Something said."),
     }
     try out.append(a, '\n');

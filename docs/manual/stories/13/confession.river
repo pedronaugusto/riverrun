@@ -1,7 +1,7 @@
 // Halfway back across the river, Otto says the lantern was never his to give.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, coming home from the fair
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, coming home from the fair
 
 facts:
   knows: set of thief, owner, sorry   // what Otto has owned up to

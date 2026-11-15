@@ -10,8 +10,8 @@ Otto tells a story at supper, and whoever else is at the table puts in a word af
 ```river
 // Supper at the Bell: Otto tells how he lost his cart, and whoever is at the table puts in a word.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, going over for the fair
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, going over for the fair
 extras: a boy
 
 facts:
@@ -123,8 +123,8 @@ Three hours at the fair before the last ferry home, and five things that want th
 ```river
 // A day at the fair: three hours before the last ferry home, and five things that want them.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, at his stall
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, at his stall
 
 facts (player):
   coins: int from 0 to 9   (game)
@@ -164,6 +164,7 @@ The church clock says {hours + 10} o'clock.
   The ferry goes over and comes back. Ada does not wave. Then she does.
   [done += river] [hours += 1]
   -> hour
+-> last_ferry
 
 == last_ferry
 ADA: Last one. In you get.
@@ -175,7 +176,10 @@ ADA: Last one. In you get.
 
 **Why a counter, and a label.** Each thing done takes an hour, `[hours += 1]`, and goes back to `- (hour)`, where
 the first thing the story asks is whether the hours are spent. So the day ends after three things, whichever three,
-and the label is the one place that says so. `{hours + 10}` works out the time from it.
+and the label is the one place that says so. `{hours + 10}` works out the time from it. The `-> last_ferry` after
+the choices is the way out the checker asks for: every choice here is offered once and comes back to `hour`, so as
+far as the checker can tell they could all be used up, and the story would go past them and off the end of the
+scene.
 
 **Why `*`.** Each thing is done once, so each is a choice offered once. Some are offered only at some hours or to
 some players: setting out the stall only at the start, `{ hours = 0 }`; a ribbon only to a player with a coin who
@@ -234,8 +238,8 @@ Halfway back across the river, Otto owns up that the lantern was never his to gi
 ```river
 // Halfway back across the river, Otto says the lantern was never his to give.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, coming home from the fair
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, coming home from the fair
 
 facts:
   knows: set of thief, owner, sorry   // what Otto has owned up to
@@ -344,8 +348,8 @@ A storm breaks over the landing, the river rises, and the boat must be hauled ou
 ```river
 // The night the river came up: a storm the game sends, a rule that keeps time, and a rope that may not hold.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, sheltering at the landing
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, sheltering at the landing
 
 facts:
   minute: int   (clock)                  // the game's clock
@@ -395,8 +399,9 @@ game's clock later. The scene itself only asks `water` each time round, at `- (n
 7](07-the-games-vocabulary.md)): `[hauled = haul(otto)]` stops the story until the game says, and the story goes on
 from the answer. The haul is `+`, so a failed haul can be tried again, as long as the water is rising.
 
-**Why the water is set first.** `water` holds none of its values until something sets it ([chapter
-3](03-remembering.md)), and the rules ask for `low`, so the scene's first row sets it.
+**Why the water is set first.** `water` starts at its first value, `low` ([chapter 3](03-remembering.md)), and the
+rules ask for `low`; the scene's first row sets it all the same, so the storm starts low however the story came to
+it.
 
 This is `stories/13/storm.play`, in which the rope slips and the river wins:
 
@@ -421,6 +426,7 @@ ADA: It's coming up! Help me get her out of the water!
 > 1
 ? haul(otto) -> true or false
 > false
+[hauled = false]
 The rope burns through your hands, and the boat slides back.
 ADA: It's coming up! Help me get her out of the water!
 * 1 Haul the boat up the slip, with Otto.
@@ -455,6 +461,7 @@ Rain on the landing roof, and Ada's boat pulling at its rope.
 > 1
 ? haul(otto) -> true or false
 > true
+[hauled = true]
 The keel grinds up the stones, out of the river's reach.
 ADA: There. She'll do.
 -> end

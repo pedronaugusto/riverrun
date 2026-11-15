@@ -1,6 +1,6 @@
 // The toll gate on the far bank: a penny to pass up to the fair.
 cast:
-  otto   "Otto"   — a pedlar, going over for the fair
+  otto   "Otto"   a pedlar, going over for the fair
 extras: a tollman
 
 facts (player):

@@ -6,6 +6,13 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Added
 
+- The checker warns of narration that reads like a line: its first words a speaker's id, name or an extra's words,
+  then a colon (`Ada: …`, `ADA:No space.`, `ADA : …`), naming the form a line takes; narration with a colon after
+  other words is not warned of.
+- The checker warns of a line that can say nothing (a `{once: …}` used up, words chosen with none) and carries
+  effects: such a line is not delivered, and its effects are applied only when it says something.
+- `Play.Event.outcome`: the outcome the game gave, written into its fact, told as `[fact = value]`.
+- `ast.File.rowAt`, `Checker.row`: a statement's own row, where what is about it is placed.
 - The manual, `docs/manual/`: its index and frame, and chapters 1 to 6 for a writer (a page of words, choices,
   facts and conditions, telling the game, scenes and flow, text that varies and its ids), each over a running story
   in `docs/manual/stories/`, its mistakes in `docs/manual/mistakes/`, and a play of it. Every story it shows is
@@ -130,6 +137,32 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Changed
 
+- A `one of` fact always holds one of its values: it starts, and a reset puts it back, at its first listed value;
+  `facts.Value.none` is gone, a snapshot and the JSON form always name the value, and a value a save names that the
+  story no longer lists is lost to the first value and reported. A `one of` moment lists first the value meaning
+  nothing happened. design.md "Where a value starts" says it once for every type.
+- The cast note is the rest of the row after the quoted name: `ada "Ada" keeps the ferry`. A note after a dash
+  (`—`, `–`, `-`) is refused, naming the row without it. Every story here and in the manual is rewritten so.
+- The checker's reach is the runtime's: a choice point is passed where every choice there can be used up (a `*`
+  whose body leads back to it) or closed, so "nothing reaches this" is said only where that cannot happen. A way past
+  choices all used up by the scene's own flows can run off its end. A run-off is reported at the last row of each
+  way that runs off, naming the scene or the part (was: on the scene's or part's name, once).
+- A line whose words come out empty is not handed to the game, and its effects go with it (`run.Session.next`).
+- The transcript tells a heading only where the place changes: `--from section.part` tells `== section` then
+  `= part` once; a part of the section the flow is in tells `= part` alone (`Event.section.whole`). A query the
+  flow asks is told under the heading of where it was asked (`Asked.where`, `Play.Place`).
+- A thing the game names that the story does not is stood in for in `:set`, `--set`, a query's arguments and
+  answers and an outcome, as in a package's command: `Input.set` and `Input.outcome` take `Arg`s, resolved when the
+  input is taken.
+- An extern's `one of` or `set of` parameter with a type among its values (`f(one of a, b, int)`) is refused,
+  naming the form: two or more parameters are each named.
+- Messages: `--set` on a clock and `:wait` on a fact name both forms (`:wait N` in a play, `--wait N` before it
+  starts); `--from` with a pool's candidate says it is the pool's to pick; "more choices at once" is placed on the
+  first choice's row; a fact an effect the reader refused would have written is not also warned of as one nothing
+  sets (`ast.File.unread_writes`).
+- The program writes standard output and standard error as streams through ensign's `stdout` and `stderr`, so
+  output appended to a file (`>> log`) is appended and the two sharing a file follow each other. Pins ensign
+  f72eec5 and shakedown 5dad84d.
 - `walk` fires the story's rules as a game does, so play and walk are held equal on stories with rules.
 - `Play.Stop.at` (a `story.At`) replaces `Stop.step`; `Play.Options.steps` is null for the story's own bound.
 - The checker's messages say "the game" where they said "the host": `` `x` is not a tag the game knows ``, `the game
@@ -189,6 +222,9 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Fixed
 
+- The checker crashed (`reached unreachable code`) on a choice written on a gather's row (`- * Go.`, `- (ask) *
+  Run.`): it checks as a choice point of that one choice, as it compiles. The whole compiler's generator writes such
+  rows.
 - A line or a choice wider than the game allows is reported on its own row, and a line id used twice on the id
   itself, where both were placed over the statement and every row under it.
 - An extern written with two unnamed parameters, `pay(int, int)`, is refused as more than one parameter, each to

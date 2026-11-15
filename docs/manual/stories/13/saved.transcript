@@ -12,6 +12,7 @@ Rain on the landing roof, and Ada's boat pulling at its rope.
 > 1
 ? haul(otto) -> true or false
 > true
+[hauled = true]
 The keel grinds up the stones, out of the river's reach.
 ADA: There. She'll do.
 -> end

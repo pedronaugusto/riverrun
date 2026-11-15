@@ -28,7 +28,7 @@ Every mark of river on one page. Each row below is a row of one story, `stories/
 version: 2                                              // which version of the story this is
 
 cast:
-  ada    "Ada"    — keeps the ferry                     // an id, the name the game shows, a note
+  ada    "Ada"    keeps the ferry                       // an id, the name the game shows, a note
     [gender feminine]                                   // a cast entry's tag
   otto   "Otto"
     [gender masculine]
@@ -302,7 +302,7 @@ row         = IND ( declaration | heading | brackets | statement ) [ " ^" id ] [
 comment     = "//" { any }                     ; at the start of the words, or after a space
 
 declaration = "version:" int
-            | "cast:" NL { IND name quoted [ "—" words ] NL { IND brackets NL } }
+            | "cast:" NL { IND name quoted [ words ] NL { IND brackets NL } }
             | "extras:" words { "," words }
             | "facts" [ "(" name ")" ] ":" NL { IND fact NL }
             | "const:" NL { IND name "=" value NL }

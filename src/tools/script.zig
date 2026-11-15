@@ -162,10 +162,7 @@ fn packageCommand(a: std.mem.Allocator, p: *const Play, index: usize, text: []co
         if (given[k]) return refuse(a, why, "`{s}` is given twice", .{name});
         given[k] = true;
         const t = f.params[k].type;
-        args[k] = if (t.kind == .ref and !eql(words, "none")) blk: {
-            if (!isName(words)) return refuse(a, why, "`{s}` takes a thing by its name, not `{s}`", .{ name, words });
-            break :blk .{ .thing = words };
-        } else .{ .value = try value(a, p, words, .{ .kind = t.kind, .enumeration = t.enumeration, .ref_kind = t.ref_kind }, why) };
+        args[k] = try arg(a, p, name, words, .{ .kind = t.kind, .enumeration = t.enumeration, .ref_kind = t.ref_kind }, why);
     }
     for (given, f.params) |g, param| if (!g) return refuse(a, why, ":{s}{s}{s} takes {s}: `{s}` is missing", .{ c.name, if (f.object.len > 0) " " else "", f.object, try paramList(a, p, f), param.name });
     return .{ .command = .{ .command = index, .form = form, .args = args } };
@@ -223,7 +220,7 @@ fn bare(a: std.mem.Allocator, p: *const Play, text: []const u8, why: *[]const u8
         .outcome => {
             const call = p.asking().?;
             const d = p.loaded.story.fact(call.result.?);
-            return .{ .outcome = try value(a, p, text, transcript.factShape(d), why) };
+            return .{ .outcome = try arg(a, p, d.name, text, transcript.factShape(d), why) };
         },
         .end => return refuse(a, why, "the story has ended: :back, :restart or :quit", .{}),
         .stopped => return refuse(a, why, "the story stopped: :back or :restart", .{}),
@@ -257,22 +254,22 @@ fn set(a: std.mem.Allocator, p: *const Play, text: []const u8, why: *[]const u8)
     const name, const inner = splitCall(left) orelse return refuse(a, why, "`{s}` is not a name: {s}", .{ left, usage });
     if (s.factNamed(name)) |f| {
         const d = s.fact(f);
-        var key: ?facts.Key = null;
+        var key: ?Play.Arg = null;
         if (inner) |k| {
             key = switch (d.key) {
                 .none => return refuse(a, why, "`{s}` is not kept per thing: :set {s} = …", .{ name, name }),
-                .items => |e| try item(a, s, e, std.mem.trim(u8, k, " "), why),
-                .ref => |kind| p.thingNamed(s.refKind(kind), std.mem.trim(u8, k, " ")) orelse return refuse(a, why, "there is no {s} called `{s}`", .{ s.refKind(kind), k }),
+                .items => |e| .{ .value = .{ .one_of = try item(a, s, e, std.mem.trim(u8, k, " "), why) } },
+                .ref => |kind| try arg(a, p, name, std.mem.trim(u8, k, " "), .{ .kind = .ref, .ref_kind = kind }, why),
             };
         } else if (d.key != .none) return refuse(a, why, "`{s}` is kept per thing: :set {s}(KEY) = …", .{ name, name });
         const shape = transcript.factShape(d);
-        const v: facts.Value = switch (op) {
-            .set => try value(a, p, right, shape, why),
-            .add, .remove => switch (d.kind) {
+        const v: Play.Arg = switch (op) {
+            .set => try arg(a, p, name, right, shape, why),
+            .add, .remove => .{ .value = switch (d.kind) {
                 .int => .{ .int = std.fmt.parseInt(i64, right, 10) catch return refuse(a, why, "`{s}` is an int: += and -= take a number", .{name}) },
                 .set_of => .{ .one_of = try item(a, s, d.enumeration.?, right, why) },
                 else => return refuse(a, why, "+= and -= change a set or an int, and `{s}` is neither", .{name}),
-            },
+            } },
         };
         return .{ .set = .{ .target = .{ .fact = .{ .fact = f, .key = key } }, .effect = op, .value = v } };
     }
@@ -282,21 +279,21 @@ fn set(a: std.mem.Allocator, p: *const Play, text: []const u8, why: *[]const u8)
         if (!eql(x.name, name)) continue;
         if (x.action) return refuse(a, why, "`{s}` is an action: the game decides its outcome when the story asks", .{name});
         const list = try arguments(a, p, x, inner orelse "", why);
-        return .{ .set = .{ .target = .{ .answer = .{ .query = id, .args = list } }, .effect = op, .value = try value(a, p, right, transcript.paramShape(s, x.returns.?), why) } };
+        return .{ .set = .{ .target = .{ .answer = .{ .query = id, .args = list } }, .effect = op, .value = try arg(a, p, name, right, transcript.paramShape(s, x.returns.?), why) } };
     }
     return refuse(a, why, "the story has no fact or query called `{s}`", .{name});
 }
 
-fn arguments(a: std.mem.Allocator, p: *const Play, x: story.Extern, text: []const u8, why: *[]const u8) Error![]const facts.Value {
+fn arguments(a: std.mem.Allocator, p: *const Play, x: story.Extern, text: []const u8, why: *[]const u8) Error![]const Play.Arg {
     const s = &p.loaded.story;
-    var list: std.ArrayList(facts.Value) = .empty;
+    var list: std.ArrayList(Play.Arg) = .empty;
     var it = std.mem.splitScalar(u8, text, ',');
     while (it.next()) |raw| {
         const word = std.mem.trim(u8, raw, " ");
         if (word.len == 0 and x.params.len == 0) break;
         if (list.items.len == x.params.len) return refuse(a, why, "`{s}` takes {d} argument{s}", .{ x.name, x.params.len, if (x.params.len == 1) "" else "s" });
         const param = s.param(x.params.start + @as(u32, @intCast(list.items.len))); // safe: below the extern's params
-        try list.append(a, try value(a, p, word, transcript.paramShape(s, param), why));
+        try list.append(a, try arg(a, p, x.name, word, transcript.paramShape(s, param), why));
     }
     if (list.items.len != x.params.len) return refuse(a, why, "`{s}` takes {d} argument{s}", .{ x.name, x.params.len, if (x.params.len == 1) "" else "s" });
     return list.items;
@@ -331,6 +328,15 @@ fn factList(a: std.mem.Allocator, p: *const Play, text: []const u8, why: *[]cons
     return list.items;
 }
 
+/// What a player writes for something of `shape`, which `for_what` takes: a thing by its name, which the play
+/// resolves when it takes the input (the story's thing of that name, else one of the game's it stands in for), or
+/// any other value as `value` reads it.
+pub fn arg(a: std.mem.Allocator, p: *const Play, for_what: []const u8, text: []const u8, shape: transcript.Shape, why: *[]const u8) Error!Play.Arg {
+    if (shape.kind != .ref or eql(text, "none")) return .{ .value = try value(a, p, text, shape, why) };
+    if (!isName(text)) return refuse(a, why, "`{s}` takes a thing by its name, not `{s}`", .{ for_what, text });
+    return .{ .thing = text };
+}
+
 /// A value of `shape` as a player writes it: `true`, `-3`, a value of its list, a set's values separated by commas
 /// (none for none), a thing's id, words in quotes.
 pub fn value(a: std.mem.Allocator, p: *const Play, text: []const u8, shape: transcript.Shape, why: *[]const u8) Error!facts.Value {
@@ -342,7 +348,7 @@ pub fn value(a: std.mem.Allocator, p: *const Play, text: []const u8, shape: tran
             return refuse(a, why, "true or false, not `{s}`", .{text});
         },
         .int => return .{ .int = std.fmt.parseInt(i64, text, 10) catch return refuse(a, why, "a number, not `{s}`", .{text}) },
-        .one_of => return .{ .one_of = if (eql(text, "none")) facts.Value.none else try item(a, s, shape.enumeration.?, text, why) },
+        .one_of => return .{ .one_of = try item(a, s, shape.enumeration.?, text, why) },
         .set_of => {
             var items: facts.Set = .empty;
             if (eql(text, "none") or text.len == 0) return .{ .set_of = items };

@@ -11,8 +11,6 @@ const facts = @import("../facts.zig");
 const story = @import("../story.zig");
 const eval = @import("eval.zig");
 
-const Value = facts.Value;
-
 pub const Error = eval.Error || facts.SetError || error{
     /// The string table has no words for the line: it does not serve this story.
     MissingLine,
@@ -89,7 +87,7 @@ fn written(cx: eval.Context, r: story.Range) Error![]const u8 {
     return switch (v) {
         .boolean => |b| if (b) "true" else "false",
         .int => |i| try cx.arena.print("{d}", .{i}),
-        .one_of => |i| if (i == Value.none or e == null) "" else itemName(cx.story, e.?, i),
+        .one_of => |i| if (e) |of| itemName(cx.story, of, i) else "",
         .text => |x| try cx.arena.dupe(u8, x),
         .set_of => |set| try joined(cx, set, e),
         // a thing is said through a query the host answers, `{name(target)}`: its handle says nothing

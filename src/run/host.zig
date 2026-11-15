@@ -284,7 +284,7 @@ fn kindOf(comptime T: type) Kind {
     return switch (T) {
         bool => .boolean,
         i64 => .int,
-        // A `one of`: the item's index, or `Value.none`.
+        // A `one of`: the item's index.
         u16 => .one_of,
         facts.Set => .set_of,
         []const u8 => .text,

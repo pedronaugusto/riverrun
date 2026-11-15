@@ -317,7 +317,8 @@ fn walk(s: *Session, f: *Flow, at: NodeId) Error!?Step {
     const n = s.story.node(at);
     switch (n.step) {
         .line => |l| {
-            // made first, so a named error in its words or effects leaves the flow at the line it is about
+            // made first, so a named error in its words or effects leaves the flow at the line it is about; a line
+            // whose words came out empty is not handed over, and the walk goes on
             const said = try s.line(f, at, l, n.tags);
             f.at = l.next;
             return said;
@@ -395,12 +396,16 @@ fn count(s: *Session, visits: facts.FactId) Error!void {
 
 const LineStep = @FieldType(story_.Node.Step, "line");
 
-fn line(s: *Session, f: *Flow, at: NodeId, l: LineStep, tags: story_.Range) Error!Step {
+// A line, or null where its words came out empty (a `{once: …}` used up, a branch with no words): a game is never
+// handed a line with nothing to say, and a line not delivered applies none of its effects, so they are not worked
+// out either.
+fn line(s: *Session, f: *Flow, at: NodeId, l: LineStep, tags: story_.Range) Error!?Step {
     const cx = s.evaluation(f);
-    var owed: Owed = .{};
-    const list = try lineEffects(cx, l, &owed);
     const hand: flow_.Hand = .{ .node = at, .filled = try text.fill(cx, s.words, l.text, .move) };
-    const said = try s.worded(cx, hand, l, tags, list);
+    var said = try s.worded(cx, hand, l, tags, &.{});
+    if (std.mem.trim(u8, said.text, " \t").len == 0) return null;
+    var owed: Owed = .{};
+    said.effects = try lineEffects(cx, l, &owed);
     try owed.hold(f);
     f.hand = hand;
     f.told_effects = l.effects;

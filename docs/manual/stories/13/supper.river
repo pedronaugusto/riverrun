@@ -1,7 +1,7 @@
 // Supper at the Bell: Otto tells how he lost his cart, and whoever is at the table puts in a word.
 cast:
-  ada    "Ada"    — keeps the ferry
-  otto   "Otto"   — a pedlar, going over for the fair
+  ada    "Ada"    keeps the ferry
+  otto   "Otto"   a pedlar, going over for the fair
 extras: a boy
 
 facts:

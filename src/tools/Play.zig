@@ -103,11 +103,19 @@ pub const Asked = struct {
     args: []const facts.Value,
     answer: facts.Value,
     given: bool,
+    /// Where the flow was when it asked, a heading told before it where that is not where the flow was last told
+    /// to be; null for a query a rule or a package asked.
+    where: ?Place = null,
 };
 
+/// A section, and the part of it, where something is.
+pub const Place = struct { section: story.SectionId, part: ?story.SectionId };
+
 pub const Event = union(enum) {
-    /// The flow came to a section, or to a part of one, other than the one it was in.
-    section: struct { section: story.SectionId, part: ?story.SectionId },
+    /// The flow came to a section, or to a part of one, other than where it was. `whole` when the section's own
+    /// heading is told: the flow came from another section, or to the section's own body; else it came to a part of
+    /// the section it was in, and the part's heading alone is told.
+    section: struct { section: story.SectionId, part: ?story.SectionId, whole: bool = true },
     /// A line, its effects applied once it is delivered: when the next event is asked for.
     line: run.Line,
     /// The choices offered, closed ones among them; the play waits for one.
@@ -116,6 +124,8 @@ pub const Event = union(enum) {
     effects: []const facts.Effect,
     /// An action whose outcome the game decides; the play waits for it.
     asks: facts.Call,
+    /// The outcome the game gave, written into the fact that keeps it.
+    outcome: struct { fact: facts.FactId, value: facts.Value },
     asked: Asked,
     /// A rule that fired, and what it did.
     rule: struct { section: story.SectionId, name: []const u8, effects: []const facts.Effect },
@@ -138,8 +148,8 @@ pub const Stop = struct {
 
 /// The target of `Input.set`: a fact (one kept per thing with its key), or a query's answer for its arguments.
 pub const Target = union(enum) {
-    fact: struct { fact: facts.FactId, key: ?facts.Key = null },
-    answer: struct { query: facts.ExternId, args: []const facts.Value },
+    fact: struct { fact: facts.FactId, key: ?Arg = null },
+    answer: struct { query: facts.ExternId, args: []const Arg },
 };
 
 /// What a game gives back.
@@ -147,9 +157,9 @@ pub const Input = union(enum) {
     /// A choice, by the number it was offered with.
     choose: usize,
     /// The outcome of the action asked about.
-    outcome: facts.Value,
+    outcome: Arg,
     /// A fact set, or changed (`+=`, `-=`), or what a query answers from now on.
-    set: struct { target: Target, effect: enum { set, add, remove }, value: facts.Value },
+    set: struct { target: Target, effect: enum { set, add, remove }, value: Arg },
     /// A clock fact moved on.
     advance: struct { clock: facts.FactId, by: u64 },
     /// A call the game makes into a package, as the package offers it (`commands`).
@@ -164,8 +174,10 @@ pub const Called = struct {
     args: []const Arg,
 };
 
-/// An argument of a command: a value, or a thing by the name the player gave it, which is the story's thing of
-/// that name, or a stand-in for one of the game's, made under that name where there is none.
+/// A value the game gives, in a command, a fact or a query's answer set, or an outcome: a value, or a thing by the
+/// name the player gave it, which is the story's thing of that name, or a stand-in for one of the game's, made under
+/// that name where there is none. One rule wherever the game reaches the story: a thing the game names that the
+/// story does not is the game's.
 pub const Arg = union(enum) {
     value: facts.Value,
     thing: []const u8,
@@ -251,6 +263,8 @@ blame: enum { cursor, nowhere } = .cursor,
 quiet: bool = false,
 /// A query's answer could not be told for want of memory: said at the next step.
 out_of_memory: bool = false,
+/// Whether the session is walking the flow: a query asked then is the flow's, told where the flow was.
+walking: bool = false,
 
 const flow: run.FlowId = .fromRaw(0);
 
@@ -578,18 +592,21 @@ fn advance(p: *Play) Failure!void {
     p.rounds = 0;
     const bound = p.options.steps orelse (p.loaded.story.len(.nodes) +| round);
     if (p.steps > bound) return p.endless();
-    const step = try p.session.next(flow);
-    switch (step) {
+    // a query the flow asks on its way is told under the heading of where it was asked
+    p.walking = true;
+    const step = p.session.next(flow);
+    p.walking = false;
+    switch (try step) {
         .line => |l| {
-            try p.heading(l.section, l.part);
             try p.flush();
+            try p.heading(l.section, l.part);
             try p.push(.{ .line = l });
             try p.counted(l.part orelse l.section);
             p.hand = l;
         },
         .choices => |list| {
-            if (try p.session.cursor(flow)) |at| if (p.session.places.where(&p.loaded.story, at)) |w| try p.heading(w.section, w.part);
             try p.flush();
+            if (try p.session.cursor(flow)) |at| if (p.session.places.where(&p.loaded.story, at)) |w| try p.heading(w.section, w.part);
             const offered = try p.events_arena.allocator().alloc(Choice, list.len);
             for (offered, list, 1..) |*o, c, n| o.* = .{ .number = n, .text = c.text, .open = c.open, .tags = c.tags, .id = c.id };
             p.choosing = offered;
@@ -810,11 +827,21 @@ fn isLead(leads: []const []const u8, key: []const u8) bool {
     return false;
 }
 
+// Where the flow is now, told where it changed: a reader always knows where the flow is, and no heading is told
+// twice while the place has not changed. A part named as a section of its own (`--from crossing.fog`, a tag that
+// leads there) is that section's part. Coming back from a call is a change of place like any other.
 fn heading(p: *Play, section: story.SectionId, part: ?story.SectionId) error{OutOfMemory}!void {
-    if (p.section != null and p.section.?.eql(section) and eqlPart(p.part, part)) return;
-    p.section = section;
-    p.part = part;
-    try p.push(.{ .section = .{ .section = section, .part = part } });
+    var whole_ = section;
+    var part_ = part;
+    if (part_ == null) if (p.loaded.story.section(section).part_of) |of| {
+        whole_ = of;
+        part_ = section;
+    };
+    if (p.section != null and p.section.?.eql(whole_) and eqlPart(p.part, part_)) return;
+    const whole = p.section == null or !p.section.?.eql(whole_) or part_ == null;
+    p.section = whole_;
+    p.part = part_;
+    try p.push(.{ .section = .{ .section = whole_, .part = part_, .whole = whole } });
 }
 
 fn eqlPart(a: ?story.SectionId, b: ?story.SectionId) bool {
@@ -836,6 +863,7 @@ fn flush(p: *Play) error{OutOfMemory}!void {
     for (p.asked.items) |a| {
         if (find(p.told_asks.items, a.query, a.args) != null) continue;
         try p.told_asks.append(p.gpa, a);
+        if (a.where) |w| try p.heading(w.section, w.part);
         try p.push(.{ .asked = a });
     }
     p.asked.clearRetainingCapacity();
@@ -880,10 +908,11 @@ fn take(p: *Play, input: Input) GiveError!void {
             p.choosing = &.{};
             p.session.choose(flow, n - 1) catch |e| return p.failed(e);
         },
-        .outcome => |v| {
+        .outcome => |given| {
             if (waiting != .outcome) return p.refuse("{s}", .{whatIsWaited(waiting)});
             const owed = p.owed.items[p.owed_given];
             const r = owed.call.result.?;
+            const v = try p.valueOf(given, p.loaded.story.fact(r).ref_kind, p.loaded.story.fact(r).name);
             const kind = p.loaded.story.fact(r).kind;
             if (@as(facts.Kind, v) != kind) return p.refuse("`{s}` decides a {s}", .{ p.loaded.story.externFn(owed.call.action).name, kindWord(kind) });
             if (p.loaded.story.fact(r).bounds) |bounds| if (!bounds.holds(v.int)) return p.refuse("`{s}` holds from {d} to {d}", .{ p.loaded.story.fact(r).name, bounds.min, bounds.max });
@@ -891,6 +920,8 @@ fn take(p: *Play, input: Input) GiveError!void {
             if (owed.flow) {
                 p.session.outcome(flow, v) catch |e| return p.failed(e);
             } else p.loaded.memory.store().set(r, v) catch |e| return p.failed(e);
+            // the outcome is written into its fact, and told so
+            try p.push(.{ .outcome = .{ .fact = r, .value = try facts.dupeValue(p.events_arena.allocator(), v) } });
             p.owed_given += 1;
             if (p.owed_given < p.owed.items.len) {
                 try p.push(.{ .asks = p.owed.items[p.owed_given].call });
@@ -944,12 +975,20 @@ fn again(p: *Play, was: Waiting) GiveError!void {
     }
 }
 
-fn setting(p: *Play, target: Target, effect: @FieldType(@FieldType(Input, "set"), "effect"), v: facts.Value) GiveError!void {
+fn setting(p: *Play, target: Target, effect: @FieldType(@FieldType(Input, "set"), "effect"), given: Arg) GiveError!void {
     const store = p.loaded.memory.store();
+    const s = &p.loaded.story;
     switch (target) {
-        .fact => |f| {
-            const d = p.loaded.story.fact(f.fact);
-            if (d.role == .clock) return p.refuse("`{s}` is a clock, which only moves on: :wait", .{d.name});
+        .fact => |set| {
+            const d = s.fact(set.fact);
+            if (d.role == .clock) return p.refuse("`{s}` is a clock, which only moves on: wait (`:wait N` in a play, `--wait N` before it starts)", .{d.name});
+            // what it names resolved first, so a refusal changes nothing
+            const key: ?facts.Key = if (set.key) |k| switch (k) {
+                .value => |x| runtime.run.eval.keyOf(x),
+                .thing => |name| try p.thingOf(if (d.key == .ref) s.refKind(d.key.ref) else "", name, d.name),
+            } else null;
+            const v = try p.valueOf(given, d.ref_kind, d.name);
+            const f: struct { fact: facts.FactId, key: ?facts.Key } = .{ .fact = set.fact, .key = key };
             if (p.waiting != null) p.fresh();
             const e: facts.Effect = switch (effect) {
                 .set => .{ .set = .{ .fact = f.fact, .key = f.key, .value = v } },
@@ -965,13 +1004,17 @@ fn setting(p: *Play, target: Target, effect: @FieldType(@FieldType(Input, "set")
             _ = facts.apply(store, e) catch |err| return p.refuse("`{s}` cannot hold that ({t})", .{ d.name, err });
         },
         .answer => |a| {
-            const x = p.loaded.story.externFn(a.query);
+            const x = s.externFn(a.query);
             if (effect != .set) return p.refuse("a query is answered with `=`: `{s}(…) = …`", .{x.name});
+            const kept = try p.log_arena.allocator().alloc(facts.Value, a.args.len);
+            for (kept, a.args, 0..) |*k, given_arg, i| {
+                const param = s.param(x.params.start + @as(u32, @intCast(i))); // safe: below the query's parameters
+                k.* = try facts.dupeValue(p.log_arena.allocator(), try p.valueOf(given_arg, param.ref_kind, x.name));
+            }
+            const v = try p.valueOf(given, x.returns.?.ref_kind, x.name);
             if (p.waiting != null) p.fresh();
-            const kept = try p.log_arena.allocator().dupe(facts.Value, a.args);
-            for (kept) |*k| k.* = try facts.dupeValue(p.log_arena.allocator(), k.*);
-            const given: Asked = .{ .query = a.query, .args = kept, .answer = try facts.dupeValue(p.log_arena.allocator(), v), .given = true };
-            if (find(p.answers.items, a.query, a.args)) |i| p.answers.items[i] = given else try p.answers.append(p.gpa, given);
+            const answered: Asked = .{ .query = a.query, .args = kept, .answer = try facts.dupeValue(p.log_arena.allocator(), v), .given = true };
+            if (find(p.answers.items, a.query, kept)) |i| p.answers.items[i] = answered else try p.answers.append(p.gpa, answered);
             // what reads the query is woken as a game's bump wakes it
             if (x.stamp) |stamp| {
                 var keyed: std.ArrayList(facts.Value) = .empty;
@@ -989,7 +1032,7 @@ fn setting(p: *Play, target: Target, effect: @FieldType(@FieldType(Input, "set")
 
 fn moving(p: *Play, clock: facts.FactId, by: u64) GiveError!void {
     const d = p.loaded.story.fact(clock);
-    if (d.role != .clock) return p.refuse("`{s}` is not a clock: set it with :set", .{d.name});
+    if (d.role != .clock) return p.refuse("`{s}` is not a clock: set it (`:set` in a play, `--set` before it starts)", .{d.name});
     if (p.waiting != null) p.fresh();
     for (p.options.running, p.states) |r, state| {
         const move = r.advance orelse continue;
@@ -1042,14 +1085,30 @@ fn calling(p: *Play, c: Called) GiveError!void {
 // new stand-in for one of the game's; refused where the name is a thing of another kind.
 fn thingFor(p: *Play, param: Running.Param, name: []const u8) GiveError!u64 {
     const s = &p.loaded.story;
-    const kind = if (param.type.ref_kind) |k| s.refKind(k) else "";
+    return p.thingOf(if (param.type.ref_kind) |k| s.refKind(k) else "", name, param.name);
+}
+
+// The thing of `kind` named `name`, which `wanted_by` takes: the story's thing of that name, a stand-in made before,
+// or a new stand-in for one of the game's; refused where the name is a thing of another kind. Every way the game
+// reaches the story takes things so: a command's parameter, a fact or a key set, a query's argument or answer, an
+// outcome.
+fn thingOf(p: *Play, kind: []const u8, name: []const u8, wanted_by: []const u8) GiveError!u64 {
+    const s = &p.loaded.story;
     if (p.thingNamed(kind, name)) |h| return h;
     for (0..s.len(.things)) |i| {
         const t = s.thing(@intCast(i)); // safe: below a u32 count
-        if (std.mem.eql(u8, t.id, name)) return p.refuse("`{s}` is a thing of the kind `{s}`, and `{s}` takes one of the kind `{s}`", .{ name, t.kind, param.name, kind });
+        if (std.mem.eql(u8, t.id, name)) return p.refuse("`{s}` is a thing of the kind `{s}`, and `{s}` takes one of the kind `{s}`", .{ name, t.kind, wanted_by, kind });
     }
-    for (p.stand_ins.items) |t| if (std.mem.eql(u8, t.name, name)) return p.refuse("`{s}` stands in for a thing of the kind `{s}`, and `{s}` takes one of the kind `{s}`", .{ name, t.kind, param.name, kind });
+    for (p.stand_ins.items) |t| if (std.mem.eql(u8, t.name, name)) return p.refuse("`{s}` stands in for a thing of the kind `{s}`, and `{s}` takes one of the kind `{s}`", .{ name, t.kind, wanted_by, kind });
     return standIn(p, kind, name);
+}
+
+// A value given: as it is, or the thing it names (`thingOf`).
+fn valueOf(p: *Play, given: Arg, ref_kind: ?story.RefKindId, wanted_by: []const u8) GiveError!facts.Value {
+    return switch (given) {
+        .value => |v| v,
+        .thing => |name| .{ .ref = try p.thingOf(if (ref_kind) |k| p.loaded.story.refKind(k) else "", name, wanted_by) },
+    };
 }
 
 // A named error while taking an input: the play stops there, as it does while telling; the input was taken.
@@ -1093,25 +1152,32 @@ fn keep(p: *Play, input: Input) error{OutOfMemory}!Input {
 fn keepIn(a: std.mem.Allocator, input: Input) error{OutOfMemory}!Input {
     var out = input;
     switch (out) {
-        .outcome => |*v| v.* = try facts.dupeValue(a, v.*),
+        .outcome => |*v| v.* = try keepArg(a, v.*),
         .set => |*s| {
-            s.value = try facts.dupeValue(a, s.value);
-            if (s.target == .answer) {
-                const args = try a.dupe(facts.Value, s.target.answer.args);
-                for (args) |*x| x.* = try facts.dupeValue(a, x.*);
-                s.target.answer.args = args;
+            s.value = try keepArg(a, s.value);
+            switch (s.target) {
+                .answer => |*x| x.args = try keepArgs(a, x.args),
+                .fact => |*f| if (f.key) |k| {
+                    f.key = try keepArg(a, k);
+                },
             }
         },
-        .command => |*c| {
-            const args = try a.dupe(Arg, c.args);
-            for (args) |*x| x.* = switch (x.*) {
-                .value => |v| .{ .value = try facts.dupeValue(a, v) },
-                .thing => |name| .{ .thing = try a.dupe(u8, name) },
-            };
-            c.args = args;
-        },
+        .command => |*c| c.args = try keepArgs(a, c.args),
         .choose, .advance => {},
     }
+    return out;
+}
+
+fn keepArg(a: std.mem.Allocator, x: Arg) error{OutOfMemory}!Arg {
+    return switch (x) {
+        .value => |v| .{ .value = try facts.dupeValue(a, v) },
+        .thing => |name| .{ .thing = try a.dupe(u8, name) },
+    };
+}
+
+fn keepArgs(a: std.mem.Allocator, list: []const Arg) error{OutOfMemory}![]const Arg {
+    const out = try a.alloc(Arg, list.len);
+    for (out, list) |*o, x| o.* = try keepArg(a, x);
     return out;
 }
 
@@ -1166,7 +1232,8 @@ fn record(p: *Play, query: facts.ExternId, args: []const facts.Value, value: fac
     const a = p.events_arena.allocator();
     const kept = try a.dupe(facts.Value, args);
     for (kept) |*k| k.* = try facts.dupeValue(a, k.*);
-    try p.asked.append(p.gpa, .{ .query = query, .args = kept, .answer = try facts.dupeValue(a, value), .given = given });
+    const where: ?Place = if (!p.walking) null else if (p.session.cursor(flow) catch null) |at| if (p.session.places.where(&p.loaded.story, at)) |w| .{ .section = w.section, .part = w.part } else null else null;
+    try p.asked.append(p.gpa, .{ .query = query, .args = kept, .answer = try facts.dupeValue(a, value), .given = given, .where = where });
 }
 
 fn find(list: []const Asked, query: facts.ExternId, args: []const facts.Value) ?usize {

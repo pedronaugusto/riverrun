@@ -90,10 +90,12 @@ what it describes ``, `` `pay` is an action, not a tag: run it with `[pay(…)]`
 4](04-telling-the-game.md)). Which tags there are is the game's vocabulary; what a bracket belongs to is where it
 is indented.
 
-**Where a way ends.** ``the part `midstream` can run off its end: end it with `-> end`, `<-` or a flow elsewhere``
-([chapter 5](05-scenes-and-flow.md)) is an error: some way through, a choice's rows or a condition's, stops with
-nowhere to go. It is placed on the section's or the part's name; follow each choice and condition in it to the way
-whose last row is not a flow. ``nothing reaches this: the story always goes elsewhere before it`` is a warning on a
+**Where a way ends.** ``the part `midstream` can run off its end after this row: end it with `-> end`, `<-` or a
+flow elsewhere`` ([chapter 5](05-scenes-and-flow.md)) is an error: some way through, a choice's rows or a
+condition's, stops with nowhere to go. It is placed on that way's last row, one error to each such row, and names
+the section or the part it runs off. A choice point is a way through too: when every choice there is offered once
+and leads back to it (`-> ask`), the story can use them all up and go past them, as a play does, so what follows
+the choices is reached, and with nothing after them the scene runs off there. ``nothing reaches this: the story always goes elsewhere before it`` is a warning on a
 row that can never be said, because every way before it has gone somewhere else: often a `->` written where `->
 name ->` was meant. ``nothing reaches `x` from where the story starts`` is an error on a section no way leads to.
 Without a list of starts in the game's vocabulary, every section nothing goes to is a start, so this names a
@@ -129,7 +131,7 @@ OTTO: What'll it be?
 
 ```console
 $ riverrun check stall.river
-stall.river:8:1-9:11: error: this offers more choices at once than a compiled story holds (32)
+stall.river:8:1-8:15: error: this offers more choices at once than a compiled story holds (32)
 ```
 
 A player cannot read 33 choices either: offer the kinds of ware first, and the wares of each kind under it.

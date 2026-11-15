@@ -134,7 +134,7 @@ Frank Marlowe died at ten past nine that night, with the radio on and her hand o
   [pause 0.4]
 == day_1998
   [day] [slots morning, noon, afternoon, evening] [then day_end_1998]
-There is nothing she can do with the . She sits in the kitchen and lets it pass.
+There is nothing she can do with the morning. She sits in the kitchen and lets it pass.
   [idle]
 == day_end_1998
   [card]
@@ -174,10 +174,10 @@ She takes the lid off the piano at the school, once, at night. Then she puts it 
   [year 2035]
 Iris died on a Tuesday.
   [year 2039] [pause 1.2] [bold]
-== wake
-  [rooms front, kitchen, stairs] [hours 20, 22, 0, 2, 4, 6] [pool wake_night] [then dawn]
 ? lived(stay) = false (not set)
 ? lived(go) = false (not set)
+== wake
+  [rooms front, kitchen, stairs] [hours 20, 22, 0, 2, 4, 6] [pool wake_night] [then dawn]
 The front room. Everyone she ever kept is here.
 A man nobody knows stands at the foot of the coffin. He has been there since eight.
 MARGARET: Who is he?
@@ -234,7 +234,6 @@ The burial never changes. The same hill, the same rain, whoever is holding the u
   [pause 0.6]
 -> end
 > :facts
-  life = stay
   kept = dad
   said = play, gave
   spot = door

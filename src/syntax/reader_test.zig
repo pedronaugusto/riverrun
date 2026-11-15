@@ -208,7 +208,7 @@ fn story(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
 fn laidOut(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
     const rows = [_][]const u8{
         "cast:",
-        "  mum   \"Mum\"   — her mother",
+        "  mum   \"Mum\"   her mother",
         "    [gender feminine]",
         "extras: a cellist, the youngest",
         "facts (life):",

@@ -54,8 +54,8 @@ which state the boat is in and what has happened, and sets the next. A puzzle wi
 then three, then two), a guard who grows suspicious and calms down, a feud between two families: each is a fact of
 states and the rules that move it.
 
-A `one of` fact holds none of its values until something sets it ([chapter 3](03-remembering.md)), so the landing
-puts the boat in its first state as the story starts:
+A `one of` fact starts at its first value ([chapter 3](03-remembering.md)), so the boat starts `tied`; the landing
+sets it all the same, so the story says where the boat starts, and coming back to the landing ties it again:
 
 ```river
 == landing

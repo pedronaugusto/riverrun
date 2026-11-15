@@ -1,2 +1,2 @@
 ferry.river:11:1-11:5: error: `ADDA` is not a speaker: speakers come from `cast:` and `extras:`
-ferry.river:7:4-7:11: error: the scene `landing` can run off its end: end it with `-> end`, `<-` or a flow elsewhere
+ferry.river:13:1-13:20: error: the scene `landing` can run off its end after this row: end it with `-> end`, `<-` or a flow elsewhere

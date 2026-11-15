@@ -1,1 +1,1 @@
-ferry.river:68:3-68:12: error: the part `midstream` can run off its end: end it with `-> end`, `<-` or a flow elsewhere
+ferry.river:77:5-77:70: error: the part `midstream` can run off its end after this row: end it with `-> end`, `<-` or a flow elsewhere

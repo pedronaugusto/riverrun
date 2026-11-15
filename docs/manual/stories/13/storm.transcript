@@ -17,6 +17,7 @@ ADA: It's coming up! Help me get her out of the water!
 > 1
 ? haul(otto) -> true or false
 > false
+[hauled = false]
 The rope burns through your hands, and the boat slides back.
 ADA: It's coming up! Help me get her out of the water!
 * 1 Haul the boat up the slip, with Otto.

@@ -2,7 +2,7 @@
 version: 2                                              // which version of the story this is
 
 cast:
-  ada    "Ada"    — keeps the ferry                     // an id, the name the game shows, a note
+  ada    "Ada"    keeps the ferry                       // an id, the name the game shows, a note
     [gender feminine]                                   // a cast entry's tag
   otto   "Otto"
     [gender masculine]

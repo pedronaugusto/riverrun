@@ -5,7 +5,7 @@
 //!       {"name":"life","kind":"one_of","one_of":"go"},
 //!       {"name":"kept","kind":"set_of","set_of":["ruth","dad"]}]}
 //!
-//! A `one of` with no value has no `one_of`. A fact kept per thing has
+//! A `one of` always has its `one_of`. A fact kept per thing has
 //! `keys`, each with its key (`item`, or the host's handle as `ref_key`) and
 //! its value. Reading it back matches facts, items and keys by name, as a
 //! snapshot does.
@@ -86,7 +86,7 @@ fn fill(arena: std.mem.Allocator, d: value.Decl, v: Value, e: anytype) !void {
     switch (v) {
         .boolean => |x| e.boolean = x,
         .int => |x| e.int = x,
-        .one_of => |x| e.one_of = if (x == Value.none) null else d.items[x],
+        .one_of => |x| e.one_of = d.items[x],
         .set_of => |x| {
             const items = try arena.alloc([]const u8, x.count());
             var it = x.iterator(.{});
@@ -131,7 +131,7 @@ fn savedValue(kind: Kind, e: anytype) ReadError!snapshot.SavedValue {
     return switch (kind) {
         .boolean => .{ .boolean = e.boolean orelse return error.MissingValue },
         .int => .{ .int = e.int orelse return error.MissingValue },
-        .one_of => .{ .one_of = e.one_of },
+        .one_of => .{ .one_of = e.one_of orelse return error.MissingValue },
         .set_of => .{ .set_of = e.set_of orelse &.{} },
         .text => .{ .text = if (@hasField(@TypeOf(e), "text")) (e.text orelse "") else return error.MissingValue },
         .ref => .{ .ref = .{ .handle = e.ref orelse Value.no_ref } },

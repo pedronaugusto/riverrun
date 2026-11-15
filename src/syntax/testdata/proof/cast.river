@@ -3,15 +3,15 @@
 
 cast:
   iris      "Iris"
-  mum       "Mum"                    — June, her mother
-  dad       "Dad"                    — Frank, her father
-  margaret  "Margaret"               — her sister
-  danny     "Danny"                  — her husband, in the life where she stayed
-  tom       "Tom"                    — her eldest, in the life where she stayed
-  ruth      "Ruth"                   — her daughter, in the life where she stayed
-  ellie     "Ellie"                  — her youngest, in the life where she stayed
-  martin    "Martin"                 — she lived with him fourteen years, in the life where she got on
-  leo       "Leo"                    — her son, in the life where she got on
+  mum       "Mum"                    June, her mother
+  dad       "Dad"                    Frank, her father
+  margaret  "Margaret"               her sister
+  danny     "Danny"                  her husband, in the life where she stayed
+  tom       "Tom"                    her eldest, in the life where she stayed
+  ruth      "Ruth"                   her daughter, in the life where she stayed
+  ellie     "Ellie"                  her youngest, in the life where she stayed
+  martin    "Martin"                 she lived with him fourteen years, in the life where she got on
+  leo       "Leo"                    her son, in the life where she got on
   joan      "Aunt Joan"
   stranger  "the stranger"
   stayed    "Iris, who stayed"

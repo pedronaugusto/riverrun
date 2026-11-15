@@ -320,6 +320,13 @@ pub fn knowsThing(c: *const Checker, kind: sym.KindId, id: []const u8) bool {
 }
 
 /// A span as `file:line:col`, for a message that points at a second place.
+/// The row `span` begins on, its words alone, without the rows under it: where what is about a statement itself is
+/// placed (a choice's row, not its body).
+pub fn row(c: *const Checker, span: Span) Span {
+    if (span.file >= c.files.len) return span;
+    return c.files[span.file].rowAt(span);
+}
+
 pub fn place(c: *const Checker, span: Span) Place {
     if (span.file >= c.files.len) return .{ .path = "?", .at = .{ .line = 0, .col = 0 } };
     const f = &c.files[span.file];

@@ -30,8 +30,9 @@ The story remembers where each one is, so a story saved and loaded goes on where
 a seed the story keeps, so a play, and a replay, of the same inputs says the same.
 
 `once` is for words a line says the first time only. On a line of its own, once used up, it leaves the line with no
-words, which the game still shows; put it inside a line's words, as here, where the rest of the line stands without
-it:
+words, and a line with no words is not said at all: the game is never handed it, and the effects under it are not
+applied (the checker warns where they would be lost so). Inside a line's words, as here, the rest of the line
+stands without it:
 
 ```river
 = midstream
@@ -56,9 +57,9 @@ what the game answers.
 
 ```river
 cast:
-  ada    "Ada"    — keeps the ferry
+  ada    "Ada"    keeps the ferry
     [gender feminine]
-  otto   "Otto"   — a pedlar, going over for the fair
+  otto   "Otto"   a pedlar, going over for the fair
     [gender masculine]
 ```
 
@@ -147,8 +148,6 @@ $ riverrun play --from crossing --set 'trust = 1' -i 2 -i 1 ferry.river
 == crossing
   [music oars]
 The boat pushes off. Behind you the lantern on the post grows small.
-== crossing
-  [music oars]
 = midstream
   [picture fog]
 Halfway over, the fog comes down, and the far bank is gone.
@@ -175,8 +174,6 @@ OTTO: I can't see the bank.
 ADA: You don't need to. I do.
 * 1 Hold still.
 > 1
-== crossing
-  [music oars]
 = landfall
 The keel scrapes on stones.
 ADA: Out you get.

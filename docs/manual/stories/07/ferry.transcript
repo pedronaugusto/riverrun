@@ -33,6 +33,7 @@ Otto counts the buttons on his coat.
 > 2
 ? talk_down(ada, 1) -> true or false
 > false
+[talked_down = false]
 ADA: Two. I don't haggle in the rain.
 Otto looks at the sky.
 * 1 I haven't got two coins.
@@ -44,13 +45,12 @@ Otto looks at the sky.
 > :back
 ? talk_down(ada, 1) -> true or false
 > true
+[talked_down = true]
 ADA: One, then. Don't tell the boy.
 [pay(1)]
 == crossing
   [music oars]
 The boat pushes off. Behind you the lantern on the post grows small.
-== crossing
-  [music oars]
 = midstream
   [picture fog]
 Halfway over, the fog comes down, and the far bank is gone.
@@ -65,8 +65,6 @@ ADA: You don't need to. I do.
 * 1 Hold still.
 * 2 Stand up to look.
 > 1
-== crossing
-  [music oars]
 = landfall
 The keel scrapes on stones.
 ADA: Out you get.

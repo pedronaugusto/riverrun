@@ -157,7 +157,7 @@ pub const Memory = struct {
 pub fn check(d: schema_.Decl, v: Value) SetError!void {
     if (@as(value.Kind, v) != d.kind) return error.WrongKind;
     switch (v) {
-        .one_of => |x| if (x != Value.none and x >= d.items.len) return error.ItemOutOfRange,
+        .one_of => |x| if (x >= d.items.len) return error.ItemOutOfRange,
         .set_of => |x| if (x.findLastSet()) |last| {
             if (last >= d.items.len) return error.ItemOutOfRange;
         },
@@ -178,7 +178,7 @@ test "a store holds its facts' kinds and marks what changed" {
     var m: Memory = try .init(gpa, testing.schema);
     defer m.deinit();
     const s = m.store();
-    try std.testing.expectEqual(Value.none, s.get(testing.life).one_of);
+    try std.testing.expectEqual(@as(u16, 0), s.get(testing.life).one_of);
     try s.set(testing.life, .{ .one_of = 1 });
     try std.testing.expectError(error.WrongKind, s.set(testing.life, .{ .int = 1 }));
     try std.testing.expectError(error.ItemOutOfRange, s.set(testing.life, .{ .one_of = 2 }));
