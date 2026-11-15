@@ -1,0 +1,3 @@
+ferry.river:27:1-27:19: error: `[sound]` is a tag, and a tag belongs to what it describes: indent it under that line, choice or heading
+ferry.river:49:6-49:10: error: `pase` is not a tag the game knows
+ferry.river:56:4-56:7: error: `pay` is an action, not a tag: run it with `[pay(…)]`

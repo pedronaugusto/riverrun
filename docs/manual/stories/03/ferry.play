@@ -1,0 +1,7 @@
+// ask the price, say you cannot pay it, then see what has changed
+1
+1
+:facts
+// the game gives you three coins
+:set coins = 3
+2

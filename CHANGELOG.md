@@ -6,6 +6,17 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Added
 
+- The manual, `docs/manual/`: its index and frame, and chapters 1 to 6 for a writer (a page of words, choices,
+  facts and conditions, telling the game, scenes and flow, text that varies and its ids), each over a running story
+  in `docs/manual/stories/`, its mistakes in `docs/manual/mistakes/`, and a play of it. Every story it shows is
+  checked and prints nothing, every run it shows is pinned in the test step (`bay dev manual-test` alone), and
+  `bay manual` builds the program its stories are written for.
+- `addShownRuns`: runs of the program a package's documents show (`ShownRun`: a folder, the arguments, the file
+  holding what it prints, the exit status), each run with nothing on standard input and held to its file byte for
+  byte and to its status. `addExcerptsTest` takes them (`runs`) and holds every ` ```console ` block, `$ riverrun …`
+  and what it printed, to one of them whole, and every ` ```river refused ` block to a story a shown `riverrun check`
+  refuses, and fails on a run no document shows; and stories shown before and after `riverrun tag` (`tagged`) to
+  what `tag` writes. `excerpts.unshown` takes `Shown` (stories and runs); `excerpts.retagged`.
 - `riverrun play`: a story played as its game would play it, the writer in the game's place, in a terminal or from
   a script of inputs (`--script`, `--input`, standard input) that writes a plain, stable transcript and exits 0 at
   the story's end, 3 waiting for an input the script did not give, 4 on a run-time error, 1 when a row cannot be
@@ -93,6 +104,12 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Changed
 
+- The checker's messages say "the game" where they said "the host": `` `x` is not a tag the game knows ``, `the game
+  has no item_kind called …`, `past the game's 40`, `the game starts the story at …`, and the rest, as the program's
+  help and the manual name it.
+- A release's missing id is placed on the line's or the choice's own row, as `riverrun tag --check` places it, not
+  over the rows under it, and says what needs one: ``a release needs an id on every line and choice, `^…` at the
+  end of its row``.
 - A line whose words or effects meet a named error leaves its flow at the line, so the error is placed there.
 - `walk` gives the outcomes a line's effects owe (each its type's first value), where it stopped the section.
 - `addStory` compiles with the `riverrun` program (`tools/riverrun.zig`, `riverrun compile`), which replaces

@@ -1,0 +1,3 @@
+ferry.river:25:4-25:9: error: `coins` is the game's, declared `(game)`: the story reads it and never sets it
+ferry.river:35:28-35:35: error: `snowing` is not one of pouring, easing, stopped
+ferry.river:39:5-39:14: warning: this choice can never be offered: its condition can never hold

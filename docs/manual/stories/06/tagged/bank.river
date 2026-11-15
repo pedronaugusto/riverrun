@@ -1,0 +1,12 @@
+// The far bank, on its own: a scene to give ids to.
+cast:
+  ada    "Ada"    — keeps the ferry
+
+== far_bank
+Mud, a path, and up the hill the lights of the fair. ^c6q1h6
+ADA: Mind how you go. ^cx3yhv
+* Thank her. ^gfk8sk
+  ADA: Thank the river. ^f2v39v
+  -> end
+* Go up the hill. ^gwbxy7
+  -> end

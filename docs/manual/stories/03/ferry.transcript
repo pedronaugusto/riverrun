@@ -1,0 +1,35 @@
+> :set rain = easing
+== landing
+Rain on the river, thinning.
+A lantern on a post, and a boat tied up under it.
+A BOY: Ferry! Last ferry over!
+OTTO: She heard you the first time.
+ADA: Nearly. Give it a minute.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 Look at the river.
+* 4 (closed) Pay, and get in.
+* 5 Go home.
+> 1
+[asked_price = true]
+ADA: Two coins. Same as always.
+* 1 I haven't got two coins.
+* 2 Look at the river.
+* 3 (closed) Pay, and get in.
+* 4 Go home.
+> 1
+You count what you have: 0 coins.
+ADA: Then you'd better find some more.
+* 1 Look at the river.
+* 2 (closed) Pay, and get in.
+* 3 Go home.
+> :facts
+  rain = easing
+  asked_price = true
+> :set coins = 3
+* 1 Look at the river.
+* 2 Pay, and get in.
+* 3 Go home.
+> 2
+ADA: Mind the step.
+-> end

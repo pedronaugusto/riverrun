@@ -1,0 +1,62 @@
+> :set rain = easing
+> :set coins = 1
+== landing
+  [music rain_on_water] [picture landing_night]
+Rain on the river, thinning.
+A lantern on a post, and a boat tied up under it.
+A BOY: Ferry! Last ferry over!
+OTTO: She heard you the first time.
+ADA (without looking up): Nearly. Give it a minute.
+Otto hums to himself.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 Look at the river.
+* 4 Sit with Otto.
+* 5 (closed) Pay, and get in.
+  [marked]
+* 6 Go home.
+> 3
+Black water, moving fast under the rain.
+Otto counts the buttons on his coat.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 Look at the river.
+* 4 Sit with Otto.
+* 5 (closed) Pay, and get in.
+  [marked]
+* 6 Go home.
+> 3
+Still black. Still moving.
+Otto looks at the sky.
+* 1 How much to cross?
+* 2 (closed) I haven't got two coins.
+* 3 Look at the river.
+* 4 Sit with Otto.
+* 5 (closed) Pay, and get in.
+  [marked]
+* 6 Go home.
+> 1
+[asked_price = true]
+ADA: Two coins. Same as always.
+Otto hums to himself.
+* 1 I haven't got two coins.
+* 2 Look at the river.
+* 3 Sit with Otto.
+* 4 (closed) Pay, and get in.
+  [marked]
+* 5 Go home.
+> 1
+You count what you have: one coin.
+ADA: Then you'd better find some more.
+You look at Otto.
+OTTO: Don't look at me.
+  [trust -= 1]
+Otto counts the buttons on his coat.
+* 1 Look at the river.
+* 2 Sit with Otto.
+* 3 (closed) Pay, and get in.
+  [marked]
+* 4 Go home.
+> 4
+You turn up the lane, the way the boy went.
+-> end

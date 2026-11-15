@@ -1,0 +1,2 @@
+ferry.river:72:3-72:30: warning: nothing reaches this: the story always goes elsewhere before it
+ferry.river:88:3-88:5: warning: `<-` goes back to a caller, but nothing calls `lamp` with `-> lamp ->`

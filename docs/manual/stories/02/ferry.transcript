@@ -1,0 +1,36 @@
+== landing
+Rain on the river. A lantern on a post, and a boat tied up under it.
+A BOY: Ferry! Last ferry over!
+OTTO: She heard you the first time.
+ADA: I go when the rain eases. Not before.
+* 1 How much to cross?
+* 2 When will it ease?
+* 3 Look at the river.
+* 4 Sit with Otto.
+* 5 Go home.
+> 1
+ADA: Two coins. Same as always.
+* 1 When will it ease?
+* 2 Look at the river.
+* 3 Sit with Otto.
+* 4 Go home.
+> 2
+Black water, moving fast under the rain.
+* 1 When will it ease?
+* 2 Look at the river.
+* 3 Sit with Otto.
+* 4 Go home.
+> 2
+Black water, moving fast under the rain.
+* 1 When will it ease?
+* 2 Look at the river.
+* 3 Sit with Otto.
+* 4 Go home.
+> 3
+You sit down beside him on the wet bench.
+* 1 Ask what he sells.
+* 2 Say nothing.
+> 2
+Otto hums something under his breath.
+The rain goes on.
+-> end

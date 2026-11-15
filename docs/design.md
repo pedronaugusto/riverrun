@@ -443,9 +443,13 @@ the story's files, so the same files in the same order always get the same ids. 
 7.4 × 10⁸; a two-hour story of 5,000 lines holds a few in a hundred thousand.
 
 **What the documentation shows, checked.** A package's documentation shows stories that `addCheck` checks in its
-tests, each a whole story under `docs/examples/`, and `addExcerptsTest` holds every ` ```river ` block of its
-Markdown, and every story indented under a Zig file's `//!` comment, to rows of one of those, so an example a
-writer copies is text that checks.
+tests, each a whole story under `docs/examples/` (the manual's under `docs/manual/stories/`), and `addExcerptsTest`
+holds every ` ```river ` block of its Markdown, and every story indented under a Zig file's `//!` comment, to rows of
+one of those, so an example a writer copies is text that checks. What the program prints is shown the same way: a
+` ```console ` block is a run, `$ riverrun …` and everything it printed, which `addShownRuns` runs in the test step
+and holds to a file beside the story byte for byte, and `addExcerptsTest` holds the block to; a
+` ```river refused ` block is rows of a story such a run of `riverrun check` refuses; and a story shown before and
+after `riverrun tag` is held to what `tag` writes. The manual's index says how its chapters are written to this.
 
 **Its logic is `riverrun-tools`** (`riverrun.tools(dep)`), the model every tool shows: `Manuscript`, a story's files
 read to their trees with every diagnostic, checked and compiled as the build does; `report`, the form above; `tag`,

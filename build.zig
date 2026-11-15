@@ -241,6 +241,7 @@ pub fn dev(b: *std.Build, kit: type) void {
     test_step.dependOn(&b.addRunArtifact(toolsTests(b, package, shakedown, filters) orelse return).step);
     test_step.dependOn(&b.addRunArtifact(storyTests(b, target, optimize, filters) orelse return).step);
     docs(b, test_step);
+    manualTests(b, test_step);
     programTests(b, test_step);
     kit.preflight.addCi(b, p, .{ .tests = test_step });
 }
@@ -359,24 +360,157 @@ fn docs(b: *std.Build, test_step: *std.Build.Step) void {
     test_step.dependOn(&b.addRunArtifact(addExcerptsTest(b, river, .{ .package = p, .stories = &documented.stories, .documents = &documented.documents }) orelse return).step);
 }
 
+/// riverrun's manual: its chapters, the stories they show, the runs of the program they show, and the story shown
+/// before and after `riverrun tag`. Every story under `stories/` checks and prints nothing; every story under
+/// `mistakes/` prints what a chapter shows the checker saying about it. `docs/manual/README.md` says how a chapter
+/// is written to it.
+const manual = struct {
+    const vocabulary = "docs/manual/stories/vocabulary.zig";
+    const documents = [_][]const u8{
+        "docs/manual/01-a-page-of-words.md",
+        "docs/manual/02-choices.md",
+        "docs/manual/03-remembering.md",
+        "docs/manual/04-telling-the-game.md",
+        "docs/manual/05-scenes-and-flow.md",
+        "docs/manual/06-text-that-varies.md",
+    };
+    const stories = [_][]const u8{
+        "docs/manual/stories/01/ferry.river",
+        "docs/manual/stories/02/ferry.river",
+        "docs/manual/stories/03/ferry.river",
+        "docs/manual/stories/04/ferry.river",
+        "docs/manual/stories/05/ferry.river",
+        "docs/manual/stories/06/ferry.river",
+        "docs/manual/stories/06/bank.river",
+        "docs/manual/stories/06/tagged/bank.river",
+    };
+    const runs = [_]ShownRun{
+        .{ .dir = "docs/manual/stories/01", .args = &.{ "play", "ferry.river" }, .output = "ferry.transcript" },
+        .{ .dir = "docs/manual/mistakes/01", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/02", .args = &.{ "play", "-i", "1", "-i", "2", "-i", "2", "-i", "3", "-i", "2", "ferry.river" }, .output = "ferry.transcript" },
+        .{ .dir = "docs/manual/mistakes/02", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/03", .args = &.{ "play", "--set", "rain = easing", "--script", "ferry.play", "ferry.river" }, .output = "ferry.transcript" },
+        .{ .dir = "docs/manual/mistakes/03", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/04", .args = &.{ "play", "--set", "rain = easing", "--script", "ferry.play", "ferry.river" }, .output = "ferry.transcript" },
+        .{ .dir = "docs/manual/mistakes/04", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/05", .args = &.{ "play", "--from", "crossing", "--set", "carrying = lantern", "--set", "trust = 1", "-i", "2", "-i", "1", "ferry.river" }, .output = "ferry.transcript" },
+        .{ .dir = "docs/manual/mistakes/05", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/mistakes/05/jump", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics" },
+        .{ .dir = "docs/manual/stories/06", .args = &.{ "play", "--set", "rain = easing", "--set", "coins = 1", "-i", "3", "-i", "3", "-i", "1", "-i", "1", "-i", "4", "ferry.river" }, .output = "ferry.transcript" },
+        .{ .dir = "docs/manual/stories/06", .args = &.{ "play", "--from", "crossing", "--set", "trust = 1", "-i", "2", "-i", "1", "ferry.river" }, .output = "crossing.transcript" },
+        .{ .dir = "docs/manual/stories/06", .args = &.{ "tag", "--check", "bank.river" }, .output = "bank.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/06/tagged", .args = &.{ "check", "--release", "bank.river" }, .output = "bank.diagnostics" },
+        .{ .dir = "docs/manual/stories/06/tagged", .args = &.{ "play", "-i", "1", "bank.river" }, .output = "bank.transcript" },
+    };
+    const tagged = [_]TaggedStory{.{ .before = "docs/manual/stories/06/bank.river", .after = "docs/manual/stories/06/tagged/bank.river" }};
+};
+
+// Each of `paths`, a file of `package`, copied beside the generated test as `{prefix}{i}` and named in its source.
+fn embedEach(b: *std.Build, files: *std.Build.Step.WriteFile, root: *std.ArrayList(u8), package: *std.Build, prefix: []const u8, paths: []const []const u8) void {
+    for (paths, 0..) |s, i| {
+        _ = files.addCopyFile(package.path(s), b.fmt("{s}{d}", .{ prefix, i }));
+        root.print(b.allocator, "    .{{ .path = \"{f}\", .text = @embedFile(\"{s}{d}\") }},\n", .{ std.zig.fmtString(s), prefix, i }) catch @panic("OOM");
+    }
+}
+
+// The manual's stories checked, each printing nothing; its runs pinned; what its chapters show held to them: in the
+// test step, and alone in `manual-test`. `bay manual` installs the program its stories are written for.
+fn manualTests(b: *std.Build, tests: *std.Build.Step) void {
+    const river = b.dependency("riverrun", building(b));
+    const p = river.builder;
+    const program = addProgram(b, river, .{ .vocabulary = p.path(manual.vocabulary) });
+    b.step("manual", "The riverrun program the manual's stories are written for, into zig-out/bin").dependOn(&b.addInstallArtifact(program, .{}).step);
+    const test_step = b.step("manual-test", "The manual's stories checked, its runs pinned, and what its chapters show held to them");
+    tests.dependOn(test_step);
+    for (manual.stories) |story| {
+        const clean = addCheck(b, program, &.{p.path(story)}, .{});
+        clean.expectStdOutEqual("");
+        test_step.dependOn(&clean.step);
+    }
+    addShownRuns(b, test_step, program, p, &manual.runs);
+    // a story some chapter shows the checker warn about checks too, and a ```river block may show it
+    var stories: std.ArrayList([]const u8) = .empty;
+    stories.appendSlice(b.allocator, &manual.stories) catch @panic("OOM");
+    for (manual.runs) |r| if (r.status == 0 and std.mem.eql(u8, r.args[0], "check")) for (r.args[1..]) |a| {
+        if (std.mem.endsWith(u8, a, ".river")) stories.append(b.allocator, b.pathJoin(&.{ r.dir, a })) catch @panic("OOM");
+    };
+    const excerpts = addExcerptsTest(b, river, .{ .package = p, .stories = stories.items, .documents = &manual.documents, .runs = &manual.runs, .tagged = &manual.tagged }) orelse return;
+    test_step.dependOn(&b.addRunArtifact(excerpts).step);
+}
+
+/// A run of the `riverrun` program that a package's documents show in a ```console block, pinned by its tests: what
+/// it prints to standard output, exactly, and its exit status.
+pub const ShownRun = struct {
+    /// The folder it runs in, relative to the package: the files it names, and the paths it prints, are relative to
+    /// it, as a writer running it there sees them.
+    dir: []const u8,
+    /// Its arguments, after `riverrun`. Each that ends in `.river` or `.play` is a file of `dir` that it reads.
+    args: []const []const u8,
+    /// The file of `dir` holding what it prints to standard output, exactly.
+    output: []const u8,
+    /// Its exit status.
+    status: u8 = 0,
+};
+
+/// A story a package's documents show as written and as `riverrun tag` leaves it: two files of the package.
+pub const TaggedStory = struct { before: []const u8, after: []const u8 };
+
+/// Each run, with `program`, its standard input empty, its output held to its file and its exit status to its own,
+/// hung on `step` (a package's test step). `package` is the package the paths are in.
+pub fn addShownRuns(b: *std.Build, step: *std.Build.Step, program: *std.Build.Step.Compile, package: *std.Build, runs: []const ShownRun) void {
+    for (runs) |r| {
+        const run = b.addRunArtifact(program);
+        run.setName(b.fmt("{s}, in {s}", .{ commandOf(b, r.args), r.dir }));
+        run.setCwd(package.path(r.dir));
+        run.addArgs(r.args);
+        for (r.args) |a| if (std.mem.endsWith(u8, a, ".river") or std.mem.endsWith(u8, a, ".play")) run.addFileInput(package.path(b.pathJoin(&.{ r.dir, a })));
+        run.setStdIn(.{ .bytes = "" });
+        run.addCheck(.{ .expect_stdout_snapshot = package.path(b.pathJoin(&.{ r.dir, r.output })) });
+        run.expectExitCode(r.status);
+        step.dependOn(&run.step);
+    }
+}
+
+// The command as a writer types it: `riverrun` and the arguments, each quoted where a shell would split it.
+fn commandOf(b: *std.Build, args: []const []const u8) []const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    out.appendSlice(b.allocator, "riverrun") catch @panic("OOM");
+    for (args) |a| {
+        const bare = a.len > 0 and for (a) |ch| {
+            if (!std.ascii.isAlphanumeric(ch) and std.mem.findScalar(u8, "_./=:+-,", ch) == null) break false;
+        } else true;
+        if (std.mem.findScalar(u8, a, '\'') != null) std.debug.panic("a shown run's argument holds a quote, which its command cannot show plainly: {s}", .{a});
+        if (bare) out.print(b.allocator, " {s}", .{a}) catch @panic("OOM") else out.print(b.allocator, " '{s}'", .{a}) catch @panic("OOM");
+    }
+    return out.items;
+}
+
 pub const ExcerptsOptions = struct {
     /// The package the paths are in.
     package: *std.Build,
     /// Whole stories, each checked on its own.
     stories: []const []const u8,
     /// Markdown, whose ```river blocks are shown stories, and Zig, whose `//!` blocks indented four spaces past the
-    /// `//!` are.
+    /// `//!` are. A Markdown document's ```console blocks are runs, and its ```river refused blocks the stories
+    /// those runs refuse.
     documents: []const []const u8,
+    /// The runs the documents show, as `addShownRuns` pins them: each must be shown whole, and by some document.
+    runs: []const ShownRun = &.{},
+    /// Stories shown as written and as `riverrun tag` leaves them.
+    tagged: []const TaggedStory = &.{},
 };
 
 /// A test that every story a package's documents show is rows of one of its checked stories, one after another as
-/// written: so what the documents show is what `addCheck` checked. `dep` is riverrun asked by `building(b)`.
+/// written, so what the documents show is what `addCheck` checked; that every run they show is shown whole, as
+/// `addShownRuns` pins it, and every refused story as the run refuses it; and that a story shown tagged is what
+/// `riverrun tag` writes. `dep` is riverrun asked by `building(b)`.
 pub fn addExcerptsTest(b: *std.Build, dep: *std.Build.Dependency, options: ExcerptsOptions) ?*std.Build.Step.Compile {
     const kit = tools(dep) orelse return null;
     const files = b.addWriteFiles();
     var root: std.ArrayList(u8) = .empty;
     root.appendSlice(b.allocator,
-        \\//! Every story a document shows is rows of a checked story.
+        \\//! Every story a document shows is rows of a checked story, every run it shows is what the run printed, and
+        \\//! every story it shows tagged is what `riverrun tag` writes.
         \\const std = @import("std");
         \\const excerpts = @import("riverrun-tools").excerpts;
         \\const Named = excerpts.Named;
@@ -384,24 +518,45 @@ pub fn addExcerptsTest(b: *std.Build, dep: *std.Build.Dependency, options: Excer
         \\const stories = [_]Named{
         \\
     ) catch @panic("OOM");
-    for (options.stories, 0..) |s, i| {
-        _ = files.addCopyFile(options.package.path(s), b.fmt("story{d}", .{i}));
-        root.print(b.allocator, "    .{{ .path = \"{f}\", .text = @embedFile(\"story{d}\") }},\n", .{ std.zig.fmtString(s), i }) catch @panic("OOM");
-    }
+    embedEach(b, files, &root, options.package, "story", options.stories);
     root.appendSlice(b.allocator, "};\nconst documents = [_]Named{\n") catch @panic("OOM");
-    for (options.documents, 0..) |d, i| {
-        _ = files.addCopyFile(options.package.path(d), b.fmt("document{d}", .{i}));
-        root.print(b.allocator, "    .{{ .path = \"{f}\", .text = @embedFile(\"document{d}\") }},\n", .{ std.zig.fmtString(d), i }) catch @panic("OOM");
+    embedEach(b, files, &root, options.package, "document", options.documents);
+    root.appendSlice(b.allocator, "};\nconst runs = [_]excerpts.Run{\n") catch @panic("OOM");
+    for (options.runs, 0..) |r, i| {
+        _ = files.addCopyFile(options.package.path(b.pathJoin(&.{ r.dir, r.output })), b.fmt("run{d}", .{i}));
+        root.print(b.allocator, "    .{{ .command = \"{f}\", .output = @embedFile(\"run{d}\"), .refused = &.{{\n", .{ std.zig.fmtString(commandOf(b, r.args)), i }) catch @panic("OOM");
+        // the stories `riverrun check` refuses here: what a ```river refused block shows
+        if (r.status == 1 and std.mem.eql(u8, r.args[0], "check")) for (r.args[1..], 0..) |a, k| {
+            if (!std.mem.endsWith(u8, a, ".river")) continue;
+            const path = b.pathJoin(&.{ r.dir, a });
+            _ = files.addCopyFile(options.package.path(path), b.fmt("run{d}_{d}", .{ i, k }));
+            root.print(b.allocator, "        .{{ .path = \"{f}\", .text = @embedFile(\"run{d}_{d}\") }},\n", .{ std.zig.fmtString(path), i, k }) catch @panic("OOM");
+        };
+        root.appendSlice(b.allocator, "    } },\n") catch @panic("OOM");
+    }
+    root.appendSlice(b.allocator, "};\nconst tagged = [_]excerpts.Tagged{\n") catch @panic("OOM");
+    for (options.tagged, 0..) |t, i| {
+        _ = files.addCopyFile(options.package.path(t.before), b.fmt("before{d}", .{i}));
+        _ = files.addCopyFile(options.package.path(t.after), b.fmt("after{d}", .{i}));
+        root.print(b.allocator, "    .{{ .before = .{{ .path = \"{f}\", .text = @embedFile(\"before{d}\") }}, .after = .{{ .path = \"{f}\", .text = @embedFile(\"after{d}\") }} }},\n", .{ std.zig.fmtString(t.before), i, std.zig.fmtString(t.after), i }) catch @panic("OOM");
     }
     root.appendSlice(b.allocator,
         \\};
         \\
-        \\test "every story a document shows is rows of a checked story" {
+        \\test "every story a document shows is rows of a checked story, and every run what it printed" {
         \\    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
         \\    defer arena.deinit();
-        \\    const unshown = try excerpts.unshown(arena.allocator(), &documents, &stories);
-        \\    for (unshown) |u| std.debug.print("{s}:{d}: {s}\\n", .{ u.path, u.line, u.why });
+        \\    const unshown = try excerpts.unshown(arena.allocator(), &documents, .{ .stories = &stories, .runs = &runs });
+        \\    for (unshown) |u| std.debug.print("{s}:{d}: {s}\n", .{ u.path, u.line, u.why });
         \\    try std.testing.expectEqual(@as(usize, 0), unshown.len);
+        \\}
+        \\
+        \\test "every story shown tagged is what `riverrun tag` writes into it as written" {
+        \\    for (tagged) |t| {
+        \\        const same = try excerpts.retagged(std.testing.allocator, t);
+        \\        if (!same) std.debug.print("{s}: not what `riverrun tag` writes into {s}\n", .{ t.after.path, t.before.path });
+        \\        try std.testing.expect(same);
+        \\    }
         \\}
         \\
     ) catch @panic("OOM");

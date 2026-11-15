@@ -1,0 +1,33 @@
+// The landing at Hollin, at night: a ferry, and two people waiting for it.
+cast:
+  ada    "Ada"    — keeps the ferry
+  otto   "Otto"   — a pedlar, going over for the fair
+extras: a boy
+
+== landing
+Rain on the river. A lantern on a post, and a boat tied up under it.
+A BOY: Ferry! Last ferry over!
+OTTO: She heard you the first time.
+ADA: I go when the rain eases. Not before.
+- (ask)
+* How much to cross?
+  ADA: Two coins. Same as always.
+  -> ask
+* When will it ease?
+  ADA: When it's ready.
+  OTTO: She means never.
+  -> aks
++ Look at the river.
+  Black water, moving fast under the rain.
+  -> ask
+* Sit with Otto.
+  You sit down beside him on the wet bench.
+  * Ask what he sells.
+    OTTO: Needles, thread, buttons. Nothing anyone needs until they need it.
+  * Say nothing.
+    Otto hums something under his breath.
+  - The rain goes on.
+  -> end
+* Go home.
+  You turn up the lane, the way the boy went.
+  -> end

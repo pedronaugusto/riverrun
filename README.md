@@ -12,7 +12,7 @@ riverrun reads, checks and runs stories written in `.river` files.
   inputs that writes a transcript.
 
 A compiled story is graph data, specified in [docs/format.md](docs/format.md), so any engine's runtime can read
-it. The design is [docs/design.md](docs/design.md).
+it. The design is [docs/design.md](docs/design.md). A writer starts with [the manual](docs/manual/README.md).
 
 ## Install
 
@@ -63,10 +63,10 @@ design names a C ABI; it is not built yet.
 
 `bay test` runs the unit suite: the reader, the checker and the compiler on stories and on a whole story read,
 checked, compiled and told; the runtime on compiled stories; and the program, with the documentation's stories
-checked by it, and played by it from a script. Properties hold the reader to printing any bytes back, `riverrun tag`
-to adding ids and nothing else, the whole compiler to giving a story or diagnostics for any text, never a crash,
-and play to a transcript and a named ending for any story and any script, to telling what the walk tells, and to
-going back and forward again as if never gone back; `bay fuzz` fuzzes them.
+checked by it, and played by it from a script, and every run the manual shows pinned. Properties hold the reader to
+printing any bytes back, `riverrun tag` to adding ids and nothing else, the whole compiler to giving a story or
+diagnostics for any text, never a crash, and play to a transcript and a named ending for any story and any script,
+to telling what the walk tells, and to going back and forward again as if never gone back; `bay fuzz` fuzzes them.
 
 ## Stability
 

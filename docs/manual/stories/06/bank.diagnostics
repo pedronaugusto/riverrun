@@ -1,0 +1,5 @@
+bank.river:6:1-6:53: error: this has no id: `riverrun tag` writes one
+bank.river:7:1-7:22: error: this has no id: `riverrun tag` writes one
+bank.river:8:1-8:13: error: this has no id: `riverrun tag` writes one
+bank.river:9:3-9:24: error: this has no id: `riverrun tag` writes one
+bank.river:11:1-11:18: error: this has no id: `riverrun tag` writes one

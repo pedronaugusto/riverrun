@@ -1,0 +1,14 @@
+// The landing at Hollin, at night: a ferry, and two people waiting for it.
+cast:
+  ada    "Ada"    — keeps the ferry
+  otto   "Otto"   — a pedlar, going over for the fair
+extras: a boy
+
+== landing
+Rain on the river. A lantern on a post, and a boat tied up under it.
+A BOY: Ferry! Last ferry over!
+OTTO: She heard you the first time.   // the boy shouts it at every boat
+ADA: I go when the rain eases. Not before.
+The boy runs off up the lane. Otto sits down on his pack.
+OTTO: Then we wait.
+-> end
