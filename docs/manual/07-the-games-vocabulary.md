@@ -376,7 +376,8 @@ stall.river:11:18-11:24: error: the game has no person called `millar`
 A game's build compiles its story with `addStory`, which reads, checks and compiles the files with the game's
 vocabulary and embeds the result in a module the game imports. It makes the `riverrun` program on the way, with the
 same vocabulary in it, and hands it back to install, so the writers' `riverrun check` checks exactly what the build
-does. From riverrun's README:
+does. These are the middle rows of [a game's build](stories/07/game/build.zig), the game's own `build` function,
+as riverrun's README shows them:
 
 ```zig
 const riverrun = @import("riverrun");

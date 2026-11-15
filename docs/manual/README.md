@@ -22,8 +22,12 @@ of words and a play of it, and every chapter ends with something you can run.
    night of rooms the game plays.
 9. [Rules](09-rules.md): firing on becoming true, one at a time, a state machine, `since_changed` and `happened`,
    migrations.
-10. Quests: in cairn's documentation, the package that runs them; not written yet.
-11. Time: in tide's documentation, the package that keeps a game's time; not written yet.
+10. [Quests](https://github.com/pedronaugusto/cairn/blob/main/docs/manual/10-quests.md), in cairn's documentation,
+    the package that runs them: stages and what moves a quest on, roles, quests the game starts and quests that
+    repeat, what every quest shares, and a quest's news in a play.
+11. [Time](https://github.com/pedronaugusto/tide/blob/main/docs/manual/11-time.md), in tide's documentation, the
+    package that keeps a game's time: a clock, a calendar and the facts it keeps, scenes that come due, and time
+    moved on in a play.
 12. [What the checker proves](12-what-the-checker-proves.md): reading a diagnostic, what each kind of message
     means and what to do, widths and limits, how far the checker can tell, exit statuses, and the loop an AI runs.
 13. [Worked scenes](13-worked-scenes.md): a conversation with interjections, a day of slots, a confession branching
@@ -38,14 +42,14 @@ record is [docs/design.md](../design.md).
 ## How this manual is kept
 
 For whoever writes its next chapter. The manual is Markdown that reads on GitHub, and nothing in it is typed from
-memory: every story it shows checks, every run it shows is what the program printed, and the test step holds them
-so (`bay dev manual-test` runs those tests alone; `bay manual` builds the program the stories are written for).
+memory: every story it shows checks, every run it shows is what the program printed, every block of it is held to
+the file it shows, and the test step holds them so (`bay dev manual-test` runs those tests alone; `bay manual`
+builds the program the stories are written for).
 
 **Where it lives.** Chapters 1 to 9 and 12 to 14 are here, one file each, named by number and title
-(`01-a-page-of-words.md`); a chapter not yet written is a page that says so, so no link is dead. Chapter 10 will be
-cairn's `docs/manual/10-quests.md` and chapter 11 tide's `docs/manual/11-time.md`, each written in this frame with
-its package's own stories and test step, and linked from this index by their URLs once they exist. Every chapter is
-listed in `manual.documents` in `build.zig`.
+(`01-a-page-of-words.md`). Chapter 10 is cairn's `docs/manual/10-quests.md` and chapter 11 tide's
+`docs/manual/11-time.md`, each written in this frame with its package's own stories, vocabulary and test step, and
+linked from this index by its URL. Every chapter is listed in `manual.documents` in its repository's `build.zig`.
 
 **The game.** The stories are written for one small game, whose vocabulary is
 [stories/vocabulary.zig](stories/vocabulary.zig): its tags (`music`, `picture`, `sound`, `pause`, `marked`,
@@ -81,8 +85,18 @@ a ` ```river refused ` block, which the excerpts test holds to a story some pinn
 mistake the checker only warns about checks, so its rows go in a ` ```river ` block, and its pinned run has the
 status 0. The prose names the file, so a reader can open it.
 
-**Zig.** A ` ```zig ` block is a copy of a file of the repository, or of part of one, and the prose names it. The
-test step does not hold it: whoever changes the file changes the block, as chapter 7 shows the vocabulary whole.
+**Zig.** A ` ```zig ` block is consecutive rows of a Zig file the test step builds, and the prose names the file:
+the vocabulary, which the program is made with, or the game's build, `stories/07/game/build.zig`, which the test
+step compiles against riverrun's own build and never runs. Rows from inside a function may be shown at the margin,
+all less indented by the same number of spaces. The excerpts test holds each block to its file, so changing the file
+fails the block until it is changed too; the README's build is held to the same file.
+
+**Text.** A ` ```text ` block is consecutive rows of a text the repository keeps, the grammar of
+[docs/design.md](../design.md), or of what a pinned run printed: chapter 14's grammar is the design's, and chapter
+12 quotes a row of a diagnostic.
+
+Every fenced block of a chapter is one of these kinds, and the excerpts test fails on a block of any other language,
+or of none, so nothing is shown that the test step does not hold.
 
 **Ids.** A story shown before and after `riverrun tag` is a pair in `manual.tagged`, and the excerpts test holds the
 second to what `riverrun tag` writes into the first. `riverrun tag` is not run by the test step, since it writes

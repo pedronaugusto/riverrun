@@ -10,6 +10,10 @@
 //!   refuses, in a run the document shows.
 //! - A ```console block shows a run: `$ riverrun …` and, on the rows under
 //!   it, everything it printed, as pinned.
+//! - A ```zig block shows rows of a Zig file that builds, one after another,
+//!   indented as written there or all less by the same number of spaces.
+//! - A ```text block shows rows of a text the package keeps (its design's
+//!   grammar), or of what a run printed.
 //! - A story shown before and after `riverrun tag` is held to what `tag`
 //!   writes into it.
 
@@ -40,6 +44,12 @@ pub const Kind = enum {
     refused,
     /// A run of the program and what it printed.
     run,
+    /// Rows of a Zig file that builds.
+    zig,
+    /// Rows of a text kept, or of what a run printed.
+    text,
+    /// A block in any other language, or none: held by nothing.
+    other,
 };
 
 /// A block of a document: the line it starts on, what it shows, and its rows.
@@ -74,12 +84,20 @@ pub fn blocks(arena: std.mem.Allocator, doc: Named) error{OutOfMemory}![]const B
             } else try rows.append(arena, row);
         } else {
             const fence = std.mem.trim(u8, row, " ");
-            inside = if (std.mem.eql(u8, fence, "```river")) .story else if (std.mem.eql(u8, fence, "```river refused")) .refused else if (std.mem.eql(u8, fence, "```console")) .run else null;
+            if (!std.mem.startsWith(u8, fence, "```")) continue;
+            inside = fenced(fence["```".len..]);
             start = n + 1;
         }
     }
     if (inside != null and zig) try out.append(arena, .{ .line = start, .rows = try rows.toOwnedSlice(arena) });
     return out.items;
+}
+
+// What a block opened by ``` and `info` shows.
+fn fenced(info: []const u8) Kind {
+    const kinds = [_]struct { []const u8, Kind }{ .{ "river", .story }, .{ "river refused", .refused }, .{ "console", .run }, .{ "zig", .zig }, .{ "text", .text } };
+    for (kinds) |k| if (std.mem.eql(u8, info, k[0])) return k[1];
+    return .other;
 }
 
 /// Whether `rows` are rows of `story`, one after another.
@@ -95,6 +113,20 @@ pub fn within(rows: []const []const u8, story: []const u8) bool {
         } else return true;
         _ = from.next() orelse return false;
     }
+}
+
+/// Whether `rows` are rows of `text`, one after another, as written there or each indented there by the same number of
+/// spaces more (a row with no words, by none): what a block shows of the inside of a function.
+pub fn withinIndented(arena: std.mem.Allocator, rows: []const []const u8, text: []const u8) error{OutOfMemory}!bool {
+    if (within(rows, text)) return true;
+    const spaces = " " ** 40;
+    const shifted = try arena.alloc([]const u8, rows.len);
+    var indent: usize = 1;
+    while (indent <= spaces.len) : (indent += 1) {
+        for (rows, shifted) |r, *s| s.* = if (r.len == 0) r else try std.mem.concat(arena, u8, &.{ spaces[0..indent], r });
+        if (within(shifted, text)) return true;
+    }
+    return false;
 }
 
 /// Whether `rows` are all `output` printed, row for row: the last row's line ending is the output's end.
@@ -117,11 +149,18 @@ pub const Shown = struct {
     /// Stories that check: what a ```river block shows rows of.
     stories: []const Named,
     /// Runs of the program: what a ```console block shows, and the refused stories a ```river refused block shows
-    /// rows of. Each must be shown by a document.
+    /// rows of. Each must be shown by a document. A ```text block may show rows of what one printed.
     runs: []const Run = &.{},
+    /// Zig files that build: what a ```zig block shows rows of.
+    sources: []const Named = &.{},
+    /// Texts kept beside the stories (a design's grammar): what a ```text block shows rows of.
+    texts: []const Named = &.{},
+    /// Whether every fenced block must be one these hold, so a document shows nothing unchecked; otherwise a block in
+    /// another language, or none, is left alone.
+    every: bool = false,
 };
 
-/// Every block of `documents` that is not what `shown` holds, every document that shows no story at all (it was
+/// Every block of `documents` that is not what `shown` holds, every document that shows no block they hold (it was
 /// listed as one that does), and every run no document shows.
 pub fn unshown(arena: std.mem.Allocator, documents: []const Named, shown: Shown) error{OutOfMemory}![]const Unshown {
     var out: std.ArrayList(Unshown) = .empty;
@@ -129,20 +168,20 @@ pub fn unshown(arena: std.mem.Allocator, documents: []const Named, shown: Shown)
     @memset(seen, false);
     for (documents) |d| {
         const found = try blocks(arena, d);
-        var stories: usize = 0;
+        var held: usize = 0;
         for (found) |b| switch (b.kind) {
             .story => {
-                stories += 1;
+                held += 1;
                 for (shown.stories) |s| {
                     if (within(b.rows, s.text)) break;
                 } else try out.append(arena, .{ .path = d.path, .line = b.line, .why = "this story block is not rows of any checked story" });
             },
             .refused => {
-                stories += 1;
-                const held = refusedHolds(b.rows, shown.runs);
-                if (!held) try out.append(arena, .{ .path = d.path, .line = b.line, .why = "this refused block is not rows of a story a shown `riverrun check` refuses" });
+                held += 1;
+                if (!refusedHolds(b.rows, shown.runs)) try out.append(arena, .{ .path = d.path, .line = b.line, .why = "this refused block is not rows of a story a shown `riverrun check` refuses" });
             },
             .run => {
+                held += 1;
                 const first = if (b.rows.len > 0) b.rows[0] else "";
                 const command = if (std.mem.startsWith(u8, first, "$ ")) first[2..] else {
                     try out.append(arena, .{ .path = d.path, .line = b.line, .why = "a console block begins with `$ riverrun …`, the command run" });
@@ -160,8 +199,24 @@ pub fn unshown(arena: std.mem.Allocator, documents: []const Named, shown: Shown)
                 };
                 seen[i] = true;
             },
+            .zig => {
+                held += 1;
+                for (shown.sources) |f| {
+                    if (try withinIndented(arena, b.rows, f.text)) break;
+                } else try out.append(arena, .{ .path = d.path, .line = b.line, .why = "this zig block is not rows of any Zig file that builds" });
+            },
+            .text => {
+                held += 1;
+                const kept = for (shown.texts) |t| {
+                    if (within(b.rows, t.text)) break true;
+                } else for (shown.runs) |r| {
+                    if (within(b.rows, r.output)) break true;
+                } else false;
+                if (!kept) try out.append(arena, .{ .path = d.path, .line = b.line, .why = "this text block is not rows of a text kept or of what a shown run printed" });
+            },
+            .other => if (shown.every) try out.append(arena, .{ .path = d.path, .line = b.line, .why = "this block is held by nothing: show a story, a run, a Zig file or a text kept, in a block of its kind" }),
         };
-        if (stories == 0) try out.append(arena, .{ .path = d.path, .line = 1, .why = "shows no story block" });
+        if (held == 0) try out.append(arena, .{ .path = d.path, .line = 1, .why = "shows no block the test holds" });
     }
     for (shown.runs, seen) |r, s| if (!s) try out.append(arena, .{ .path = r.command, .line = 0, .why = "no document shows this run" });
     return out.items;
@@ -193,16 +248,54 @@ test "a document's story blocks are found and held to the stories" {
     defer arena.deinit();
     const a = arena.allocator();
     const in_md = try blocks(a, md);
-    try std.testing.expectEqual(@as(usize, 1), in_md.len);
+    try std.testing.expectEqual(@as(usize, 2), in_md.len);
     try std.testing.expectEqual(@as(u32, 4), in_md[0].line);
+    try std.testing.expectEqual(Kind.zig, in_md[1].kind);
     const in_zig = try blocks(a, zig);
     try std.testing.expectEqual(@as(usize, 1), in_zig.len);
     try std.testing.expectEqualStrings("  [stage]", in_zig[0].rows[1]);
     try std.testing.expect(within(in_md[0].rows, "// a story\n== a\nGo.\n-> end\n"));
     try std.testing.expect(!within(in_md[0].rows, "== a\nStay.\nGo.\n"));
-    try std.testing.expectEqual(@as(usize, 0), (try unshown(a, &.{ md, zig }, .{ .stories = &.{ .{ .path = "a.river", .text = "== a\nGo.\n" }, .{ .path = "q.river", .text = "== a\n  [stage]\n" } } })).len);
+    const source: Named = .{ .path = "x.zig", .text = "const x = 1;\n" };
+    try std.testing.expectEqual(@as(usize, 0), (try unshown(a, &.{ md, zig }, .{ .stories = &.{ .{ .path = "a.river", .text = "== a\nGo.\n" }, .{ .path = "q.river", .text = "== a\n  [stage]\n" } }, .sources = &.{source} })).len);
     const missed = try unshown(a, &.{md}, .{ .stories = &.{.{ .path = "b.river", .text = "== b\n" }} });
+    try std.testing.expectEqual(@as(usize, 2), missed.len);
     try std.testing.expectEqual(@as(u32, 4), missed[0].line);
+    try std.testing.expectEqualStrings("this zig block is not rows of any Zig file that builds", missed[1].why);
+}
+
+test "a zig block is rows of a file that builds, a text block rows of a text kept or a run's output, and a manual holds every block" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const build: Named = .{ .path = "build.zig", .text = "pub fn build(b: *std.Build) void {\n    const exe = b.addExecutable(.{});\n\n    b.installArtifact(exe);\n}\n" };
+    // rows from inside the function, shown at the margin, an empty row among them
+    try std.testing.expect(try withinIndented(a, &.{ "const exe = b.addExecutable(.{});", "", "b.installArtifact(exe);" }, build.text));
+    try std.testing.expect(try withinIndented(a, &.{"    b.installArtifact(exe);"}, build.text));
+    // not one indentation for all, or not one after another
+    try std.testing.expect(!try withinIndented(a, &.{ "pub fn build(b: *std.Build) void {", "const exe = b.addExecutable(.{});" }, build.text));
+    try std.testing.expect(!try withinIndented(a, &.{ "const exe = b.addExecutable(.{});", "b.installArtifact(exe);" }, build.text));
+    const grammar: Named = .{ .path = "design.md", .text = "## Grammar\n\n```text\nfile = { row }\nrow  = words NL\n```\n" };
+    const runs = [_]Run{.{ .command = "riverrun check a.river", .output = "a.river:2:1-2:5: error: one\na.river:3:1-3:5: error: two\n" }};
+    const doc: Named = .{ .path = "14.md", .text = "```zig\nconst exe = b.addExecutable(.{});\n```\n\n```text\nrow  = words NL\n```\n\n" ++
+        "```console\n$ riverrun check a.river\na.river:2:1-2:5: error: one\na.river:3:1-3:5: error: two\n```\n\n```text\na.river:3:1-3:5: error: two\n```\n\n```\nfree\n```\n" };
+    const found = try blocks(a, doc);
+    try std.testing.expectEqual(@as(usize, 5), found.len);
+    try std.testing.expectEqual(Kind.other, found[4].kind);
+    const shown: Shown = .{ .stories = &.{}, .runs = &runs, .sources = &.{build}, .texts = &.{grammar} };
+    try std.testing.expectEqual(@as(usize, 0), (try unshown(a, &.{doc}, shown)).len);
+    var every = shown;
+    every.every = true;
+    const strict = try unshown(a, &.{doc}, every);
+    try std.testing.expectEqual(@as(usize, 1), strict.len);
+    try std.testing.expectEqual(@as(u32, 20), strict[0].line);
+    // a text not kept, a zig row changed
+    const drifted: Named = .{ .path = "15.md", .text = "```text\nrow = words NL\n```\n\n```zig\nconst exe = b.addExecutable(.{ .name = \"x\" });\n```\n" };
+    const missed = try unshown(a, &.{drifted}, shown);
+    try std.testing.expectEqual(@as(usize, 3), missed.len);
+    try std.testing.expectEqualStrings("this text block is not rows of a text kept or of what a shown run printed", missed[0].why);
+    try std.testing.expectEqualStrings("this zig block is not rows of any Zig file that builds", missed[1].why);
+    try std.testing.expectEqualStrings("no document shows this run", missed[2].why);
 }
 
 test "a run a document shows is held whole to what it printed, and a refused block to the story it refused" {

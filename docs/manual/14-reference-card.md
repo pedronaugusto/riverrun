@@ -292,9 +292,9 @@ OTTO: That's the fair. Sold 0 today.
 
 ## The grammar
 
-River's rows, as `docs/design.md` describes them and the reader reads them. The grammar is not held by the test
-step; every form in it is a row of the card above, which is. `NL` ends a row and `IND` is its indentation, in
-spaces: what is indented deeper under a row belongs to it.
+River's rows, as the reader reads them: the grammar of [docs/design.md](../design.md), the design of record, which
+the test step holds this copy to, and every form in it a row of the card above. `NL` ends a row and `IND` is its
+indentation, in spaces: what is indented deeper under a row belongs to it.
 
 ```text
 file        = [ "module" name NL ] { row }

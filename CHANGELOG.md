@@ -16,6 +16,15 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
   counting, the build), pools, rules, what the checker proves (each kind of message, widths and limits, exit
   statuses, the loop an AI runs), worked scenes, and the reference card with the grammar; each over stories that
   check, with their mistakes and pinned plays. The manual's game knows its things, a night of rooms, and a width.
+- The manual holds every block it shows: a ` ```zig ` block is rows of a Zig file the test step builds (the
+  vocabulary, or a game's build compiled against riverrun's own, `docs/manual/stories/07/game/build.zig`, whose
+  rows the README shows too), a ` ```text ` block rows of the design's grammar or of a pinned run's output, and a
+  block of any other language fails the test. The grammar is in `docs/design.md`, the design of record, and the
+  reference card's is held to it. The index links chapters 10 and 11, cairn's quests and tide's time.
+- `addExcerptsTest` takes `sources` (Zig files a ` ```zig ` block shows rows of, as written or all less indented),
+  `texts` (files a ` ```text ` block shows rows of, beside the runs' outputs) and `every` (every fenced block must
+  be one it holds); `excerpts.withinIndented`, `Shown.sources`, `texts`, `every`. A document shows at least one
+  block it holds, of any kind.
 - `addShownRuns`: runs of the program a package's documents show (`ShownRun`: a folder, the arguments, the file
   holding what it prints, the exit status), each run with nothing on standard input and held to its file byte for
   byte and to its status. `addExcerptsTest` takes them (`runs`) and holds every ` ```console ` block, `$ riverrun …`

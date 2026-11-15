@@ -296,6 +296,58 @@ that names the form that replaced it: `~ x` (write `[x]`), `# key` after a line'
 line, or `\#` for the mark), `->> x` (write `-> x ->`), `{n -> one: …}` (write `{n as one: …}`), `·` between tags
 or names (a bracket each, or commas), `[id x]` (write `^x` at the line's end).
 
+### The grammar
+
+The rows above, as the reader reads them. `NL` ends a row and `IND` is its indentation, in spaces: what is indented
+deeper under a row belongs to it. The manual's reference card shows this grammar, held to it by its test step.
+
+```text
+file        = [ "module" name NL ] { row }
+row         = IND ( declaration | heading | brackets | statement ) [ " ^" id ] [ comment ] NL
+comment     = "//" { any }                     ; at the start of the words, or after a space
+
+declaration = "version:" int
+            | "cast:" NL { IND name quoted [ "—" words ] NL { IND brackets NL } }
+            | "extras:" words { "," words }
+            | "facts" [ "(" name ")" ] ":" NL { IND fact NL }
+            | "const:" NL { IND name "=" value NL }
+            | "extern:" NL { IND extern NL }
+fact        = name [ "(" ( name | "one of" list ) ")" ] ":" type [ "(game)" | "(clock)" | "(moment)" ]
+type        = "bool" | "int" [ "from" int "to" int ] | "text" | "one of" list | "set of" list | "ref of" name
+list        = name { "," name }
+extern      = name "(" [ params ] ")" [ "->" type ] [ "(action)" ] [ "(reads" name [ "(" list ")" ] ")" ]
+params      = type | name ":" type { "," name ":" type }
+
+heading     = "==" name [ "(" ( "pool" [ int ] | "rules" | name ) ")" ]
+            | "=" name [ "when" "{" expr "}" ] [ statement ]
+brackets    = "[" bracket "]" { "[" bracket "]" }
+bracket     = name [ value { "," value } ]                    ; a tag
+            | name [ "(" expr ")" ] ( "=" | "+=" | "-=" ) expr  ; an effect on a fact
+            | name "(" [ expr { "," expr } ] ")"              ; an action
+value       = word | number | quoted
+
+statement   = [ "{" expr "}" ] ( line | flow )
+            | ( "*" | "+" ) [ "{" expr "}" ] words
+            | "-" [ "(" name ")" ] [ statement ]
+            | "{" expr "}" | "{ else }"
+line        = [ SPEAKER [ " (" words ")" ] ": " ] words
+flow        = "->" ( name | name "." name | "end" ) [ "->" ] | "<-"
+            | "{" expr ":" flow "|" flow "}"
+words       = { text | escape | "{" expr "}" | "{" expr ":" words "|" words "}"
+              | "{" ( "seq" | "cycle" | "once" | "shuffle" ) ":" words { "|" words } "}"
+              | "{" expr "as" label ":" words { "|" label ":" words } "}" }
+label       = "zero" | "one" | "two" | "few" | "many" | "masculine" | "feminine" | "neuter" | "other"
+escape      = "\{" | "\}" | "\[" | "\]" | "\^" | "\#"
+
+expr        = or
+or          = and { "or" and }
+and         = not { "and" not }
+not         = "not" not | rel
+rel         = sum [ ( "=" | "!=" | "<" | "<=" | ">" | ">=" | "has" | "hasnt" ) sum ]
+sum         = atom { ( "+" | "-" ) atom }
+atom        = name [ "(" [ expr { "," expr } ] ")" ] | int | quoted | "true" | "false" | "(" expr ")"
+```
+
 Built: the reader and the checker, all of the above.
 
 ## Conversations
@@ -391,7 +443,7 @@ its packages compiled in, `riverrun.addProgram(b, dep, .{ .vocabulary, .packages
 `riverrun check` over the story's files; a game installs the program, or hangs the step on one of its own, so a
 writer checks the story without building the game:
 
-```zig
+```zig sketch
 const story = riverrun.addStory(b, river, .{ .files = …, .vocabulary = b.path("src/vocabulary.zig"), .packages = … });
 b.installArtifact(story.program); // zig-out/bin/riverrun check story/*.river
 b.step("story", "Check the story without building the game").dependOn(&story.check.step);
@@ -654,7 +706,7 @@ kept in the instance, on the riverrun its own build depends on; null until lazy 
 and nothing more. A story's build asks riverrun and each such package by `riverrun.building(b)`, the machine doing
 the building at ReleaseSafe, and hands each compiler side to `addStory` by the name its vocabulary imports:
 
-```zig
+```zig sketch
 const river = b.dependency("riverrun", riverrun.building(b));
 const tide_side = tide.compiler(b.dependency("tide", riverrun.building(b))) orelse return;
 const story = riverrun.addStory(b, river, .{ .files = &.{b.path("episodes/ep1/story.river")},

@@ -369,10 +369,10 @@ fn playRun(b: *std.Build, program: *std.Build.Step.Compile, args: []const []cons
 }
 
 /// The stories riverrun's documentation shows: each a file the program checks with the documentation's vocabulary,
-/// and every story block of the documents rows of one of them.
+/// and every story block of the documents rows of one of them; the README's build, rows of the manual's game's.
 const documented = struct {
     const stories = [_][]const u8{ "docs/examples/kitchen.river", "docs/examples/courier.river" };
-    const documents = [_][]const u8{"docs/design.md"};
+    const documents = [_][]const u8{ "docs/design.md", "README.md" };
 };
 
 // The documentation's stories checked by `riverrun check`, as a game's build checks one, and its documents' story
@@ -382,7 +382,7 @@ fn docs(b: *std.Build, test_step: *std.Build.Step) void {
     const p = river.builder;
     const program = addProgram(b, river, .{ .vocabulary = p.path("docs/examples/vocabulary.zig") });
     for (documented.stories) |story| test_step.dependOn(&addCheck(b, program, &.{p.path(story)}, .{}).step);
-    test_step.dependOn(&b.addRunArtifact(addExcerptsTest(b, river, .{ .package = p, .stories = &documented.stories, .documents = &documented.documents }) orelse return).step);
+    test_step.dependOn(&b.addRunArtifact(addExcerptsTest(b, river, .{ .package = p, .stories = &documented.stories, .documents = &documented.documents, .sources = &.{manual.game}, .texts = &.{manual.design} }) orelse return).step);
 }
 
 /// riverrun's manual: its chapters, the stories they show, the runs of the program they show, and the story shown
@@ -391,6 +391,10 @@ fn docs(b: *std.Build, test_step: *std.Build.Step) void {
 /// is written to it.
 const manual = struct {
     const vocabulary = "docs/manual/stories/vocabulary.zig";
+    /// A game's build, whose rows chapter 7 and the README show: compiled against riverrun's build, never run.
+    const game = "docs/manual/stories/07/game/build.zig";
+    /// The design of record, whose grammar chapter 14 shows.
+    const design = "docs/design.md";
     const documents = [_][]const u8{
         "docs/manual/01-a-page-of-words.md",
         "docs/manual/02-choices.md",
@@ -502,8 +506,39 @@ fn manualTests(b: *std.Build, tests: *std.Build.Step) void {
     for (manual.runs) |r| if (r.status == 0 and std.mem.eql(u8, r.args[0], "check")) for (r.args[1..]) |a| {
         if (std.mem.endsWith(u8, a, ".river")) stories.append(b.allocator, b.pathJoin(&.{ r.dir, a })) catch @panic("OOM");
     };
-    const excerpts = addExcerptsTest(b, river, .{ .package = p, .stories = stories.items, .documents = &manual.documents, .runs = &manual.runs, .tagged = &manual.tagged }) orelse return;
+    test_step.dependOn(&gameBuild(b, p).step);
+    const excerpts = addExcerptsTest(b, river, .{
+        .package = p,
+        .stories = stories.items,
+        .documents = &manual.documents,
+        .runs = &manual.runs,
+        .tagged = &manual.tagged,
+        .sources = &.{ manual.vocabulary, manual.game },
+        .texts = &.{manual.design},
+        .every = true,
+    }) orelse return;
     test_step.dependOn(&b.addRunArtifact(excerpts).step);
+}
+
+// The manual's game's build compiled, its `build` with riverrun's build as a game's build imports it, and never run:
+// so the rows the README and chapter 7 show of it are what a game's build can write. The build runner's table of
+// packages, which `b.dependency` reads, is empty here, as nothing runs.
+fn gameBuild(b: *std.Build, p: *std.Build) *std.Build.Step.Compile {
+    const files = b.addWriteFiles();
+    const root = files.add("game_build.zig",
+        \\//! A game's build, compiled and never run.
+        \\pub const dependencies = struct {
+        \\    pub const packages = struct {};
+        \\    pub const root_deps: []const struct { []const u8, []const u8 } = &.{};
+        \\};
+        \\comptime {
+        \\    _ = &@import("game").build;
+        \\}
+        \\
+    );
+    const riverrun = b.createModule(.{ .root_source_file = p.path("build.zig") });
+    const game = b.createModule(.{ .root_source_file = p.path(manual.game), .imports = &.{.{ .name = "riverrun", .module = riverrun }} });
+    return b.addObject(.{ .name = "game-build", .root_module = b.createModule(.{ .root_source_file = root, .target = b.graph.host, .imports = &.{.{ .name = "game", .module = game }} }) });
 }
 
 /// A run of the `riverrun` program that a package's documents show in a ```console block, pinned by its tests: what
@@ -559,13 +594,21 @@ pub const ExcerptsOptions = struct {
     /// Whole stories, each checked on its own.
     stories: []const []const u8,
     /// Markdown, whose ```river blocks are shown stories, and Zig, whose `//!` blocks indented four spaces past the
-    /// `//!` are. A Markdown document's ```console blocks are runs, and its ```river refused blocks the stories
-    /// those runs refuse.
+    /// `//!` are. A Markdown document's ```console blocks are runs, its ```river refused blocks the stories those
+    /// runs refuse, its ```zig blocks rows of `sources` and its ```text blocks rows of `texts` or of a run's output.
     documents: []const []const u8,
     /// The runs the documents show, as `addShownRuns` pins them: each must be shown whole, and by some document.
     runs: []const ShownRun = &.{},
     /// Stories shown as written and as `riverrun tag` leaves them.
     tagged: []const TaggedStory = &.{},
+    /// Zig files a ```zig block may show rows of, each one the package's build compiles: a vocabulary its program
+    /// is made with, a game's build its tests compile against riverrun's.
+    sources: []const []const u8 = &.{},
+    /// Text files a ```text block may show rows of: the design's grammar.
+    texts: []const []const u8 = &.{},
+    /// Whether every fenced block of the documents must be one of these kinds, held, so a manual shows nothing
+    /// unchecked.
+    every: bool = false,
 };
 
 /// A test that every story a package's documents show is rows of one of its checked stories, one after another as
@@ -589,6 +632,10 @@ pub fn addExcerptsTest(b: *std.Build, dep: *std.Build.Dependency, options: Excer
     embedEach(b, files, &root, options.package, "story", options.stories);
     root.appendSlice(b.allocator, "};\nconst documents = [_]Named{\n") catch @panic("OOM");
     embedEach(b, files, &root, options.package, "document", options.documents);
+    root.appendSlice(b.allocator, "};\nconst sources = [_]Named{\n") catch @panic("OOM");
+    embedEach(b, files, &root, options.package, "source", options.sources);
+    root.appendSlice(b.allocator, "};\nconst texts = [_]Named{\n") catch @panic("OOM");
+    embedEach(b, files, &root, options.package, "text", options.texts);
     root.appendSlice(b.allocator, "};\nconst runs = [_]excerpts.Run{\n") catch @panic("OOM");
     for (options.runs, 0..) |r, i| {
         _ = files.addCopyFile(options.package.path(b.pathJoin(&.{ r.dir, r.output })), b.fmt("run{d}", .{i}));
@@ -608,13 +655,13 @@ pub fn addExcerptsTest(b: *std.Build, dep: *std.Build.Dependency, options: Excer
         _ = files.addCopyFile(options.package.path(t.after), b.fmt("after{d}", .{i}));
         root.print(b.allocator, "    .{{ .before = .{{ .path = \"{f}\", .text = @embedFile(\"before{d}\") }}, .after = .{{ .path = \"{f}\", .text = @embedFile(\"after{d}\") }} }},\n", .{ std.zig.fmtString(t.before), i, std.zig.fmtString(t.after), i }) catch @panic("OOM");
     }
+    root.print(b.allocator, "}};\nconst every = {};\n", .{options.every}) catch @panic("OOM");
     root.appendSlice(b.allocator,
-        \\};
         \\
         \\test "every story a document shows is rows of a checked story, and every run what it printed" {
         \\    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
         \\    defer arena.deinit();
-        \\    const unshown = try excerpts.unshown(arena.allocator(), &documents, .{ .stories = &stories, .runs = &runs });
+        \\    const unshown = try excerpts.unshown(arena.allocator(), &documents, .{ .stories = &stories, .runs = &runs, .sources = &sources, .texts = &texts, .every = every });
         \\    for (unshown) |u| std.debug.print("{s}:{d}: {s}\n", .{ u.path, u.line, u.why });
         \\    try std.testing.expectEqual(@as(usize, 0), unshown.len);
         \\}

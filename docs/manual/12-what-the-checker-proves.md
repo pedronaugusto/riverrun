@@ -32,7 +32,7 @@ runs to get from a first draft to a story that plays as meant.
 
 ## Reading a diagnostic
 
-```
+```text
 toll.river:18:1-18:7: error: `TOLMAN` is not a speaker: speakers come from `cast:` and `extras:`
 ```
 
