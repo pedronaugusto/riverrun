@@ -541,6 +541,10 @@ const Reader = struct {
             if (std.mem.findScalar(u8, piece.text, ':')) |colon| {
                 n = try r.word(l, piece.to(colon));
                 ty = piece.from(colon + 1).trim();
+            } else if (std.mem.findScalar(u8, piece.text, ',') != null and !std.mem.startsWith(u8, piece.text, "one of ") and !std.mem.startsWith(u8, piece.text, "set of ")) {
+                // `pay(int, int)`: a comma begins a parameter only before a name, so these read as one type
+                try r.reportAt(piece.span(r.file), "`{s}` is more than one parameter: two or more are each named, `who: ref of person, coins: int`", .{piece.text});
+                return error.Invalid;
             }
             try out.append(r.arena, .{ .span = piece.span(r.file), .name = n, .type = try r.typeOf(l, ty, &.{}), .type_span = ty.span(r.file) });
             start = i + 1;
@@ -1504,6 +1508,24 @@ test "any bytes are read or refused, never crash" {
             _ = try parseFile(arena.allocator(), std.testing.allocator, &diags, 0, "fuzz.river", bytes);
         }
     }.one, .{});
+}
+
+test "an extern's parameters are one type alone, or each named" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    var diags: source.Diagnostics = .{};
+    defer diags.deinit(std.testing.allocator);
+    const f = try parseFile(arena.allocator(), std.testing.allocator, &diags, 0, "a.river",
+        \\extern:
+        \\  talk_down(ref of person, int) -> bool (action)
+        \\  lived(one of stay, go) -> bool
+        \\  sell(what: ref of item, to: ref of person)
+    );
+    try std.testing.expectEqual(@as(usize, 1), diags.list.items.len);
+    const d = diags.list.items[0];
+    try std.testing.expectEqualStrings("`ref of person, int` is more than one parameter: two or more are each named, `who: ref of person, coins: int`", d.message);
+    try std.testing.expectEqual(source.Place{ .line = 2, .col = 13 }, f.place(d.span));
+    try std.testing.expectEqual(@as(usize, 2), f.decls[0].kind.externs.len);
 }
 
 test "each mark design B refuses is reported where it is written, naming the form it means" {
