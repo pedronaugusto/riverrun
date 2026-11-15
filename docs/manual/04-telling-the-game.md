@@ -108,7 +108,7 @@ facts:
 
 and asked about with `has` and `hasnt`: `{ carrying has lantern }`, `{ carrying hasnt needles }`.
 
-In brackets, `=` sets; in braces, `=` asks whether two things are equal. The brackets say which.
+In brackets, `=` sets; in braces, `=` asks whether two things are equal. The marks around it say which.
 
 ## Effects: the game's actions
 

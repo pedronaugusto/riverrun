@@ -34,8 +34,8 @@ OTTO: Then we wait.
 -> end
 ```
 
-`riverrun` is the program a writer runs. Your game's build makes it, with the game's own words in it, so it reads
-a story exactly as the game does; ask whoever builds the game where it puts it. This manual's stories are written
+`riverrun` is the program a writer runs. Your game's build makes it with the game's vocabulary in it, the tags and
+actions the game knows, so it reads a story exactly as the game does; ask whoever builds the game where it puts it. This manual's stories are written
 for a small game of the manual's own, and its `riverrun` is built in riverrun's folder with `bay manual`, which puts
 it in `zig-out/bin/`. Every command in this manual is run in the folder of the story it names.
 
@@ -52,9 +52,9 @@ A line is a speaker, a colon, and what they say. The speaker is written in capit
 after it, then a space, then the words. The words are exactly what follows the colon, and the game shows them as
 written.
 
-A row is a line only in that shape. `Otto: Then we wait.` and `OTTO:Then we wait.` are narration (below), words
-and all, and the checker says nothing about them, so look at how a play prints a row when it does not read as you
-meant.
+A row is a line only in that shape. `Otto: Then we wait.` and `OTTO:Then we wait.` are narration (below), name and
+all, and the checker does not say so. In a terminal a play prints a speaker in bold, so a line that has lost its
+speaker shows.
 
 ## Narration
 

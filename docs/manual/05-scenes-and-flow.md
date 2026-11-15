@@ -80,8 +80,9 @@ the section. A label, `- (ask)`, belongs to the section or the part it is writte
 ## Going and coming back
 
 `-> lamp ->` goes to `lamp`, and comes back. The story says what `lamp` says, and at `<-` returns to the row after
-the one it left from, `OTTO: I can't see the bank.` Use it for what several places say alike: here, whether the
-player has a lantern to hold up, in the fog, wherever the fog comes down.
+the one it left from, `OTTO: I can't see the bank.` Call a section for what more than one place says alike, or what
+one place says each time the story comes round to it: here, the light in the fog, which depends on whether the player
+has a lantern.
 
 ```river
 == lamp

@@ -67,7 +67,7 @@ ADA: Tell {otto as masculine: him | feminine: her | other: them} the dogs up the
 ```
 
 `{otto as masculine: him | feminine: her | other: them}` chooses words by Otto's gender, which `[gender masculine]`
-under his cast entry gives. The labels are `masculine`, `feminine`, `neuter` and `other`, and `other` must be there.
+under his cast entry gives: a tag of riverrun's own, which every game takes on a cast entry. The labels are `masculine`, `feminine`, `neuter` and `other`, and `other` must be there.
 Change the tag and every line written so follows. A person or a thing the game holds has the gender the game gives
 it; [chapter 7](07-the-games-vocabulary.md) has facts that hold one.
 
