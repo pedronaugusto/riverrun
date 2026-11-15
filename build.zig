@@ -400,6 +400,7 @@ const manual = struct {
         "docs/manual/06-text-that-varies.md",
         "docs/manual/07-the-games-vocabulary.md",
         "docs/manual/08-pools.md",
+        "docs/manual/09-rules.md",
     };
     const stories = [_][]const u8{
         "docs/manual/stories/01/ferry.river",
@@ -413,6 +414,7 @@ const manual = struct {
         "docs/manual/stories/07/ferry.river",
         "docs/manual/stories/08/ferry.river",
         "docs/manual/stories/08/inn.river",
+        "docs/manual/stories/09/ferry.river",
     };
     const runs = [_]ShownRun{
         .{ .dir = "docs/manual/stories/01", .args = &.{ "play", "ferry.river" }, .output = "ferry.transcript" },
@@ -440,6 +442,8 @@ const manual = struct {
         .{ .dir = "docs/manual/stories/08", .args = &.{ "play", "-i", "1", "inn.river" }, .output = "inn.transcript" },
         .{ .dir = "docs/manual/stories/08", .args = &.{ "play", "--from", "inn_night", "--set", "room = taproom", "--set", "hour = 22", "--set", "stood_a_drink = true", "inn.river" }, .output = "night.transcript" },
         .{ .dir = "docs/manual/mistakes/08", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
+        .{ .dir = "docs/manual/stories/09", .args = &.{ "play", "--set", "rain = pouring", "--script", "ferry.play", "ferry.river" }, .output = "ferry.transcript" },
+        .{ .dir = "docs/manual/mistakes/09", .args = &.{ "check", "ferry.river" }, .output = "ferry.diagnostics", .status = 1 },
     };
     const tagged = [_]TaggedStory{.{ .before = "docs/manual/stories/06/bank.river", .after = "docs/manual/stories/06/tagged/bank.river" }};
 };

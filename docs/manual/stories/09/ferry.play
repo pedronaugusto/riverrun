@@ -1,0 +1,12 @@
+// ask the price, then say you cannot pay it: Otto takes that badly
+1
+1
+// a quarter of an hour goes by
+:wait 15
+// the rain eases, and the boy rings the bell
+:set rain = easing
+:set bell = true
+// look at the river while Ada waits, then let ten minutes go by
+2
+:wait 10
+2

@@ -1,0 +1,3 @@
+ferry.river:47:3-47:17: error: `happened` is seen by what watches conditions: a rule or a quest, not `landing`
+ferry.river:98:3-98:35: error: a rule's body is its effects, `[…]`: a rule says nothing and goes nowhere
+ferry.river:99:64-99:68: error: `rain` is not a clock: since_changed counts on a fact declared `(clock)`
