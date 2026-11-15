@@ -22,14 +22,14 @@ pub const Terms = std.ArrayList(Term);
 pub fn condition(c: *Compiler, e: *const ast.Expr) Error!story.Range {
     var out: Terms = .empty;
     try cond(c, &out, e);
-    return c.b.expr(out.items);
+    return c.exprAt(out.items, e.span);
 }
 
 /// A value's terms, in the builder.
 pub fn value(c: *Compiler, e: *const ast.Expr) Error!story.Range {
     var out: Terms = .empty;
     try val(c, &out, e);
-    return c.b.expr(out.items);
+    return c.exprAt(out.items, e.span);
 }
 
 /// A key's terms, then a value's: what writing a fact kept per thing takes.
@@ -37,7 +37,7 @@ pub fn pair(c: *Compiler, key: *const ast.Expr, v: *const ast.Expr) Error!story.
     var out: Terms = .empty;
     try val(c, &out, key);
     try val(c, &out, v);
-    return c.b.expr(out.items);
+    return c.exprAt(out.items, key.span.join(v.span));
 }
 
 /// A value's terms appended to `out`, for an effect that builds its own.
@@ -49,7 +49,7 @@ pub fn into(c: *Compiler, out: *Terms, e: *const ast.Expr) Error!void {
 pub fn arguments(c: *Compiler, args: []const ast.Expr) Error!story.Range {
     var out: Terms = .empty;
     for (args) |*a| try val(c, &out, a);
-    return c.b.expr(out.items);
+    return c.expr(out.items);
 }
 
 fn typed(c: *const Compiler, e: *const ast.Expr) sym.Typed {

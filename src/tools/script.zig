@@ -12,12 +12,15 @@
 //!     :back                    back one input
 //!     :restart                 from the start, every input forgotten
 //!     :quit                    the end of playing
-//!     :help                    these
+//!     :help                    these, and the packages' commands
+//!     :start bounty target=wolf  a call the game makes into a package, as the package offers it: its name, what
+//!                              it applies to, and each parameter `name=value`
 //!
 //! An empty row, or one that begins with `//`, is nothing.
 
 const std = @import("std");
 const runtime = @import("riverrun");
+const river = @import("riverrun-compiler");
 const Play = @import("Play.zig");
 const transcript = @import("transcript.zig");
 
@@ -34,7 +37,7 @@ pub const Command = union(enum) {
     help,
 };
 
-/// The help a player is shown for `:help`.
+/// The help a player is shown for `:help`, the play's own commands; `writeHelp` adds the packages'.
 pub const help =
     \\  N                         take the choice numbered N
     \\  VALUE                     the outcome an action waits for: true, 3, a value of its list, a thing, "words"
@@ -49,6 +52,58 @@ pub const help =
     \\
 ;
 
+/// `:help`: the play's own commands, then each package's, with what it applies to in this story and the parameters
+/// each takes (`target=person`), as a row writes them.
+pub fn writeHelp(w: *std.Io.Writer, p: *const Play) std.Io.Writer.Error!void {
+    try w.writeAll(help);
+    const s = &p.loaded.story;
+    for (p.commands()) |o| {
+        const c = o.command;
+        try w.print("  :{s}", .{c.name});
+        if (c.object.len > 0) try w.print(" {f}", .{upper(c.object)});
+        const used = 1 + c.name.len + if (c.object.len > 0) 1 + c.object.len else 0;
+        try w.splatByteAll(' ', 26 -| used);
+        try w.print("{s} ({s})\n", .{ c.help, p.options.running[o.package].name });
+        for (o.forms) |f| {
+            try w.print("      :{s}", .{c.name});
+            if (f.object.len > 0) try w.print(" {s}", .{f.object});
+            for (f.params) |param| {
+                try w.print(" {s}=", .{param.name});
+                try typeWord(w, s, param.type);
+            }
+            try w.writeByte('\n');
+        }
+    }
+}
+
+fn upper(word: []const u8) Upper {
+    return .{ .word = word };
+}
+
+const Upper = struct {
+    word: []const u8,
+    pub fn format(u: Upper, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        for (u.word) |c| try w.writeByte(std.ascii.toUpper(c));
+    }
+};
+
+// What a parameter takes, in a writer's words: a thing's kind, `number`, a list's values, `true|false`, `"words"`.
+fn typeWord(w: *std.Io.Writer, s: *const runtime.story.Story, t: runtime.story.Param) std.Io.Writer.Error!void {
+    switch (t.kind) {
+        .boolean => try w.writeAll("true|false"),
+        .int => try w.writeAll("NUMBER"),
+        .text => try w.writeAll("\"WORDS\""),
+        .ref => try w.print("{f}", .{upper(if (t.ref_kind) |k| s.refKind(k) else "thing")}),
+        .one_of, .set_of => {
+            const r = s.items(t.enumeration.?);
+            for (0..r.len) |k| {
+                if (k > 0) try w.writeAll(if (t.kind == .one_of) "|" else ",");
+                try w.writeAll(s.item(r.start + @as(u32, @intCast(k)))); // safe: below a u32 length
+            }
+        },
+    }
+}
+
 pub const Error = error{ OutOfMemory, Refused };
 
 /// What `row` says, read against `p`; null for nothing. Refused with `why` saying what is wrong.
@@ -57,7 +112,7 @@ pub fn read(a: std.mem.Allocator, p: *const Play, row: []const u8, why: *[]const
     if (text.len == 0 or std.mem.startsWith(u8, text, "//")) return null;
     if (text[0] != ':') return .{ .input = try bare(a, p, text, why) };
     var words = std.mem.tokenizeAny(u8, text[1..], " \t");
-    const verb = words.next() orelse return refuse(a, why, "`:` begins a command: :set, :wait, :facts, :back, :restart, :quit, :help", .{});
+    const verb = words.next() orelse return refuse(a, why, "`:` begins a command: {s}", .{try verbs(a, p)});
     const rest = std.mem.trim(u8, words.rest(), " \t");
     if (eql(verb, "back")) return .back;
     if (eql(verb, "restart")) return .restart;
@@ -66,7 +121,95 @@ pub fn read(a: std.mem.Allocator, p: *const Play, row: []const u8, why: *[]const
     if (eql(verb, "facts")) return .{ .facts = try factList(a, p, rest, why) };
     if (eql(verb, "set")) return .{ .input = try set(a, p, rest, why) };
     if (eql(verb, "wait")) return .{ .input = try wait(a, p, rest, why) };
-    return refuse(a, why, "there is no command :{s}: :set, :wait, :facts, :back, :restart, :quit, :help", .{verb});
+    for (p.commands(), 0..) |o, i| if (eql(o.command.name, verb)) return .{ .input = try packageCommand(a, p, i, rest, why) };
+    return refuse(a, why, "there is no command :{s}: {s}", .{ verb, try verbs(a, p) });
+}
+
+// Every command a row may begin with: the play's own, then the packages'.
+fn verbs(a: std.mem.Allocator, p: *const Play) error{OutOfMemory}![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    for (river.Running.reserved, 0..) |v, i| try out.print(a, "{s}:{s}", .{ if (i > 0) ", " else "", v });
+    for (p.commands()) |o| try out.print(a, ", :{s}", .{o.command.name});
+    return out.items;
+}
+
+// A package's command: `:start bounty target=wolf giver=hilde`, what it applies to by name where its forms name
+// one, then each parameter `name=value` (spaces around `=` allowed), in any order, each once.
+fn packageCommand(a: std.mem.Allocator, p: *const Play, index: usize, text: []const u8, why: *[]const u8) Error!Play.Input {
+    const o = p.commands()[index];
+    const c = o.command;
+    var tokens = try tokenize(a, text, why);
+    var form: usize = 0;
+    if (c.object.len > 0) {
+        if (tokens.len == 0 or eql(tokens[0], "=")) return refuse(a, why, ":{s} takes a {s}: {s}", .{ c.name, c.object, try objects(a, o) });
+        form = for (o.forms, 0..) |f, i| {
+            if (eql(f.object, tokens[0])) break i;
+        } else return refuse(a, why, "there is no {s} `{s}` to :{s}: {s}", .{ c.object, tokens[0], c.name, try objects(a, o) });
+        tokens = tokens[1..];
+    } else if (o.forms.len == 0) return refuse(a, why, "nothing in this story takes :{s}", .{c.name});
+    const f = o.forms[form];
+    const args = try a.alloc(Play.Arg, f.params.len);
+    const given = try a.alloc(bool, f.params.len);
+    @memset(given, false);
+    while (tokens.len > 0) {
+        if (tokens.len < 3 or !eql(tokens[1], "=") or eql(tokens[0], "=") or eql(tokens[2], "=")) return refuse(a, why, "write each of what :{s} takes as name=value: {s}", .{ c.name, try paramList(a, p, f) });
+        const name = tokens[0];
+        const words = tokens[2];
+        tokens = tokens[3..];
+        const k = for (f.params, 0..) |param, i| {
+            if (eql(param.name, name)) break i;
+        } else return refuse(a, why, ":{s}{s}{s} takes {s}, not `{s}`", .{ c.name, if (f.object.len > 0) " " else "", f.object, try paramList(a, p, f), name });
+        if (given[k]) return refuse(a, why, "`{s}` is given twice", .{name});
+        given[k] = true;
+        const t = f.params[k].type;
+        args[k] = if (t.kind == .ref and !eql(words, "none")) blk: {
+            if (!isName(words)) return refuse(a, why, "`{s}` takes a thing by its name, not `{s}`", .{ name, words });
+            break :blk .{ .thing = words };
+        } else .{ .value = try value(a, p, words, .{ .kind = t.kind, .enumeration = t.enumeration, .ref_kind = t.ref_kind }, why) };
+    }
+    for (given, f.params) |g, param| if (!g) return refuse(a, why, ":{s}{s}{s} takes {s}: `{s}` is missing", .{ c.name, if (f.object.len > 0) " " else "", f.object, try paramList(a, p, f), param.name });
+    return .{ .command = .{ .command = index, .form = form, .args = args } };
+}
+
+// A command's words: each a name or a value, `=` on its own, words in quotes kept whole.
+fn tokenize(a: std.mem.Allocator, text: []const u8, why: *[]const u8) Error![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    var i: usize = 0;
+    while (i < text.len) {
+        const c = text[i];
+        if (c == ' ' or c == '\t') {
+            i += 1;
+            continue;
+        }
+        if (c == '=') {
+            try out.append(a, "=");
+            i += 1;
+            continue;
+        }
+        const start = i;
+        if (c == '"') {
+            i = (std.mem.findScalarPos(u8, text, i + 1, '"') orelse return refuse(a, why, "words in quotes need their closing quote", .{})) + 1;
+        } else while (i < text.len and text[i] != ' ' and text[i] != '\t' and text[i] != '=') i += 1;
+        try out.append(a, text[start..i]);
+    }
+    return out.items;
+}
+
+fn objects(a: std.mem.Allocator, o: Play.Offered) error{OutOfMemory}![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    for (o.forms, 0..) |f, i| try out.print(a, "{s}{s}", .{ if (i > 0) ", " else "", f.object });
+    if (o.forms.len == 0) try out.appendSlice(a, "none in this story");
+    return out.items;
+}
+
+fn paramList(a: std.mem.Allocator, p: *const Play, f: river.Running.Form) error{OutOfMemory}![]const u8 {
+    if (f.params.len == 0) return "nothing more";
+    var out: std.Io.Writer.Allocating = .init(a);
+    for (f.params, 0..) |param, i| {
+        out.writer.print("{s}{s}=", .{ if (i > 0) " " else "", param.name }) catch return error.OutOfMemory;
+        typeWord(&out.writer, &p.loaded.story, param.type) catch return error.OutOfMemory;
+    }
+    return out.written();
 }
 
 // A row with no command: a choice's number, or an outcome, by what is waited for.
@@ -303,7 +446,7 @@ pub fn one(a: std.mem.Allocator, w: *std.Io.Writer, t: *const transcript.Transcr
         .back => if (!try p.back()) return .{ .refused = "there is nothing to go back to" },
         .restart => try p.restart(),
         .quit => return .quit,
-        .help => try w.writeAll(help),
+        .help => try writeHelp(w, p),
     }
     try tellAll(w, t, p);
     return .taken;

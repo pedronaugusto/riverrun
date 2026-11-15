@@ -40,6 +40,8 @@ pub const Fired = struct {
     tags: story.Range,
     /// Valid until the next step.
     effects: []const facts.Effect,
+    /// The story's effects `effects` are, in order: where each is written.
+    written: story.Range = .empty,
 };
 
 /// A rule: the rules section it is in, and its candidate in the watch.
@@ -94,6 +96,7 @@ pub fn deinit(r: *Rules) void {
 /// became true. Empty when nothing fired.
 pub fn step(r: *Rules) Error![]const Fired {
     r.fired.clearRetainingCapacity();
+    r.watch.met = null;
     const evaluated = try r.watch.step();
     const s = r.watch.story;
     r.touched.unsetAll();
@@ -133,6 +136,7 @@ pub fn start(r: *Rules) Error!void {
 /// then the story's, so each runs once. Empty for a save of this version.
 pub fn migrate(r: *Rules) Error![]const Fired {
     r.fired.clearRetainingCapacity();
+    r.watch.met = null;
     const s = r.watch.story;
     const saved = r.watch.store.get(s.versionFact()).int;
     const now: i64 = s.version();
@@ -150,6 +154,12 @@ pub fn migrate(r: *Rules) Error![]const Fired {
     };
     if (saved < now) try r.watch.store.set(s.versionFact(), .{ .int = now });
     return r.fired.items;
+}
+
+/// What of the story the named error the last `step` or `migrate` returned was met at: a rule's condition, or one
+/// of its effects.
+pub fn metAt(r: *const Rules) ?story.At {
+    return r.watch.met;
 }
 
 /// Rounds until no rule fires, `apply` given each round's effects to apply before the next.
@@ -174,13 +184,17 @@ fn fire(r: *Rules, rule: Rule, c: story.Candidate) Error!void {
     try r.watch.store.set(c.visits, .{ .int = r.watch.store.get(c.visits).int +| 1 });
     const cx = r.watch.context();
     const n = s.node(c.entry);
-    const list: []const facts.Effect = switch (n.step) {
-        .effects => |e| blk: {
-            const out = try cx.arena.alloc(facts.Effect, e.effects.len);
-            for (out, 0..) |*o, k| o.* = try run.eval.effect(cx, s.effect(e.effects.start + @as(u32, @intCast(k)))); // safe: below a u32 length
-            break :blk out;
-        },
-        else => &.{},
+    const written: story.Range = switch (n.step) {
+        .effects => |e| e.effects,
+        else => .empty,
     };
-    try r.fired.append(r.watch.gpa, .{ .section = rule.section, .rule = rule.candidate, .name = c.name, .tags = c.tags, .effects = list });
+    const list = try cx.arena.alloc(facts.Effect, written.len);
+    for (list, 0..) |*o, k| {
+        const index = written.start + @as(u32, @intCast(k)); // safe: below a u32 length
+        o.* = run.eval.effect(cx, s.effect(index)) catch |e| {
+            r.watch.met = .{ .effect = index };
+            return e;
+        };
+    }
+    try r.fired.append(r.watch.gpa, .{ .section = rule.section, .rule = rule.candidate, .name = c.name, .tags = c.tags, .effects = list, .written = written });
 }

@@ -106,8 +106,16 @@ fn effectRun(c: *Compiler, stmts: []const ast.Stmt, after: Next) Error!story.Nod
 fn effectList(c: *Compiler, stmts: []const ast.Stmt) Error!story.Range {
     if (stmts.len == 0) return .empty;
     const list = try c.arena.alloc(story.Effect, stmts.len);
-    for (stmts, list) |*s, *out| out.* = try effect(c, &s.kind.effect);
-    return c.b.effectList(list);
+    const spans = try c.arena.alloc(syntax.Span, stmts.len);
+    // each effect compiled where it is written, and the step it is of where that is
+    const at = c.at;
+    defer c.at = at;
+    for (stmts, list, spans) |*s, *out, *span| {
+        c.at = s.span;
+        span.* = s.span;
+        out.* = try effect(c, &s.kind.effect);
+    }
+    return c.effectList(list, spans);
 }
 
 fn effect(c: *Compiler, e: *const ast.Effect) Error!story.Effect {
@@ -124,7 +132,7 @@ fn effect(c: *Compiler, e: *const ast.Effect) Error!story.Effect {
                 var terms: exprs.Terms = .empty;
                 try terms.append(c.arena, exprs.this(c, id));
                 try exprs.into(c, &terms, &x.value);
-                return .{ .set = .{ .fact = fact, .value = try c.b.expr(terms.items) } };
+                return .{ .set = .{ .fact = fact, .value = try c.expr(terms.items) } };
             }
             return .{ .set = .{ .fact = fact, .value = try exprs.value(c, &x.value) } };
         },
@@ -142,7 +150,7 @@ fn change(c: *Compiler, x: *const ast.Change, minus: bool) Error!story.Effect {
     const typed = c.checked.exprs.get(&x.amount) orelse unreachable; // unreachable: the checker typed the amount
     if (typed.type == .one_of) {
         const item: u8 = @intCast(typed.ref.?.value.index); // safe: an enumeration holds at most 256 values
-        const key: story.Range = if (x.key) |k| try exprs.value(c, k) else if (own(c, &x.fact)) |id| try c.b.expr(&.{exprs.this(c, id)}) else .empty;
+        const key: story.Range = if (x.key) |k| try exprs.value(c, k) else if (own(c, &x.fact)) |id| try c.expr(&.{exprs.this(c, id)}) else .empty;
         return if (minus) .{ .remove = .{ .fact = fact, .item = item, .key = key } } else .{ .add = .{ .fact = fact, .item = item, .key = key } };
     }
     var terms: exprs.Terms = .empty;
@@ -150,7 +158,7 @@ fn change(c: *Compiler, x: *const ast.Change, minus: bool) Error!story.Effect {
     if (minus) try terms.append(c.arena, .of(.int, try c.b.int(0)));
     try exprs.into(c, &terms, &x.amount);
     if (minus) try terms.append(c.arena, .of(.sub, 0));
-    return .{ .change = .{ .fact = fact, .by = try c.b.expr(terms.items) } };
+    return .{ .change = .{ .fact = fact, .by = try c.expr(terms.items) } };
 }
 
 fn factNamed(c: *const Compiler, n: *const ast.Name) story.FactId {

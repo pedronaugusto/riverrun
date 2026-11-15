@@ -157,6 +157,9 @@ changed: []FactId = &.{},
 arena: std.heap.ArenaAllocator,
 evaluated: std.ArrayList(Evaluated) = .empty,
 added_since: bool = false,
+/// What of the story the named error the last step returned was met at: the terms of the condition, or the
+/// comparison, being evaluated. A client that evaluates more in the watch's context (a rule's effects) says it here.
+met: ?story_.At = null,
 /// The ids of conditions removed, the next added's.
 free: std.ArrayList(u32) = .empty,
 
@@ -347,6 +350,7 @@ pub fn markAll(w: *Watch) void {
 /// The conditions evaluated this step, in the order added, each with what it holds now. Valid until the next step.
 pub fn step(w: *Watch) Error![]const Evaluated {
     _ = w.arena.reset(.retain_capacity);
+    w.met = null;
     if (w.added_since) try w.refreshInterest();
     try w.markChanged();
     w.evaluated.clearRetainingCapacity();
@@ -380,6 +384,7 @@ pub fn context(w: *Watch) run.eval.Context {
         .call = .{ .flow = run.no_flow, .owners = w.owners },
         .arena = w.arena.allocator(),
         .builtins = w.options.builtins,
+        .met = &w.met,
     };
 }
 

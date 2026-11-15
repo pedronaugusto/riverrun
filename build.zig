@@ -255,7 +255,7 @@ fn toolsTests(b: *std.Build, package: *std.Build.Dependency, shakedown: *std.Bui
         .root_source_file = p.path("tools/testdata/stall.zig"),
         .target = runtime.resolved_target,
         .optimize = runtime.optimize,
-        .imports = &.{.{ .name = "riverrun-compiler", .module = river }},
+        .imports = &.{ .{ .name = "riverrun-compiler", .module = river }, .{ .name = "riverrun", .module = runtime } },
     });
     return b.addTest(.{
         .name = "riverrun-tools-tests",
@@ -284,7 +284,7 @@ fn programTests(b: *std.Build, test_step: *std.Build.Step) void {
         .root_source_file = p.path("tools/testdata/stall.zig"),
         .target = building(b).target,
         .optimize = building(b).optimize,
-        .imports = &.{.{ .name = "riverrun-compiler", .module = compiler(river) orelse return }},
+        .imports = &.{ .{ .name = "riverrun-compiler", .module = compiler(river) orelse return }, .{ .name = "riverrun", .module = river.module("riverrun") } },
     });
     const program = addProgram(b, river, .{ .vocabulary = p.path("tools/testdata/vocabulary.zig"), .packages = &.{.{ .name = "stall-compiler", .module = stall }} });
     const refused = addCheck(b, program, &.{p.path("tools/testdata/refused.river")}, .{});
@@ -581,7 +581,7 @@ fn storyTests(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bui
         .root_source_file = p.path("tools/testdata/stall.zig"),
         .target = building(b).target,
         .optimize = building(b).optimize,
-        .imports = &.{.{ .name = "riverrun-compiler", .module = compiler(river) orelse return null }},
+        .imports = &.{ .{ .name = "riverrun-compiler", .module = compiler(river) orelse return null }, .{ .name = "riverrun", .module = river.module("riverrun") } },
     });
     const sample = addStory(b, river, .{
         .files = &.{p.path("tools/testdata/sample.river")},

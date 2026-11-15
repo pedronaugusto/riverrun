@@ -54,6 +54,10 @@ at: syntax.Span = .none,
 /// held when it was made.
 steps_at: std.ArrayList(syntax.Span) = .empty,
 choices_at: std.ArrayList(syntax.Span) = .empty,
+/// Where each effect is written, by its place in the story's effects, and each term, by its place in the story's
+/// terms: the expression it is of.
+effects_at: std.ArrayList(syntax.Span) = .empty,
+terms_at: std.ArrayList(syntax.Span) = .empty,
 
 /// A step of the graph, made where the statement being compiled is written (`at`).
 pub fn node(c: *Compiler, n: story.Node) Error!story.NodeId {
@@ -75,6 +79,25 @@ pub fn choiceList(c: *Compiler, list: []const story.Choice, spans: []const synta
     return r;
 }
 
+/// Effects written together (a line's, a run's), each where its own statement is.
+pub fn effectList(c: *Compiler, list: []const story.Effect, spans: []const syntax.Span) Error!story.Range {
+    const r = try c.b.effectList(list);
+    for (spans, 0..) |s, k| try mark(c.arena, &c.effects_at, r.start + @as(u32, @intCast(k)), s); // safe: below a u32 length
+    return r;
+}
+
+/// A condition's or a value's terms, written at `span`: where an error evaluating them is placed.
+pub fn exprAt(c: *Compiler, terms: []const story.Term, span: syntax.Span) Error!story.Range {
+    const r = try c.b.expr(terms);
+    for (0..r.len) |k| try mark(c.arena, &c.terms_at, r.start + @as(u32, @intCast(k)), span); // safe: below a u32 length
+    return r;
+}
+
+/// Terms written where the statement being compiled is (`at`).
+pub fn expr(c: *Compiler, terms: []const story.Term) Error!story.Range {
+    return c.exprAt(terms, c.at);
+}
+
 fn mark(arena: std.mem.Allocator, list: *std.ArrayList(syntax.Span), i: usize, span: syntax.Span) error{OutOfMemory}!void {
     if (list.items.len <= i) try list.appendNTimes(arena, .none, i + 1 - list.items.len);
     list.items[i] = span;
@@ -83,12 +106,21 @@ fn mark(arena: std.mem.Allocator, list: *std.ArrayList(syntax.Span), i: usize, s
 /// Where every step and every choice of the graph is written, for the `count` of each the builder made: a step or a
 /// choice a package's pass made through the builder alone is written nowhere (`Span.none`).
 pub fn written(c: *const Compiler, gpa: std.mem.Allocator) error{OutOfMemory}!Where {
-    const steps = try gpa.alloc(syntax.Span, c.b.nodes.items.len);
+    const steps = try placesOf(gpa, c.steps_at.items, c.b.nodes.items.len);
     errdefer gpa.free(steps);
-    const choices = try gpa.alloc(syntax.Span, c.b.choices.items.len);
-    for (steps, 0..) |*s, i| s.* = if (i < c.steps_at.items.len) c.steps_at.items[i] else .none;
-    for (choices, 0..) |*s, i| s.* = if (i < c.choices_at.items.len) c.choices_at.items[i] else .none;
-    return .{ .steps = steps, .choices = choices };
+    const choices = try placesOf(gpa, c.choices_at.items, c.b.choices.items.len);
+    errdefer gpa.free(choices);
+    const effects = try placesOf(gpa, c.effects_at.items, c.b.effects.items.len);
+    errdefer gpa.free(effects);
+    const terms = try placesOf(gpa, c.terms_at.items, c.b.terms.items.len);
+    return .{ .steps = steps, .choices = choices, .effects = effects, .terms = terms };
+}
+
+// `count` places, each where `marked` says, or nowhere past it.
+fn placesOf(gpa: std.mem.Allocator, marked: []const syntax.Span, count: usize) error{OutOfMemory}![]const syntax.Span {
+    const out = try gpa.alloc(syntax.Span, count);
+    for (out, 0..) |*s, i| s.* = if (i < marked.len) marked[i] else .none;
+    return out;
 }
 
 /// Where a compiled story's steps and choices are written in its files: what a tool shows a step by, a run-time
@@ -98,11 +130,32 @@ pub const Where = struct {
     steps: []const syntax.Span,
     /// By a choice's place in the story's choices.
     choices: []const syntax.Span,
+    /// By an effect's place in the story's effects: its own statement.
+    effects: []const syntax.Span = &.{},
+    /// By a term's place in the story's terms: the condition or the value it is of.
+    terms: []const syntax.Span = &.{},
 
     pub fn deinit(w: *Where, gpa: std.mem.Allocator) void {
         gpa.free(w.steps);
         gpa.free(w.choices);
+        gpa.free(w.effects);
+        gpa.free(w.terms);
         w.* = undefined;
+    }
+
+    /// Where what a run-time error was met at is written; null where it is written nowhere (made by a package's
+    /// pass through the builder alone) or is not of this story.
+    pub fn of(w: *const Where, at: story.At) ?syntax.Span {
+        const list: []const syntax.Span, const i: u64 = switch (at) {
+            .step => |n| .{ w.steps, n.raw() },
+            .choice => |k| .{ w.choices, k },
+            .effect => |k| .{ w.effects, k },
+            .terms => |r| .{ w.terms, r.start },
+        };
+        if (i >= list.len) return null;
+        const span = list[i];
+        if (span.start == syntax.Span.none.start) return null;
+        return span;
     }
 };
 

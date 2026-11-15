@@ -2,13 +2,20 @@
 //! whose parts are wares, each a fact the story reads; a tag naming one,
 //! which the package judges; a check that a stock has wares; and a pass
 //! that writes the package's block; and, played without the game, a stall
-//! that opens with its wares.
+//! that opens with its wares, and the game's two calls into it offered as
+//! the play's commands: a stock opened for trade with its keeper, once, and
+//! a ware restocked by a number.
 
 const std = @import("std");
 const riverrun = @import("riverrun-compiler");
 
 const check = riverrun.check;
 const ast = riverrun.syntax.ast;
+const runtime = @import("riverrun");
+const facts = runtime.facts;
+const Story = runtime.story.Story;
+const SectionId = runtime.story.SectionId;
+const Running = riverrun.Running;
 
 const stock: check.Kind = .{ .name = "stock", .declare = declare };
 const keys = [_]check.Schema.Key{.{ .name = "sells", .on = .{ .section = true }, .value = .{ .judge = sells } }};
@@ -19,23 +26,82 @@ pub const package: riverrun.Package = .{
     .keys = &keys,
     .check = .{ .run = stocked },
     .compile = .{ .name = "stall", .run = block },
-    .running = .{ .name = "stall", .start = open, .stop = close },
+    .running = .{ .name = "stall", .start = open, .stop = close, .commands = &.{
+        .{ .name = "open", .object = "stock", .help = "the game opens a stock for trade, its keeper given", .forms = stocks, .run = openStock },
+        .{ .name = "restock", .object = "ware", .help = "the game adds to a ware's count", .forms = wares, .run = restock },
+    } },
 };
 
 // Played without the game: the stall opens with the wares its block counts.
-const Stall = struct { wares: u8 };
+const Stall = struct {
+    wares: u8,
+    story: *const Story,
+    /// The stocks opened for trade, by section.
+    opened: std.ArrayList(SectionId) = .empty,
+    gpa: std.mem.Allocator,
+};
 
-fn open(gpa: std.mem.Allocator, game: riverrun.Running.Game, told: *riverrun.Running.Told) error{ OutOfMemory, Stopped }!?*anyopaque {
+fn open(gpa: std.mem.Allocator, game: Running.Game, told: *Running.Told) error{ OutOfMemory, Stopped }!?*anyopaque {
     const b = game.story.block("stall") orelse return null;
     if (b.bytes.len != 1) return told.stop("the stall's block is not one count", .{});
     const s = try gpa.create(Stall);
-    s.* = .{ .wares = b.bytes[0] };
+    s.* = .{ .wares = b.bytes[0], .story = game.story, .gpa = gpa };
     try told.say(.{ .what = "opens", .name = "stall", .words = &.{try told.arena.print("{d} wares", .{s.wares})} });
     return s;
 }
 
 fn close(gpa: std.mem.Allocator, state: *anyopaque) void {
-    gpa.destroy(@as(*Stall, @ptrCast(@alignCast(state))));
+    const s: *Stall = @ptrCast(@alignCast(state));
+    s.opened.deinit(gpa);
+    gpa.destroy(s);
+}
+
+// The story's stocks, each opened with a keeper where the story names the kind of thing a keeper is.
+fn stocks(state: *anyopaque, a: std.mem.Allocator) error{OutOfMemory}![]const Running.Form {
+    const s: *Stall = @ptrCast(@alignCast(state));
+    var out: std.ArrayList(Running.Form) = .empty;
+    var keeper: []const Running.Param = &.{};
+    for (0..s.story.len(.kinds)) |k| if (std.mem.eql(u8, s.story.refKind(.fromRaw(@intCast(k))), "item_kind")) { // safe: below a u16 count
+        keeper = try a.dupe(Running.Param, &.{.{ .name = "keeper", .type = .{ .kind = .ref, .ref_kind = .fromRaw(@intCast(k)) } }}); // safe: below a u16 count
+    };
+    for (0..s.story.len(.sections)) |i| {
+        const sec = s.story.section(.fromRaw(@intCast(i))); // safe: below a u32 count
+        if (sec.part_of == null and std.mem.eql(u8, sec.kind_name, "stock")) try out.append(a, .{ .object = sec.name, .params = keeper });
+    }
+    return out.items;
+}
+
+// Each ware of a stock, by the fact that counts it.
+fn wares(state: *anyopaque, a: std.mem.Allocator) error{OutOfMemory}![]const Running.Form {
+    const s: *Stall = @ptrCast(@alignCast(state));
+    var out: std.ArrayList(Running.Form) = .empty;
+    const count = try a.dupe(Running.Param, &.{.{ .name = "count", .type = .{ .kind = .int } }});
+    for (0..s.story.len(.sections)) |i| {
+        const sec = s.story.section(.fromRaw(@intCast(i))); // safe: below a u32 count
+        const of = sec.part_of orelse continue;
+        if (!std.mem.eql(u8, s.story.section(of).kind_name, "stock")) continue;
+        const name = sec.name[std.mem.findScalarLast(u8, sec.name, '.').? + 1 ..];
+        if (s.story.factNamed(name) != null) try out.append(a, .{ .object = name, .params = count });
+    }
+    return out.items;
+}
+
+fn openStock(state: *anyopaque, form: usize, args: []const facts.Value, told: *Running.Told) error{ OutOfMemory, Refused, Stopped }!void {
+    const s: *Stall = @ptrCast(@alignCast(state));
+    const forms = try stocks(state, told.arena);
+    const section = s.story.sectionNamed(forms[form].object).?;
+    for (s.opened.items) |o| if (o.eql(section)) return told.refuse("`{s}` is open already: a stock opens once", .{forms[form].object});
+    try s.opened.append(s.gpa, section);
+    _ = args;
+    try told.say(.{ .what = "opened", .name = forms[form].object });
+}
+
+fn restock(state: *anyopaque, form: usize, args: []const facts.Value, told: *Running.Told) error{ OutOfMemory, Refused, Stopped }!void {
+    const s: *Stall = @ptrCast(@alignCast(state));
+    const forms = try wares(state, told.arena);
+    if (args[0].int <= 0) return told.refuse("a ware is restocked by 1 or more, not {d}", .{args[0].int});
+    const fact = s.story.factNamed(forms[form].object).?;
+    try told.say(.{ .what = "restocked", .name = forms[form].object, .effects = &.{.{ .change = .{ .fact = fact, .by = args[0].int } }} });
 }
 
 fn isStock(s: check.symbols.Section) bool {

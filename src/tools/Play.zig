@@ -12,7 +12,9 @@
 //! an action whose outcome the game decides, every query the story asked and
 //! what it was answered, a rule that fired, what a package's runtime did,
 //! and the end (`next`). It takes what a game gives back (`give`): a choice,
-//! an outcome, a fact set or a query's answer, a clock moved.
+//! an outcome, a fact set or a query's answer, a clock moved, and a call
+//! the game makes into a package, which the package offers as a command
+//! (`commands`: cairn's `start` of a quest with its roles).
 //!
 //! The game's side, with no game: what the game keeps, its `(game)` facts,
 //! its queries' answers and its clocks, is the player's to set, stands until
@@ -52,11 +54,19 @@ pub const Options = struct {
     /// The packages' runtimes, as the vocabulary joined them.
     running: []const Running = &.{},
     /// The most steps between two inputs: a story that says something forever without waiting for the player
-    /// stops there, named.
-    steps: u32 = 10_000,
+    /// stops there, named. Null for the story's own count of steps and `round` more: a story that never comes back
+    /// to a step it told is never stopped, however long, and one that goes round is stopped once it went round
+    /// `round` times more than it has steps.
+    steps: ?u32 = null,
     /// The language plurals and genders are worded in.
     language: run.Language = .{},
 };
+
+/// The most arguments a package's command takes.
+pub const max_params = 32;
+
+/// Steps past the story's own count that a stretch with nothing waited for may take: going round.
+pub const round = 10_000;
 
 /// What the player is waited for.
 pub const Waiting = enum {
@@ -109,8 +119,8 @@ pub const Event = union(enum) {
     asked: Asked,
     /// A rule that fired, and what it did.
     rule: struct { section: story.SectionId, name: []const u8, effects: []const facts.Effect },
-    /// What a package's runtime did.
-    news: struct { package: []const u8, news: Running.News },
+    /// What a package's runtime did, and the queries it asked while it worked that out, told as part of it.
+    news: struct { package: []const u8, news: Running.News, asked: []const Asked = &.{} },
     /// The flow came to its end, and nothing leads on.
     end,
     /// The story stopped on a named error, where it is written when that is known.
@@ -119,9 +129,10 @@ pub const Event = union(enum) {
 
 pub const Stop = struct {
     failure: Failure,
-    /// The step it is about, where the runtime says.
-    step: ?story.NodeId = null,
-    /// A package's words, for `Stopped`.
+    /// What of the story it was met at: the effect, the condition or value, the choice or the step, which the
+    /// compiler's `Where` says where it is written; null where it is about nothing written (said in `why`).
+    at: ?story.At = null,
+    /// A package's words, for `Stopped`; the sections a story went round, for `Endless`.
     why: ?[]const u8 = null,
 };
 
@@ -141,6 +152,32 @@ pub const Input = union(enum) {
     set: struct { target: Target, effect: enum { set, add, remove }, value: facts.Value },
     /// A clock fact moved on.
     advance: struct { clock: facts.FactId, by: u64 },
+    /// A call the game makes into a package, as the package offers it (`commands`).
+    command: Called,
+};
+
+/// A package's command given: which (`Offered`, by its place in `commands`), the form, and its arguments in the
+/// order of the form's parameters.
+pub const Called = struct {
+    command: usize,
+    form: usize,
+    args: []const Arg,
+};
+
+/// An argument of a command: a value, or a thing by the name the player gave it, which is the story's thing of
+/// that name, or a stand-in for one of the game's, made under that name where there is none.
+pub const Arg = union(enum) {
+    value: facts.Value,
+    thing: []const u8,
+};
+
+/// A package's command, as the play offers it: whose, what it is and does, and what it applies to in this story,
+/// each with its parameters.
+pub const Offered = struct {
+    /// The package's place in `Options.running`.
+    package: usize,
+    command: *const Running.Command,
+    forms: []const Running.Form,
 };
 
 /// Why an input was not taken: its words, for the player, in `Play.refusal`.
@@ -175,6 +212,9 @@ told_asks: std.ArrayList(Asked) = .empty,
 answers: std.ArrayList(Asked) = .empty,
 /// Things standing in for the game's, by the names they were given.
 stand_ins: std.ArrayList(struct { kind: []const u8, name: []const u8, handle: u64 }) = .empty,
+/// The packages' commands, as the story being played gives their forms.
+offered: std.ArrayList(Offered) = .empty,
+offered_arena: std.heap.ArenaAllocator,
 
 /// The line told and not yet delivered.
 hand: ?run.Line = null,
@@ -184,22 +224,25 @@ owed: std.ArrayList(Owed) = .empty,
 owed_given: usize = 0,
 waiting: ?Waiting = null,
 /// The choices offered, while they wait.
-offered: []const Choice = &.{},
+choosing: []const Choice = &.{},
 /// Where the flow is, as its last heading said.
 section: ?story.SectionId = null,
 part: ?story.SectionId = null,
 /// Sections a package said the game tells now (a scheduled scene come due), in order.
 due: std.ArrayList(story.SectionId) = .empty,
-/// Steps taken since the last input.
+/// Steps taken since the last input, and the sections their lines were told in, with how often.
 steps: u32 = 0,
+stretch: std.ArrayList(struct { section: story.SectionId, lines: u32 }) = .empty,
 /// Why the last input was refused.
 refusal: []const u8 = "",
 refusal_arena: std.heap.ArenaAllocator,
 /// A package's words for why it stopped the play.
 stopping_why: ?[]const u8 = null,
-/// Where a named error met now is written: the step being walked (the flow's cursor), the step handed over whose
-/// effects are being applied, or nowhere the flow is (a rule's, a package's).
-blame: union(enum) { cursor, step: ?story.NodeId, nowhere } = .cursor,
+/// What of the story a named error met now is about, where the site that met it says (an effect being applied,
+/// a rule's condition, a package's); else the flow's (`run.Session.metAt`) while `blame` is `cursor`, and nothing
+/// while it is `nowhere` (a rule's or a package's error that says none).
+met: ?story.At = null,
+blame: enum { cursor, nowhere } = .cursor,
 /// Replaying the inputs kept: what is told is not queued.
 quiet: bool = false,
 /// A query's answer could not be told for want of memory: said at the next step.
@@ -250,6 +293,7 @@ pub fn init(p: *Play, gpa: std.mem.Allocator, loaded: *walk.Loaded, options: Opt
         .given_arena = .init(gpa),
         .events_arena = .init(gpa),
         .refusal_arena = .init(gpa),
+        .offered_arena = .init(gpa),
     };
     @memset(p.states, null);
     loaded.answers = .{ .ctx = p, .answer = answer };
@@ -269,13 +313,16 @@ pub fn deinit(p: *Play) void {
     p.given_arena.deinit();
     p.events_arena.deinit();
     p.refusal_arena.deinit();
+    p.offered_arena.deinit();
     p.queue.deinit(gpa);
     p.asked.deinit(gpa);
     p.told_asks.deinit(gpa);
     p.answers.deinit(gpa);
     p.stand_ins.deinit(gpa);
+    p.offered.deinit(gpa);
     p.owed.deinit(gpa);
     p.due.deinit(gpa);
+    p.stretch.deinit(gpa);
     p.* = undefined;
 }
 
@@ -301,12 +348,18 @@ pub fn waitingFor(p: *const Play) ?Waiting {
 
 /// The choices waiting, while a choice is waited for.
 pub fn choices(p: *const Play) []const Choice {
-    return if (p.waiting == .choice) p.offered else &.{};
+    return if (p.waiting == .choice) p.choosing else &.{};
 }
 
 /// The action whose outcome is waited for.
 pub fn asking(p: *const Play) ?facts.Call {
     return if (p.waiting == .outcome) p.owed.items[p.owed_given].call else null;
+}
+
+/// The packages' commands the story being played offers, each with what it applies to and its parameters: what
+/// `:help` lists, a script's row is read against, and the editor draws a control for.
+pub fn commands(p: *const Play) []const Offered {
+    return p.offered.items;
 }
 
 /// The inputs taken so far, in order.
@@ -316,21 +369,21 @@ pub fn inputs(p: *const Play) []const Input {
 
 /// Takes what the game gives back, once `next` returned null; refused, with `refusal` saying why, where it does not
 /// fit what is waited for (a choice that is not offered or is closed, an outcome of the wrong kind, a fact or a
-/// clock that is not the player's to move, anything once the story stopped).
+/// clock that is not the player's to move, a command its package refuses, anything once the story stopped).
 pub fn give(p: *Play, input: Input) GiveError!void {
     try p.take(input);
     try p.log.append(p.gpa, try p.keep(input));
 }
 
-/// Starts again from the start with `inputs` (facts set, queries answered, clocks moved) as what the game has
-/// set when the story starts: applied before the flow begins, at this start and every one after (`restart`,
-/// `back`). Refused, with `refusal` saying why, where one is not a fact set or a clock moved, or is refused as an
+/// Starts again from the start with `inputs` (facts set, queries answered, clocks moved, packages' commands) as
+/// what the game has done when the story starts: applied before the flow begins, at this start and every one after
+/// (`restart`, `back`). Refused, with `refusal` saying why, where one is a choice or an outcome, or is refused as an
 /// input would be; then none is kept.
 pub fn startWith(p: *Play, inputs_: []const Input) GiveError!void {
     _ = p.given_arena.reset(.retain_capacity);
     const kept = try p.given_arena.allocator().alloc(Input, inputs_.len);
     for (kept, inputs_) |*k, i| {
-        if (i != .set and i != .advance) return p.refuse("the story starts with facts set and clocks moved, and nothing else", .{});
+        if (i == .choose or i == .outcome) return p.refuse("the story starts with facts set, clocks moved and packages' commands, and nothing else", .{});
         k.* = try keepIn(p.given_arena.allocator(), i);
     }
     p.given = kept;
@@ -380,12 +433,17 @@ fn begin(p: *Play) GiveError!void {
     p.hand = null;
     p.owed.clearRetainingCapacity();
     p.owed_given = 0;
-    p.offered = &.{};
+    p.choosing = &.{};
     p.section = null;
     p.part = null;
     p.due.clearRetainingCapacity();
     p.steps = 0;
+    p.stretch.clearRetainingCapacity();
     p.stopping_why = null;
+    p.met = null;
+    p.blame = .cursor;
+    p.offered.clearRetainingCapacity();
+    _ = p.offered_arena.reset(.retain_capacity);
     p.session = run.Session.init(p.gpa, &l.story, &l.strings, l.memory.store(), &l.host, .{ .builtins = p.builtins(), .language = p.options.language }) catch |e| switch (e) {
         error.OutOfMemory => return error.OutOfMemory,
         error.HostNotBound => unreachable, // unreachable: a loaded story's host is bound to it
@@ -406,35 +464,51 @@ fn begin(p: *Play) GiveError!void {
     };
 }
 
-// What the game has set when the story starts, and what that set off.
+// What the game has done when the story starts, and what that set off.
 fn startingWith(p: *Play) GiveError!void {
-    for (p.given) |input| switch (input) {
-        .set => |s| try p.setting(s.target, s.effect, s.value),
-        .advance => |m| try p.moving(m.clock, m.by),
-        .choose, .outcome => unreachable, // unreachable: `startWith` keeps facts set and clocks moved alone
-    };
+    for (p.given) |input| {
+        switch (input) {
+            .set => |s| try p.setting(s.target, s.effect, s.value),
+            .advance => |m| try p.moving(m.clock, m.by),
+            .command => |c| try p.calling(c),
+            .choose, .outcome => unreachable, // unreachable: `startWith` keeps neither
+        }
+        if (p.waiting == .stopped) return;
+    }
 }
 
-// The game's first moments: its rules told it is a new game, each package's runtime started, the flow begun at its
-// start, and what holds at the start reacted to.
+// The game's first moments: its rules told it is a new game, each package's runtime started and its commands
+// offered, the flow begun at its start, and what holds at the start reacted to.
 fn starting(p: *Play) (Failure || error{Refused})!void {
     try p.rules.start();
     for (p.options.running, p.states) |r, *state| {
-        var told: Running.Told = .{ .arena = p.events_arena.allocator() };
+        try p.flush();
+        var told: Running.Told = .{ .arena = p.events_arena.allocator(), .queries = &p.asked.items.len };
         state.* = r.start(p.gpa, p.game(), &told) catch |e| {
             try p.tell(r.name, &told);
             return switch (e) {
                 error.OutOfMemory => error.OutOfMemory,
-                error.Stopped => p.stopped(told.stopped),
+                error.Stopped => p.stopped(told.stopped, told.at),
             };
         };
         try p.tell(r.name, &told);
     }
+    try p.offer();
     try p.startingWith();
+    if (p.waiting == .stopped) return;
     try p.session.start(flow, p.options.start);
     try p.heading(p.options.start, null);
     try p.flush();
     try p.settle();
+}
+
+// The packages' commands, with what each applies to in this story.
+fn offer(p: *Play) error{OutOfMemory}!void {
+    const a = p.offered_arena.allocator();
+    for (p.options.running, p.states, 0..) |r, state, i| {
+        const st = state orelse continue;
+        for (r.commands) |*c| try p.offered.append(p.gpa, .{ .package = i, .command = c, .forms = try c.forms(st, a) });
+    }
 }
 
 fn end(p: *Play) void {
@@ -491,20 +565,20 @@ fn clearEvents(p: *Play) void {
 fn advance(p: *Play) Failure!void {
     if (p.hand) |l| {
         p.hand = null;
-        p.blame = .{ .step = try p.session.told(flow) };
-        try p.deliver(l.effects, true);
-        p.blame = .cursor;
+        try p.deliver(l.effects, .{ .range = try p.session.toldEffects(flow) }, true);
         if (p.waiting != null) return;
         return p.settle();
     }
     p.steps += 1;
-    if (p.steps > p.options.steps) return error.Endless;
+    const bound = p.options.steps orelse (p.loaded.story.len(.nodes) +| round);
+    if (p.steps > bound) return p.endless();
     const step = try p.session.next(flow);
     switch (step) {
         .line => |l| {
             try p.heading(l.section, l.part);
             try p.flush();
             try p.push(.{ .line = l });
+            try p.counted(l.part orelse l.section);
             p.hand = l;
         },
         .choices => |list| {
@@ -512,16 +586,14 @@ fn advance(p: *Play) Failure!void {
             try p.flush();
             const offered = try p.events_arena.allocator().alloc(Choice, list.len);
             for (offered, list, 1..) |*o, c, n| o.* = .{ .number = n, .text = c.text, .open = c.open, .tags = c.tags, .id = c.id };
-            p.offered = offered;
+            p.choosing = offered;
             try p.push(.{ .choices = offered });
             p.waiting = .choice;
         },
         .effects => |list| {
             try p.flush();
             try p.push(.{ .effects = list });
-            p.blame = .{ .step = try p.session.told(flow) };
-            try p.deliver(list, true);
-            p.blame = .cursor;
+            try p.deliver(list, .{ .range = try p.session.toldEffects(flow) }, true);
             if (p.waiting == null) try p.settle();
         },
         .action => |a| {
@@ -541,16 +613,56 @@ fn advance(p: *Play) Failure!void {
     }
 }
 
+// A line told in the stretch since the last input, counted under where it is written.
+fn counted(p: *Play, section: story.SectionId) error{OutOfMemory}!void {
+    for (p.stretch.items) |*s| if (s.section.eql(section)) {
+        s.lines += 1;
+        return;
+    };
+    try p.stretch.append(p.gpa, .{ .section = section, .lines = 1 });
+}
+
+// A story that went round without waiting for the player: stopped, with the sections it kept coming back to.
+fn endless(p: *Play) Failure {
+    const a = p.events_arena.allocator();
+    var words: std.ArrayList(u8) = .empty;
+    for (p.stretch.items) |s| {
+        if (s.lines < 2) continue;
+        try words.appendSlice(a, if (words.items.len == 0) "it keeps coming back to " else ", ");
+        try words.print(a, "`{s}`", .{p.loaded.story.section(s.section).name});
+    }
+    p.stopping_why = if (words.items.len > 0) words.items else null;
+    return error.Endless;
+}
+
+/// Where the effects a step or a package emitted are written, in order.
+const Written = union(enum) {
+    /// A range of the story's effects: a line's, an effects step's, a rule's.
+    range: story.Range,
+    /// Each one's place among the story's effects: a package's.
+    list: []const u32,
+
+    fn at(w: Written, k: usize) ?story.At {
+        return switch (w) {
+            .range => |r| if (k < r.len) .{ .effect = r.start + @as(u32, @intCast(k)) } else null, // safe: below a u32 length
+            .list => |l| if (k < l.len) .{ .effect = l[k] } else null,
+        };
+    }
+};
+
 // Effects the game is given: each applied to the facts, an action told, and an action with an outcome owed, asked
-// about in order; `flow` when the flow emitted them and owes those outcomes.
-fn deliver(p: *Play, list: []const facts.Effect, from_flow: bool) Failure!void {
+// about in order; `flow` when the flow emitted them and owes those outcomes. An error applying one is that effect's.
+fn deliver(p: *Play, list: []const facts.Effect, written: Written, from_flow: bool) Failure!void {
     const store = p.loaded.memory.store();
-    for (list) |e| {
+    for (list, 0..) |e, k| {
         if (e == .call) {
             if (e.call.result != null) try p.owe(e.call, from_flow);
             continue;
         }
-        _ = try facts.apply(store, e);
+        _ = facts.apply(store, e) catch |err| {
+            p.met = written.at(k);
+            return err;
+        };
     }
 }
 
@@ -568,54 +680,88 @@ fn owe(p: *Play, call: facts.Call, from_flow: bool) Failure!void {
 // What the facts' change set off, to a fixed point: the rules that fired, what each package's runtime did, each
 // one's effects applied; then the sections that came due told.
 fn settle(p: *Play) Failure!void {
-    // a rule's or a package's error is not where the flow is; on one, `stopAt` takes the blame as it stands
+    // a rule's or a package's error is not where the flow is: it says where it is, or is about nothing written
     p.blame = .nowhere;
     try p.settleRounds();
     p.blame = .cursor;
+    try p.tellDue();
 }
 
 fn settleRounds(p: *Play) Failure!void {
     var rounds: u32 = 0;
     while (true) : (rounds += 1) {
-        if (rounds == react.max_rounds) return error.NoFixedPoint;
         var moved = false;
-        const fired = try p.rules.step();
+        const fired = p.rules.step() catch |e| {
+            p.met = p.rules.metAt();
+            return e;
+        };
         try p.flush();
+        if (rounds == react.max_rounds and fired.len > 0) return p.keptFiring(fired);
         for (fired) |f| {
             moved = true;
             const a = p.events_arena.allocator();
             const effects = try a.alloc(facts.Effect, f.effects.len);
             for (effects, f.effects) |*to, from| to.* = try from.dupe(a);
             try p.push(.{ .rule = .{ .section = f.section, .name = try a.dupe(u8, f.name), .effects = effects } });
-            try p.deliver(effects, false);
+            try p.deliver(effects, .{ .range = f.written }, false);
         }
         for (p.options.running, p.states) |r, state| {
             const st = state orelse continue;
             const step = r.step orelse continue;
-            var told: Running.Told = .{ .arena = p.events_arena.allocator() };
+            try p.flush();
+            var told: Running.Told = .{ .arena = p.events_arena.allocator(), .queries = &p.asked.items.len };
             step(st, &told) catch |e| {
                 try p.tell(r.name, &told);
                 return switch (e) {
                     error.OutOfMemory => error.OutOfMemory,
-                    error.Stopped => p.stopped(told.stopped),
+                    error.Stopped => p.stopped(told.stopped, told.at),
                 };
             };
             moved = moved or told.news.items.len > 0;
+            if (rounds == react.max_rounds and moved) {
+                p.stopping_why = try p.events_arena.allocator().print("`{s}` still said what happened", .{r.name});
+                return error.NoFixedPoint;
+            }
             try p.tell(r.name, &told);
         }
         if (!moved) break;
     }
-    try p.tellDue();
 }
 
-// News a package's runtime gave: queued, its effects applied, a section it says comes due kept to tell.
+// Rules that kept firing each other: stopped at the condition of the first still firing, the rest named.
+fn keptFiring(p: *Play, fired: []const react.Rules.Fired) Failure {
+    const s = &p.loaded.story;
+    const a = p.events_arena.allocator();
+    var words: std.ArrayList(u8) = .empty;
+    for (fired) |f| try words.print(a, "{s}`{s}.{s}`", .{ if (words.items.len == 0) "still firing: " else ", ", s.section(f.section).name, f.name });
+    p.stopping_why = words.items;
+    p.met = .{ .terms = s.candidate(fired[0].rule).when };
+    return error.NoFixedPoint;
+}
+
+// News a package's runtime gave: queued, each with the queries the package asked while it worked it out (those
+// asked before it was said, since the news before it), its effects applied, a section it says comes due kept to
+// tell. The queries asked before the package was called were told then (`flush`).
 fn tell(p: *Play, package: []const u8, told: *const Running.Told) Failure!void {
-    try p.flush();
-    for (told.news.items) |n| {
-        try p.push(.{ .news = .{ .package = package, .news = n } });
-        try p.deliver(n.effects, false);
-        if (n.section) |s| try p.due.append(p.gpa, s);
+    const asked = p.asked.items;
+    const a = p.events_arena.allocator();
+    var from: usize = 0;
+    const n = told.news.items.len;
+    for (told.news.items, told.asked.items, 0..) |item, mark, j| {
+        const to = if (j + 1 == n) asked.len else @max(from, @min(mark, asked.len));
+        var own: std.ArrayList(Asked) = .empty;
+        for (asked[from..to]) |q| {
+            if (find(p.told_asks.items, q.query, q.args) != null) continue;
+            try p.told_asks.append(p.gpa, q);
+            try own.append(a, q);
+        }
+        from = to;
+        try p.push(.{ .news = .{ .package = package, .news = item, .asked = own.items } });
+        try p.deliver(item.effects, .{ .list = item.written }, false);
+        if (item.section) |s| try p.due.append(p.gpa, s);
     }
+    // with no news, what it asked is told at the next row, as any query is
+    if (n > 0) p.asked.clearRetainingCapacity();
 }
 
 // The sections that came due, told as the game tells a scene that comes up: into the flow as an interruption, which
@@ -632,7 +778,7 @@ fn tellDue(p: *Play) Failure!void {
     } else {
         while (i > 0) : (i -= 1) try p.session.interrupt(flow, p.due.items[i - 1]);
         p.waiting = null;
-        p.offered = &.{};
+        p.choosing = &.{};
     }
     p.due.clearRetainingCapacity();
 }
@@ -689,20 +835,24 @@ fn flush(p: *Play) error{OutOfMemory}!void {
     p.asked.clearRetainingCapacity();
 }
 
-fn stopped(p: *Play, why: ?[]const u8) Failure {
+// A package stopped the play: its words, and what of the story it met the error at.
+fn stopped(p: *Play, why: ?[]const u8, at: ?story.At) Failure {
     p.stopping_why = why;
+    p.met = at;
     return error.Stopped;
 }
 
 fn stopAt(p: *Play, failure: Failure) error{OutOfMemory}!void {
     try p.flush();
-    const at: ?story.NodeId = switch (p.blame) {
-        .cursor => if (p.begun) p.session.cursor(flow) catch null else null,
-        .step => |n| n,
+    const at: ?story.At = p.met orelse switch (p.blame) {
+        .cursor => if (p.begun) p.session.metAt(flow) catch null else null,
         .nowhere => null,
     };
+    const why = p.stopping_why;
+    p.met = null;
+    p.stopping_why = null;
     p.blame = .cursor;
-    try p.push(.{ .stopped = .{ .failure = failure, .step = at, .why = if (failure == error.Stopped) p.stopping_why else null } });
+    try p.push(.{ .stopped = .{ .failure = failure, .at = at, .why = why } });
     p.waiting = .stopped;
     p.hand = null;
 }
@@ -715,11 +865,11 @@ fn take(p: *Play, input: Input) GiveError!void {
     switch (input) {
         .choose => |n| {
             if (waiting != .choice) return p.refuse("{s}", .{whatIsWaited(waiting)});
-            if (n == 0 or n > p.offered.len) return p.refuse("there is no choice {d}: {d} {s} offered", .{ n, p.offered.len, if (p.offered.len == 1) "is" else "are" });
-            if (!p.offered[n - 1].open) return p.refuse("choice {d} is closed: its condition does not hold", .{n});
+            if (n == 0 or n > p.choosing.len) return p.refuse("there is no choice {d}: {d} {s} offered", .{ n, p.choosing.len, if (p.choosing.len == 1) "is" else "are" });
+            if (!p.choosing[n - 1].open) return p.refuse("choice {d} is closed: its condition does not hold", .{n});
             p.fresh();
             p.waiting = null;
-            p.offered = &.{};
+            p.choosing = &.{};
             p.session.choose(flow, n - 1) catch |e| return p.failed(e);
         },
         .outcome => |v| {
@@ -743,12 +893,20 @@ fn take(p: *Play, input: Input) GiveError!void {
         },
         .set => |s| {
             try p.setting(s.target, s.effect, s.value);
+            if (p.waiting == .stopped) return;
             p.settle() catch |e| return p.failed(e);
             try p.again(waiting);
         },
         .advance => |m| {
             if (waiting == .outcome) return p.refuse("the game owes `{s}`'s outcome first", .{p.loaded.story.externFn(p.owed.items[p.owed_given].call.action).name});
             try p.moving(m.clock, m.by);
+            if (p.waiting == .stopped) return;
+            p.settle() catch |e| return p.failed(e);
+            try p.again(waiting);
+        },
+        .command => |c| {
+            try p.calling(c);
+            if (p.waiting == .stopped) return;
             p.settle() catch |e| return p.failed(e);
             try p.again(waiting);
         },
@@ -759,6 +917,7 @@ fn take(p: *Play, input: Input) GiveError!void {
 fn fresh(p: *Play) void {
     p.clearEvents();
     p.steps = 0;
+    p.stretch.clearRetainingCapacity();
 }
 
 // After the facts moved while the player was waited for: the choices offered again as they now hold, or the
@@ -770,7 +929,7 @@ fn again(p: *Play, was: Waiting) GiveError!void {
         .choice => {
             p.session.offerAgain(flow) catch |e| return p.failed(e);
             p.waiting = null;
-            p.offered = &.{};
+            p.choosing = &.{};
         },
         .outcome => try p.push(.{ .asks = p.owed.items[p.owed_given].call }),
         .end, .stopped => {},
@@ -826,11 +985,12 @@ fn moving(p: *Play, clock: facts.FactId, by: u64) GiveError!void {
     if (p.waiting != null) p.fresh();
     for (p.options.running, p.states) |r, state| {
         const move = r.advance orelse continue;
-        var told: Running.Told = .{ .arena = p.events_arena.allocator() };
+        try p.flush();
+        var told: Running.Told = .{ .arena = p.events_arena.allocator(), .queries = &p.asked.items.len };
         const kept = move(state orelse continue, clock, by, &told) catch |e| {
             p.tell(r.name, &told) catch |f| return p.failed(f);
             if (e == error.OutOfMemory) return error.OutOfMemory;
-            return p.failed(p.stopped(told.stopped));
+            return p.failed(p.stopped(told.stopped, told.at));
         };
         p.tell(r.name, &told) catch |e| return p.failed(e);
         if (kept) return;
@@ -839,6 +999,49 @@ fn moving(p: *Play, clock: facts.FactId, by: u64) GiveError!void {
     const now = store.get(clock).int;
     const to = std.math.add(i64, now, std.math.cast(i64, by) orelse return p.refuse("a clock moves on at most {d}", .{std.math.maxInt(i64)})) catch return p.refuse("`{s}` would pass what an int holds", .{d.name});
     store.set(clock, .{ .int = to }) catch |e| return p.failed(e);
+}
+
+// A package's command: its arguments resolved (a thing named, or a stand-in made for one of the game's), then done
+// by its package, which says what that did.
+fn calling(p: *Play, c: Called) GiveError!void {
+    const o = p.offered.items[c.command];
+    const form = o.forms[c.form];
+    const r = p.options.running[o.package];
+    const state = p.states[o.package].?; // a command is offered only while its package runs
+    // resolved before the stretch is new, so a refusal changes nothing; held here, as the events' arena is reset
+    var buffer: [max_params]facts.Value = undefined;
+    if (c.args.len > max_params) return p.refuse("a command takes at most {d} arguments", .{max_params});
+    const values = buffer[0..c.args.len];
+    for (values, c.args, form.params) |*v, arg, param| v.* = switch (arg) {
+        .value => |x| x,
+        .thing => |name| .{ .ref = try p.thingFor(param, name) },
+    };
+    if (p.waiting != null) p.fresh();
+    try p.flush();
+    var told: Running.Told = .{ .arena = p.events_arena.allocator(), .queries = &p.asked.items.len };
+    o.command.run(state, c.form, values, &told) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Refused => return p.refuse("{s}", .{told.refused orelse "the package refused it"}),
+        error.Stopped => {
+            p.tell(r.name, &told) catch |f| return p.failed(f);
+            return p.failed(p.stopped(told.stopped, told.at));
+        },
+    };
+    p.tell(r.name, &told) catch |e| return p.failed(e);
+}
+
+// The thing a command's parameter names: the story's thing of its kind by that name, a stand-in made before, or a
+// new stand-in for one of the game's; refused where the name is a thing of another kind.
+fn thingFor(p: *Play, param: Running.Param, name: []const u8) GiveError!u64 {
+    const s = &p.loaded.story;
+    const kind = if (param.type.ref_kind) |k| s.refKind(k) else "";
+    if (p.thingNamed(kind, name)) |h| return h;
+    for (0..s.len(.things)) |i| {
+        const t = s.thing(@intCast(i)); // safe: below a u32 count
+        if (std.mem.eql(u8, t.id, name)) return p.refuse("`{s}` is a {s}, and `{s}` takes a {s}", .{ name, t.kind, param.name, kind });
+    }
+    for (p.stand_ins.items) |t| if (std.mem.eql(u8, t.name, name)) return p.refuse("`{s}` stands in for a {s}, and `{s}` takes a {s}", .{ name, t.kind, param.name, kind });
+    return standIn(p, kind, name);
 }
 
 // A named error while taking an input: the play stops there, as it does while telling; the input was taken.
@@ -891,6 +1094,14 @@ fn keepIn(a: std.mem.Allocator, input: Input) error{OutOfMemory}!Input {
                 s.target.answer.args = args;
             }
         },
+        .command => |*c| {
+            const args = try a.dupe(Arg, c.args);
+            for (args) |*x| x.* = switch (x.*) {
+                .value => |v| .{ .value = try facts.dupeValue(a, v) },
+                .thing => |name| .{ .thing = try a.dupe(u8, name) },
+            };
+            c.args = args;
+        },
         .choose, .advance => {},
     }
     return out;
@@ -900,18 +1111,22 @@ fn keepIn(a: std.mem.Allocator, input: Input) error{OutOfMemory}!Input {
 
 fn game(p: *Play) Running.Game {
     const l = p.loaded;
-    return .{ .story = &l.story, .words = &l.strings, .store = l.memory.store(), .host = &l.host, .owners = &p.owners, .stand_in = .{ .ctx = p, .give = standIn } };
+    return .{ .story = &l.story, .words = &l.strings, .store = l.memory.store(), .host = &l.host, .owners = &p.owners, .stand_in = .{ .ctx = p, .give = standInFor } };
 }
 
-fn standIn(ctx: ?*anyopaque, kind: []const u8, name: []const u8) error{OutOfMemory}!u64 {
+fn standInFor(ctx: ?*anyopaque, kind: []const u8, name: []const u8) error{OutOfMemory}!u64 {
     const p: *Play = @ptrCast(@alignCast(ctx.?)); // safe: made by `game`
+    return standIn(p, kind, name);
+}
+
+// A thing standing in for one of the game's, of `kind`, named so: the same handle for the same kind and name.
+fn standIn(p: *Play, kind: []const u8, name: []const u8) error{OutOfMemory}!u64 {
     const h = walk.handle(null, kind, name).?;
     for (p.stand_ins.items) |s| if (s.handle == h) return h;
     const a = p.log_arena.allocator();
     try p.stand_ins.append(p.gpa, .{ .kind = try a.dupe(u8, kind), .name = try a.dupe(u8, name), .handle = h });
     return h;
 }
-
 /// The name of a thing of `kind` by its handle: the story's id for it, or the name a stand-in was given.
 pub fn thingName(p: *const Play, kind: []const u8, h: u64) ?[]const u8 {
     if (p.loaded.thingName(kind, h)) |n| return n;

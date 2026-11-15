@@ -410,7 +410,7 @@ of names beside the Zig, to fall out of step with it. *Protects:* a story that c
   is as it was, an id once written never changes, every new id is new to all the files given, and a second run
   changes nothing. A file the reader refuses is reported and nothing is written: an id goes only where the reader
   reads a line. `--check` changes nothing and reports each line and choice without an id, for a release's CI.
-- **`riverrun play [--from SECTION] [--set FACT=VALUE…] [--wait N…] [--script PATH] [--input INPUT…] FILE…`**
+- **`riverrun play [--from SECTION] [--set FACT=VALUE…] [--wait N…] [--call COMMAND…] [--script PATH] [--input INPUT…] FILE…`**
   checks the story as `check` does, compiles it in memory, and plays it as the game would, the writer in the
   game's place ("Playing", below): in the terminal, or from a script of inputs, writing a transcript.
 - **`riverrun compile --graph PATH --words PATH [--release] FILE…`** is what `addStory` runs: `check`, then the
@@ -453,7 +453,8 @@ after `riverrun tag` is held to what `tag` writes. The manual's index says how i
 
 **Its logic is `riverrun-tools`** (`riverrun.tools(dep)`), the model every tool shows: `Manuscript`, a story's files
 read to their trees with every diagnostic, checked and compiled as the build does; `report`, the form above; `tag`,
-the ids (`missing`, `give`); `walk`, a compiled story loaded as a game loads it and told a bounded number of steps;
+the ids (`missing`, `give`); `walk`, a compiled story loaded as a game loads it and told a bounded number of steps,
+its rules fired as a game fires them;
 `trial`, a story put through all of it, as the whole compiler's property does; `excerpts`; and `Play`,
 `transcript` and `script`, a story played. The program parses its command line, reads and writes files and the
 terminal, and nothing else: the editor to come holds a `Manuscript`, plays it with the same `Play`, and calls the
@@ -471,10 +472,12 @@ the flow comes to it; a line with its speaker, delivery, tags and effects; an ef
 closed ones marked; an action whose outcome the game decides; each query the story asked and what it was
 answered; a rule that fired; what a package's runtime did (a quest's stage reached with its journal line, a
 schedule come due); the end; or a run-time error. It takes what a game gives back (`give`): a choice, an outcome,
-a fact set, a query's answer, a clock moved. The terminal prints it and reads the player's rows; a script gives
+a fact set, a query's answer, a clock moved, a call into a package. The terminal prints it and reads the player's rows; a script gives
 the rows up front and the transcript is written; the editor's play button will draw the same events and give the
-same inputs. There is no second runtime: `Play` drives `run.Session` as `walk` does, and a property holds that the
-two tell the same for the same choices. *Protects:* what a writer plays is what the game tells.
+same inputs. There is no second runtime: `Play` drives `run.Session` as `walk` does, `walk` fires the story's rules
+as a game does (settled when the story starts and after every change, a rule's outcomes given once the rules
+settle), and a property holds that the two tell the same for the same choices, rules and all. *Protects:* what a
+writer plays is what the game tells.
 
 **The game's side.** What the game *keeps*, its `(game)` facts, its queries' answers and its clocks, is the
 player's to set; it stands until changed, and it is shown wherever the story reads it: a query asked is told with
@@ -500,8 +503,29 @@ start with the inputs but the last (`back`).
 **What a package offers.** A package's `riverrun.Package` carries `running` (`riverrun.Running`): `start` over the
 loaded story and its facts (null when the story has nothing of the package's), `step` after the facts changed,
 `advance` for a clock it keeps, `bump` for a query's answer set, `builtins` for its builtins, each saying what it
-did as news (`what`, `name`, a player's words, the effects the game would apply, a section come due). cairn's
-quests and tide's time are run so; a vocabulary that lists the package plays it with nothing more.
+did as news (`what`, `name`, a player's words, the effects the game would apply and where each is written, a section
+come due). cairn's quests and tide's time are run so; a vocabulary that lists the package plays it with nothing
+more.
+
+**Whatever a game can do to a story, a play can.** The game reaches a story two ways, and the play takes both as
+inputs. What it does through riverrun's own runtime, a fact set, a query answered, a clock moved, a choice, an
+outcome, is the play's own input (`:set`, `:wait`, a number, a value). What it does through a package is the
+package's to offer: its `commands`, each a name (`start`), what it applies to in the story being played (a quest by
+name), its parameters typed as an extern's are (a thing of a kind, a number, a value of a list), and words for
+`:help`. The list is data, made over the story when the package starts, so `:help` prints it, a script's row is
+read against it and refused in words where it does not fit (``there is no quest `nope` to :start: bounty,
+the_stranger``; ``:start bounty takes target=PERSON: `target` is missing``), and the editor draws a control from it.
+A command is an input like any other: kept with the inputs, so `:back`, `:restart` and a script give it again, and
+told as the row typed. A thing a parameter names is the story's thing of that name, else one of the game's that the
+play stands in for under that name; a thing of another kind is refused. The package refuses what does not fit the
+story as it stands (a quest that runs once, started twice), before anything changed. riverrun knows commands and
+nothing of quests: cairn offers `:start QUEST ROLE=THING…` and `:bind QUEST ROLE=THING…`, the game's `start` and
+`bind`. No package's command takes a name of the play's own, or another's: `join` refuses it. A `(clock)` fact is
+riverrun's, so moving one is the play's `:wait` whoever keeps it; a package that keeps the clock moves it
+(`advance`), as the game calls the package to move it. What the game does by mechanics of its own, which no call of
+riverrun's or a package's carries (a pool a tag names drawn, a `[day]`'s sticky choices offered again), is the
+game's and does not run in play. *Protects:* an AI writing a story can try, from a script, everything the game will
+do to it.
 
 **In the terminal** a line reads as a line, `SPEAKER (delivery): words`; what the game is told stands in brackets
 under it, as the story writes it; choices are numbered; colour only when the output is a terminal. A writer types
@@ -510,10 +534,13 @@ needs it and no other way gives it: `:facts [FACT…]` (what moved since the sta
 `:set FACT = VALUE` (a fact, `+=` and `-=` to add or take, `FACT(KEY)` for a fact kept per thing, or
 `QUERY(ARGS) = VALUE` for what a query answers from now on: the game's state, which a scene tried alone needs),
 `:wait N [CLOCK]` (time passing, the one way a clock moves), `:back` and `:restart` (try the other way), `:quit`,
-`:help`. A fact set while choices wait offers them again as they now hold.
+`:help`, and the packages' commands (`:start bounty target=wolf`), which `:help` lists with what each applies to in
+the story. A fact set, or a command taken, while choices wait offers them again as they now hold.
 
 **From a script** every input is given up front, one row each, exactly as typed (`--script PATH`, `--input` for
-each, or standard input when it is not a terminal), and the play is written as a transcript to standard output:
+each, or standard input when it is not a terminal), what the game did before the story starts given as options
+(`--set`, `--wait`, `--call 'start bounty target=wolf'`), and the play is written as a transcript to standard
+output:
 
 ```
 > 4
@@ -540,20 +567,37 @@ effects (a value in quotes only where it holds a comma, a bracket, a quote or `/
 reached on their own (actions among them, `[give(letter)]`); `* N` a choice, `* N (closed)` one that cannot be
 taken; `? query(args) = value` a query and its answer, `(not set)` where the player set none, and `? action(args)
 -> kind` an outcome waited for; `!` what fired or happened (`! rule section.rule`, `! reached the_stranger.noticed`
-with the journal's words under it, `! due ramen`); `> row` an input as given; `-> end` the end; and a run-time error in the diagnostics' one form, placed at the step it is about
-(`story/kitchen.river:12:1-12:30: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)`). The
+with the journal's words under it, `! due ramen`); `> row` an input as given; `-> end` the end; and a run-time error
+in the diagnostics' one form, placed where what met it is written (`story/kitchen.river:12:9-12:21: error: a sum,
+or a change, passed what an int holds (64 bits) (Overflow)`). Each row comes after what caused it: a query a line's
+words or a condition asks is told before the row it decides, and one a package asks while it works out what
+happened is told under that news, as part of it (`! reached the_stranger.named`, its journal line, then
+`  ? name(stranger) = "Tom"`). The
 same script, start and story always give the same transcript: it holds no handle, address or time. It is what a
 test pins and what an AI reads back. The exit status says how it ended: 0 the story came to its end; 3 it waits
 for an input the script did not give (said on standard error); 4 it stopped on a run-time error; 1 the story does
 not check, or a row could not be taken (`script.play:4:1-4:2: error: there is no choice 5: 3 are offered`, or
 `riverrun: error: the input `5`: …` for an `--input`); 2 the command line is mistaken.
 
-**Bounded.** A play stops, named, rather than run on: more than 10,000 steps without waiting for the player
-(`Endless`: a loop that says something every time round), and every bound the runtime names.
+**Every run-time error has its place.** Every effect, condition and value is written on some row of some file, and
+the compiler keeps where (`compile.Where`: each step, choice, effect and term of the graph). The runtime says what of
+the story a named error was met at (`story.At`): the effect being worked out or applied, the terms of the condition
+or value being evaluated, the choice, or else the step the flow is at (`run.Session.metAt`, `react.Rules.metAt`, a
+package's `Told.stopAt`); a host that applies effects places one by `Session.toldEffects`, a rule's `written`, a
+package's news' `written`. So an error is placed at the effect that raised it, the Nth of a run, under a line, in a
+rule, or in a quest's stage, and at the condition of a rule or a stage, never at the line that woke it; the editor
+places it by the same data. What has no row says what it is about instead: a package that cannot load its block,
+rules and packages that kept setting each other off for 64 rounds (placed at the first rule still firing, the rest
+named), a quest that reached two endings at once (named).
+
+**Bounded.** A play stops, named, rather than run on: a stretch without waiting for the player longer than the
+story has steps, and 10,000 more (`Endless`), and every bound the runtime names. A story that never comes back to a
+step is never stopped, however long a kinetic stretch; one that goes round is stopped at the step it goes on from,
+with the sections it keeps coming back to (``it keeps coming back to `a`, `b` (Endless)``). There is no option:
+going round 10,000 times without the player is never what a writer means, and a story that only goes on is never
+stopped, so a knob would only move the place a loop is reported.
 
 Built: all of it. Not built: saving a play session, the editor's front.
-
-Built: all of it.
 
 ## The compiled format
 
@@ -635,6 +679,7 @@ Story.init(bytes) · Strings.init(bytes) · Host.bind(story, impls)
 Session.init(gpa, story, strings, store, host, options)
 start(flow, section) · next(flow) → line | choices | effects | action | end · held(flow) → line
 choose(flow, i) · outcome(flow, value) · interrupt(flow, section) · stop(flow)
+metAt(flow) → what an error was met at · toldEffects(flow) → where the step's effects are written
 saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapshot and restore per scope)
 ```
 
@@ -691,7 +736,8 @@ saveCursors() → bytes · restoreCursors(bytes) → report      (facts: snapsho
 - **Every bound is a named error:** call depth 64 (calls, interruptions and pools together), choices at a point 32,
   candidates given at once 8, outcomes owed by one step 8, facts 65,535, flows 16, a sum or a difference past what
   64 bits hold (`Overflow`), and a step walking 100,000 nodes without saying anything (`NoProgress`, a loop of
-  jumps).
+  jumps). The session says what of the story each was met at (`metAt`, a `story.At`: an effect, a condition's or a
+  value's terms, a choice, a step), which the compiler's `Where` turns into the place it is written.
 
 Built.
 

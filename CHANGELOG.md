@@ -17,6 +17,18 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
   and what it printed, to one of them whole, and every ` ```river refused ` block to a story a shown `riverrun check`
   refuses, and fails on a run no document shows; and stories shown before and after `riverrun tag` (`tagged`) to
   what `tag` writes. `excerpts.unshown` takes `Shown` (stories and runs); `excerpts.retagged`.
+- `riverrun play` takes the calls a game makes into its packages as inputs: each package offers them as commands
+  (`riverrun.Running.commands`: a name, what it applies to in the story, typed parameters, words for `:help`), which
+  `:help` lists, a script's row is read against and refused in words, `:back` and a script give again, and
+  `--call` gives before the story starts. `Play.commands`, `Input.command`.
+- Every run-time error is placed where what met it is written: the effect being worked out or applied (the Nth of a
+  run, under a line, in a rule, in a package's), the condition or value being evaluated (a rule's, a stage's), the
+  choice, or the step. `story.At`; `compile.Where.effects`, `Where.terms`, `Where.of`; `run.Session.metAt` and
+  `toldEffects`; `react.Rules.metAt` and `Fired.written`; `Watch.met`; `eval.Context.met`; `Running.Told.stopAt`,
+  `News.written`.
+- A query a package asks while it works out what happened is told under that news (`Event.news.asked`).
+- A story that goes round without waiting is stopped where it goes round, with the sections it keeps coming back
+  to; the bound is the story's own steps and 10,000 more, so a story that only goes on is never stopped.
 - `riverrun play`: a story played as its game would play it, the writer in the game's place, in a terminal or from
   a script of inputs (`--script`, `--input`, standard input) that writes a plain, stable transcript and exits 0 at
   the story's end, 3 waiting for an input the script did not give, 4 on a run-time error, 1 when a row cannot be
@@ -104,6 +116,8 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Changed
 
+- `walk` fires the story's rules as a game does, so play and walk are held equal on stories with rules.
+- `Play.Stop.at` (a `story.At`) replaces `Stop.step`; `Play.Options.steps` is null for the story's own bound.
 - The checker's messages say "the game" where they said "the host": `` `x` is not a tag the game knows ``, `the game
   has no item_kind called …`, `past the game's 40`, `the game starts the story at …`, and the rest, as the program's
   help and the manual name it.

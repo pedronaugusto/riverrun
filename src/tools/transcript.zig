@@ -17,7 +17,8 @@
 //!     ? lived(go) = false (not set)     a query the story asked, and its answer
 //!     ? pay(5) -> true or false         an action whose outcome the game decides
 //!     ! rule watch.woke                 a rule that fired, its effects under it
-//!     ! reached the_stranger.noticed    what a package's runtime did, its words under it
+//!     ! reached the_stranger.noticed    what a package's runtime did, its words under it, then
+//!       ? name(stranger) = "Tom"        the queries it asked to work that out
 //!     > 1                               an input, as it was given
 //!     -> end                            the end
 //!     story.river:12:1-12:30: error: …  a run-time error, in the diagnostics' one form
@@ -107,17 +108,7 @@ pub const Transcript = struct {
                 try t.off(w);
                 try w.writeByte('\n');
             },
-            .asked => |a| {
-                const x = s.externFn(a.query);
-                try t.on(w, .asked);
-                try w.print("? {s}(", .{x.name});
-                try t.args(w, x, a.args);
-                try w.writeAll(") = ");
-                try t.value(w, a.answer, paramShape(s, x.returns.?));
-                if (!a.given) try w.writeAll(" (not set)");
-                try t.off(w);
-                try w.writeByte('\n');
-            },
+            .asked => |a| try t.asked(w, a),
             .rule => |r| {
                 try t.mark(w, .news, "! rule {s}.{s}", .{ s.section(r.section).name, r.name });
                 try t.effectsRow(w, r.effects, 2);
@@ -126,10 +117,28 @@ pub const Transcript = struct {
                 try t.mark(w, .news, "! {s} {s}", .{ n.news.what, n.news.name });
                 for (n.news.words) |words| try w.print("  {s}\n", .{words});
                 try t.effectsRow(w, n.news.effects, 2);
+                for (n.asked) |a| {
+                    try w.writeAll("  ");
+                    try t.asked(w, a);
+                }
             },
             .end => try t.mark(w, .dim, "-> end", .{}),
             .stopped => |stop| try t.stopped(w, stop),
         }
+    }
+
+    // A query and its answer: `? lived(go) = false (not set)`.
+    fn asked(t: *const Transcript, w: *Writer, a: Play.Asked) Writer.Error!void {
+        const s = t.graph();
+        const x = s.externFn(a.query);
+        try t.on(w, .asked);
+        try w.print("? {s}(", .{x.name});
+        try t.args(w, x, a.args);
+        try w.writeAll(") = ");
+        try t.value(w, a.answer, paramShape(s, x.returns.?));
+        if (!a.given) try w.writeAll(" (not set)");
+        try t.off(w);
+        try w.writeByte('\n');
     }
 
     /// An input as it was given: `> 1`, `> :set met = true`.
@@ -203,10 +212,10 @@ pub const Transcript = struct {
         }
     }
 
-    // A run-time error, in the diagnostics' form, placed where its step is written when that is known.
+    // A run-time error, in the diagnostics' form, placed where what it was met at is written when that is known.
     fn stopped(t: *const Transcript, w: *Writer, stop: Play.Stop) Writer.Error!void {
         try t.on(w, .err);
-        if (t.placeOf(stop.step)) |at| {
+        if (t.placeOf(stop.at)) |at| {
             const f = &t.files[at.file];
             const r = report.range(f, at);
             try w.print("{s}:{d}:{d}-{d}:{d}: error: ", .{ f.path, r.from.line, r.from.col, r.to.line, r.to.col });
@@ -218,15 +227,17 @@ pub const Transcript = struct {
         try w.writeByte('\n');
     }
 
-    // Where a step is written: its first row, the statement itself without what is under it.
-    fn placeOf(t: *const Transcript, step: ?story.NodeId) ?river.syntax.Span {
+    /// Where what a run-time error was met at is written: an effect's own statement, a condition's or a value's
+    /// own words, a choice's row, or a step's first row (the statement itself without what is under it).
+    pub fn placeOf(t: *const Transcript, met: ?story.At) ?river.syntax.Span {
         const where = t.where orelse return null;
-        const id = step orelse return null;
-        const count = std.math.cast(u32, where.steps.len) orelse return null;
-        if (id.compare(.fromRaw(count)) != .lt) return null;
-        const span = where.steps[id.raw()];
-        if (span.start == river.syntax.Span.none.start or span.file >= t.files.len) return null;
-        return firstRow(&t.files[span.file], span);
+        const at = met orelse return null;
+        const span = where.of(at) orelse return null;
+        if (span.file >= t.files.len) return null;
+        return switch (at) {
+            .step, .choice => firstRow(&t.files[span.file], span),
+            .effect, .terms => span,
+        };
     }
 
     fn graph(t: *const Transcript) *const story.Story {
@@ -445,7 +456,7 @@ pub fn describe(f: Play.Failure) []const u8 {
         error.CallTooDeep => "calls, interruptions and pools nested more than 64 deep: a call that never comes back",
         error.TooManyOutcomes => "one step waits on more than 8 actions with an outcome",
         error.OutOfBounds => "a value was set past the fact's bounds",
-        error.NoFixedPoint => "rules kept firing each other for 64 rounds",
+        error.NoFixedPoint => "the rules and the packages kept setting each other off for 64 rounds",
         error.Endless => "the story went on without waiting for the player: a loop that says something each time round",
         error.Stopped => "a package's runtime stopped the story",
         error.BuiltinFailed => "a package's builtin could not answer",

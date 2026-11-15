@@ -86,6 +86,7 @@ const Play = struct {
     from: ?[]const u8 = null,
     set: []const []const u8 = &.{},
     wait: []const []const u8 = &.{},
+    call: []const []const u8 = &.{},
     script: ?[]const u8 = null,
     input: []const []const u8 = &.{},
     files: []const []const u8,
@@ -97,18 +98,23 @@ const Play = struct {
             "running as in the game: quests reach their stages, a schedule comes due when a clock moves. Every line is " ++
             "printed as the story writes it, what the game is told in brackets under it, the choices numbered. Type a " ++
             "choice's number to take it, and :help for the rest: see the facts, set one, set what a query answers, move " ++
-            "a clock, go back, start again. Queries are answered with what you set, else their type's first value, and " ++
-            "each answer is shown where it is asked; an action's outcome is asked of you when the story waits for it.\n\n" ++
+            "a clock, go back, start again, and make the calls the game makes into its packages (start a quest with its " ++
+            "roles: :start bounty target=wolf), each listed with what it applies to in this story. Queries are answered " ++
+            "with what you set, else their type's first value, and each answer is shown where it is asked; an action's " ++
+            "outcome is asked of you when the story waits for it. What the game does by its own mechanics (a pool a " ++
+            "tag names, a day's sticky choices offered again) is the game's and does not run here.\n\n" ++
             "With --script or --input, or with a script on standard input, every input is given up front, one to a row, " ++
             "as you would type it, and the play is written down in a plain, stable form: the same script always gives " ++
             "the same transcript. The exit status says how it ended: 0 the story came to its end, 3 it waits for an " ++
-            "input the script did not give, 4 it stopped on an error at run time (printed where it is written), 1 the " ++
+            "input the script did not give, 4 it stopped on an error at run time (printed where what met it is written: the " ++
+            "effect, the condition, the line), 1 the " ++
             "story does not check or a row of the script could not be taken (printed where it is written), 2 the " ++
             "command line is mistaken.",
         .options = .{
             .from = .{ .value_name = "SECTION", .help = "Start at this section (`section.part` for a part) rather than where the game starts" },
             .set = .{ .value_name = "FACT=VALUE", .help = "A fact the game has set when the story starts, or what a query answers, as :set takes it (`spot = door`); give it again for each" },
             .wait = .{ .value_name = "N", .help = "How far a clock has run when the story starts, as :wait takes it (`27`, `27 turn`)" },
+            .call = .{ .value_name = "COMMAND", .help = "A call the game made into a package before the story starts, as its command takes it (`start bounty target=wolf`); give it again for each" },
             .script = .{ .value_name = "PATH", .hint = .file, .help = "Inputs from this file, one to a row as you would type them; `//` begins a comment" },
             .input = .{ .short = 'i', .value_name = "INPUT", .help = "An input, as you would type it; give it again for each, after the script's" },
             .files = .{ .positional = true, .hint = .file, .value_name = "FILE", .help = "The story's .river files, all of them" },
@@ -116,6 +122,7 @@ const Play = struct {
         .examples = &.{
             .{ .command = "riverrun play story/*.river", .help = "Play the story in the terminal." },
             .{ .command = "riverrun play --from found_1969 --set 'spot = door' story/*.river", .help = "Try one scene, with what the game would have set before it." },
+            .{ .command = "riverrun play --call 'start bounty target=wolf' --from board story/*.river", .help = "Try a scene with a quest the game started." },
             .{ .command = "riverrun play -i 2 -i ':set met = true' -i 1 story/*.river", .help = "Take choice 2, set a fact, take choice 1, and print the transcript." },
             .{ .command = "riverrun play --script tests/hide.play story/*.river", .help = "Play a script of inputs; exit 0 when the story reaches its end." },
         },
@@ -229,17 +236,23 @@ fn play(init: std.process.Init, out: *std.Io.Writer, err: *std.Io.Writer, p: Pla
     // what the game has set when the story starts, read as :set and :wait read it
     var given: std.ArrayList(tools.Play.Input) = .empty;
     var shown: std.ArrayList([]const u8) = .empty;
-    for ([_][]const []const u8{ p.set, p.wait }, [_][]const u8{ ":set ", ":wait " }) |list, verb| for (list) |words| {
-        const row = try std.mem.concat(a, u8, &.{ verb, words });
+    for ([_][]const []const u8{ p.set, p.wait, p.call }, [_][]const u8{ "set", "wait", "call" }) |list, option| for (list) |words| {
+        // read as the command it is written as: `:set`, `:wait`, or a package's own
+        const row = if (std.mem.eql(u8, option, "call")) try std.mem.concat(a, u8, &.{ ":", words }) else try std.mem.concat(a, u8, &.{ ":", option, " ", words });
         var why: []const u8 = "";
-        const command = tools.script.read(a, &session, row, &why) catch |e| switch (e) {
+        const taken = tools.script.read(a, &session, row, &why) catch |e| switch (e) {
             error.OutOfMemory => return e,
             error.Refused => {
-                try err.print("{s}: error: --{s} `{s}`: {s}\n", .{ report.program, std.mem.trim(u8, verb, ": "), words, why });
+                try err.print("{s}: error: --{s} `{s}`: {s}\n", .{ report.program, option, words, why });
                 return 1;
             },
         };
-        try given.append(a, (command orelse continue).input);
+        const command = taken orelse continue;
+        if (command != .input or (std.mem.eql(u8, option, "call") and command.input != .command)) {
+            try err.print("{s}: error: --call `{s}`: a package's command, as :help lists them, is what the game calls before the story starts\n", .{ report.program, words });
+            return 1;
+        }
+        try given.append(a, command.input);
         try shown.append(a, row);
     };
     if (given.items.len > 0) session.startWith(given.items) catch |e| switch (e) {

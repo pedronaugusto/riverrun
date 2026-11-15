@@ -78,6 +78,9 @@ pub const Context = struct {
     language: Language = .{},
     /// The roles the evaluation is given; a role not among them reads as its fact.
     roles: []const Role = &.{},
+    /// Where a named error met while evaluating is said: the terms that met it, for a caller that places its
+    /// errors where they are written. A caller that knows more (the effect the terms are of) says that after.
+    met: ?*?story.At = null,
 
     /// What role `f` reads as: the value given for it, else its fact's, for the thing the evaluation is for where
     /// the fact is kept per thing.
@@ -162,6 +165,9 @@ pub fn enumeration(s: *const story.Story, r: Range) ?story.EnumId {
 }
 
 fn run(cx: Context, r: Range, stack: *[story.max_stack]Value) Error!usize {
+    errdefer if (cx.met) |m| {
+        m.* = .{ .terms = r };
+    };
     var n: usize = 0;
     for (0..r.len) |k| {
         const t = cx.story.term(r.start + @as(u32, @intCast(k))); // safe: below a u32 length

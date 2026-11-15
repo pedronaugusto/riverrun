@@ -180,6 +180,10 @@ fn written(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
         \\== watch (rules)
         \\= woke   when { n - k > 2 }
         \\  [met = true]
+        \\= heard  when { met and not paid }
+        \\  [k += 1]
+        \\= priced when { mood = cross }
+        \\  [paid = pay(k)]
         \\
     );
     if (gen.intRange(s, u8, 0, 7) > 0) try out.appendSlice(a,

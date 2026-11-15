@@ -159,6 +159,7 @@ pub fn interrupt(s: *Session, id: FlowId, section: story_.SectionId) Error!void 
     f.pending = .none;
     f.hand = null;
     f.effect_at = 0;
+    f.met = null;
     try s.enter(f, section);
 }
 
@@ -171,6 +172,8 @@ pub fn next(s: *Session, id: FlowId) Error!Step {
         .outcomes => return error.AwaitingOutcome,
     }
     f.hand = null;
+    f.met = null;
+    f.told_effects = .empty;
     _ = f.arena.reset(.retain_capacity);
     if (f.ended) return .end;
     var walked: u32 = 0;
@@ -242,6 +245,22 @@ pub fn told(s: *Session, id: FlowId) Error!?story_.NodeId {
     return (try s.flowAt(id)).told;
 }
 
+/// The story's effects the step `next` last handed over emits (a line's, an effects step's, an action), as a range
+/// of the story's effects in the order they were handed over: where each is written, for a host that places an
+/// error it meets applying one (`story.At.effect`). Empty for a step that emits none.
+pub fn toldEffects(s: *Session, id: FlowId) Error!story_.Range {
+    return (try s.flowAt(id)).told_effects;
+}
+
+/// What of the story the named error `flow`'s last `next`, `start` or `interrupt` returned was met at: the effect
+/// being worked out, the condition or value being evaluated, or else the step the flow goes on from (`cursor`);
+/// null where the flow is at no step.
+pub fn metAt(s: *Session, id: FlowId) Error!?story_.At {
+    const f = try s.flowAt(id);
+    if (f.met) |m| return m;
+    return if (f.at) |n| .{ .step = n } else null;
+}
+
 /// The outcome of the action `next` handed over: written into its result fact, and the flow goes on.
 pub fn outcome(s: *Session, id: FlowId, v: facts.Value) Error!void {
     const f = try s.startedFlow(id);
@@ -290,7 +309,7 @@ fn startedFlow(s: *Session, id: FlowId) Error!*Flow {
 }
 
 fn evaluation(s: *Session, f: *Flow) eval.Context {
-    return .{ .story = s.story, .store = s.store, .host = s.host, .call = s.context(.fromRaw(f.id)), .arena = f.arena.allocator(), .builtins = s.options.builtins, .language = s.options.language };
+    return .{ .story = s.story, .store = s.store, .host = s.host, .call = s.context(.fromRaw(f.id)), .arena = f.arena.allocator(), .builtins = s.options.builtins, .language = s.options.language, .met = &f.met };
 }
 
 // One step of the walk: a step for the host, or null to keep walking.
@@ -384,13 +403,14 @@ fn line(s: *Session, f: *Flow, at: NodeId, l: LineStep, tags: story_.Range) Erro
     const said = try s.worded(cx, hand, l, tags, list);
     try owed.hold(f);
     f.hand = hand;
+    f.told_effects = l.effects;
     return .{ .line = said };
 }
 
 // A line's effects, emitted, and the outcomes they owe.
 fn lineEffects(cx: eval.Context, l: LineStep, owed: *Owed) Error![]const facts.Effect {
     const list = try cx.arena.alloc(facts.Effect, l.effects.len);
-    for (list, 0..) |*e, k| e.* = try emit(cx, cx.story.effect(l.effects.start + @as(u32, @intCast(k))), owed); // safe: below a u32 length
+    for (list, 0..) |*e, k| e.* = try emit(cx, l.effects.start + @as(u32, @intCast(k)), owed); // safe: below a u32 length
     return list;
 }
 
@@ -435,9 +455,10 @@ fn effects(s: *Session, f: *Flow, r: story_.Range, after: ?NodeId) Error!?Step {
     if (k > from) {
         const list = try cx.arena.alloc(facts.Effect, k - from);
         var owed: Owed = .{};
-        for (list, from..) |*e, i| e.* = try emit(cx, s.story.effect(r.start + @as(u32, @intCast(i))), &owed); // safe: below a u32 length
+        for (list, from..) |*e, i| e.* = try emit(cx, r.start + @as(u32, @intCast(i)), &owed); // safe: below a u32 length
         f.effect_at = k;
         if (k == r.len) s.past(f, after);
+        f.told_effects = .{ .start = r.start + from, .len = k - from };
         return .{ .effects = list };
     }
     if (k == r.len) {
@@ -445,10 +466,11 @@ fn effects(s: *Session, f: *Flow, r: story_.Range, after: ?NodeId) Error!?Step {
         return null;
     }
     var owed: Owed = .{};
-    const call = (try emit(cx, s.story.effect(r.start + k), &owed)).call;
+    const call = (try emit(cx, r.start + k, &owed)).call;
     f.effect_at = k + 1;
     if (f.effect_at == r.len) s.past(f, after);
     try owed.hold(f);
+    f.told_effects = .{ .start = r.start + k, .len = 1 };
     return .{ .action = .{ .call = call, .context = s.context(.fromRaw(f.id)) } };
 }
 
@@ -478,8 +500,13 @@ const Owed = struct {
     }
 };
 
-// A compiled effect as the host receives it, its values worked out now.
-fn emit(cx: eval.Context, e: story_.Effect, owed: *Owed) Error!facts.Effect {
+// The story's effect `index` as the host receives it, its values worked out now; an error met doing so is the
+// effect's.
+fn emit(cx: eval.Context, index: u32, owed: *Owed) Error!facts.Effect {
+    const e = cx.story.effect(index);
     if (e == .call) if (e.call.result) |r| owed.add(r);
-    return eval.effect(cx, e);
+    return eval.effect(cx, e) catch |err| {
+        if (cx.met) |m| m.* = .{ .effect = index };
+        return err;
+    };
 }

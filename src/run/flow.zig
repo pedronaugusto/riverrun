@@ -65,6 +65,10 @@ pub const Flow = struct {
     hand: ?Hand = null,
     /// The step `next` last handed over: a line, choices, effects or an action.
     told: ?story.NodeId = null,
+    /// The story's effects that step emits, in the order handed over.
+    told_effects: story.Range = .empty,
+    /// What of the story the last named error was met at, where it was more than the step at `at`.
+    met: ?story.At = null,
     /// What a step hands the host: valid until this flow's next step.
     arena: std.heap.ArenaAllocator,
 
@@ -77,5 +81,7 @@ pub const Flow = struct {
         f.pending = .none;
         f.hand = null;
         f.told = null;
+        f.told_effects = .empty;
+        f.met = null;
     }
 };

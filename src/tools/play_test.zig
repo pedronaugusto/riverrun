@@ -372,16 +372,187 @@ test "a run-time error is the story's, said where it is written, and the play st
         \\== a
         \\[big = 9223372036854775807]
         \\Almost.
-        \\story.river:8:1-8:18: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)
+        \\story.river:8:9-8:16: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)
         \\
     );
 }
 
-test "a story that says something forever without waiting is stopped, named" {
-    var p = try played(plain, &.{.{ .path = "story.river", .text = "== a\n- (top) Again.\n-> top\n" }}, .{}, &.{});
+test "a story that says something forever without waiting is stopped, named, with the sections it goes round, where it goes round" {
+    var p = try played(plain, &.{.{ .path = "story.river", .text = "== start\nOnce.\n-> a\n== a\nAgain.\n-> b\n== b\nAnd again.\n-> a\n" }}, .{}, &.{});
     defer p.deinit();
     try std.testing.expectEqual(script.Ending.stopped, p.ending);
-    try std.testing.expect(std.mem.endsWith(u8, p.text, "a loop that says something each time round (Endless)\n"));
+    const last = p.text[std.mem.findScalarLast(u8, p.text[0 .. p.text.len - 1], '\n').? + 1 ..];
+    try std.testing.expectEqualStrings("story.river:6:1-6:5: error: the story went on without waiting for the player: a loop that says something each time round: it keeps coming back to `a`, `b` (Endless)\n", last);
+}
+
+test "a run-time error is placed at the effect that met it: the Nth of a run, of a line, of a rule; at a rule's condition" {
+    const head =
+        \\facts:
+        \\  big: int
+        \\  n: int
+        \\  met: bool
+        \\const:
+        \\  most = 9223372036854775807
+        \\
+    ;
+    // the third effect of a run, applied
+    try expectPlayed(plain, head ++
+        \\== a
+        \\[big = most]
+        \\[n = 1]
+        \\[big += 1]
+        \\[n = 2]
+        \\-> end
+    , &.{}, .stopped,
+        \\== a
+        \\[big = 9223372036854775807] [n = 1] [big += 1] [n = 2]
+        \\story.river:10:1-10:11: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)
+        \\
+    );
+    // the second effect under a line, worked out
+    try expectPlayed(plain, head ++
+        \\== a
+        \\[big = most]
+        \\Then.
+        \\  [n = 1] [n = big + 1]
+        \\-> end
+    , &.{}, .stopped,
+        \\== a
+        \\[big = 9223372036854775807]
+        \\story.river:10:11-10:24: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)
+        \\
+    );
+    // a rule's second effect, applied, not the line that woke it
+    try expectPlayed(plain, head ++
+        \\== a
+        \\[big = most]
+        \\Then.
+        \\  [met = true]
+        \\-> end
+        \\== watch (rules)
+        \\= woke   when { met }
+        \\  [n = 1]
+        \\  [big += 1]
+    , &.{}, .stopped,
+        \\== a
+        \\[big = 9223372036854775807]
+        \\Then.
+        \\  [met = true]
+        \\! rule watch.woke
+        \\  [n = 1] [big += 1]
+        \\story.river:15:3-15:13: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)
+        \\
+    );
+    // a rule's condition, worked out
+    try expectPlayed(plain, head ++
+        \\== a
+        \\[big = most]
+        \\Then.
+        \\-> end
+        \\== watch (rules)
+        \\= woke   when { big + 1 > n and met }
+        \\  [met = true]
+    , &.{}, .stopped,
+        \\== a
+        \\[big = 9223372036854775807]
+        \\story.river:12:17-12:36: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)
+        \\
+    );
+}
+
+/// The test package's vocabulary: a stall, whose stocks the game opens and whose wares it restocks.
+const Stalled = struct {
+    pub const options: check.Options = .{ .things = &.{.{ .kind = "item_kind", .ids = &.{ "pelt", "letter" } }} };
+    pub const packages: []const river.Package = &.{@import("stall-compiler").package};
+};
+const stalled = river.join(Stalled);
+
+const market =
+    \\facts:
+    \\  keeper: ref of item_kind   (game)
+    \\== market
+    \\{ furs > 2 } HILDE: Plenty of furs.
+    \\* Buy.
+    \\  -> end
+    \\* Leave.
+    \\  -> end
+    \\== wares (stock)
+    \\= furs
+    \\= salt
+    \\
+    \\cast:
+    \\  hilde  "Hilde"
+;
+
+test "a package's command is an input like any other: taken and told as the row typed, gone back from and given again" {
+    try expectPlayed(stalled, market, &.{ ":restock furs count=3", ":open wares keeper = pelt", ":back", ":open wares keeper=hilde", "1" }, .ended,
+        \\! opens stall
+        \\  2 wares
+        \\== market
+        \\* 1 Buy.
+        \\* 2 Leave.
+        \\> :restock furs count=3
+        \\! restocked furs
+        \\  [furs += 3]
+        \\* 1 Buy.
+        \\* 2 Leave.
+        \\> :open wares keeper = pelt
+        \\! opened wares
+        \\* 1 Buy.
+        \\* 2 Leave.
+        \\> :back
+        \\! restocked furs
+        \\  [furs += 3]
+        \\* 1 Buy.
+        \\* 2 Leave.
+        \\> :open wares keeper=hilde
+        \\! opened wares
+        \\* 1 Buy.
+        \\* 2 Leave.
+        \\> 1
+        \\-> end
+        \\
+    );
+}
+
+test "a package's command that does not fit is refused in words a writer acts on" {
+    const refusals = [_]struct { []const []const u8, []const u8 }{
+        .{ &.{ ":open wares keeper=pelt", ":open wares keeper=letter" }, "`wares` is open already: a stock opens once" },
+        .{ &.{":open nowhere keeper=pelt"}, "there is no stock `nowhere` to :open: wares" },
+        .{ &.{":open"}, ":open takes a stock: wares" },
+        .{ &.{":open wares"}, ":open wares takes keeper=ITEM_KIND: `keeper` is missing" },
+        .{ &.{":open wares keeper=pelt size=2"}, ":open wares takes keeper=ITEM_KIND, not `size`" },
+        .{ &.{":open wares keeper=pelt keeper=pelt"}, "`keeper` is given twice" },
+        .{ &.{":open wares keeper"}, "write each of what :open takes as name=value: keeper=ITEM_KIND" },
+        .{ &.{":open wares keeper=\"x\""}, "`keeper` takes a thing by its name, not `\"x\"`" },
+        .{ &.{":restock salt count=pelt"}, "a number, not `pelt`" },
+        .{ &.{":restock salt count=0"}, "a ware is restocked by 1 or more, not 0" },
+        .{ &.{":nothing"}, "there is no command :nothing: :set, :wait, :facts, :back, :restart, :quit, :help, :open, :restock" },
+    };
+    for (refusals) |r| {
+        var p = try played(stalled, &.{.{ .path = "story.river", .text = market }}, .{}, r[0]);
+        defer p.deinit();
+        try std.testing.expectEqual(script.Ending.refused, p.ending);
+        const last = p.text[std.mem.findScalarLast(u8, p.text[0 .. p.text.len - 1], '\n').? + 1 ..];
+        const message = last[(std.mem.find(u8, last, "error: ") orelse return error.TestUnexpectedResult) + 7 .. last.len - 1];
+        std.testing.expectEqualStrings(r[1], message) catch |e| {
+            std.debug.print("--- after {s}\n", .{r[0][r[0].len - 1]});
+            return e;
+        };
+    }
+}
+
+test "the packages' commands are listed by :help with what each applies to in this story" {
+    var p = try played(stalled, &.{.{ .path = "story.river", .text = market }}, .{}, &.{":help"});
+    defer p.deinit();
+    try std.testing.expect(std.mem.endsWith(u8, p.text,
+        \\  :open STOCK               the game opens a stock for trade, its keeper given (stall)
+        \\      :open wares keeper=ITEM_KIND
+        \\  :restock WARE             the game adds to a ware's count (stall)
+        \\      :restock furs count=NUMBER
+        \\      :restock salt count=NUMBER
+        \\
+    ));
 }
 
 /// A package with a runtime of its own and nothing else: a bell that rings, and comes due, when the clock `hour`
@@ -494,24 +665,21 @@ const Built = struct {
         b.out.deinit(gpa);
         b.m.deinit();
     }
-
-    fn hasRules(b: *const Built) bool {
-        const s = &b.loaded.story;
-        for (0..s.len(.sections)) |i| if (s.section(.fromRaw(@intCast(i))).kind == .rules) return true; // safe: below a u32 count
-        return false;
-    }
 };
 
 /// A row a player might type, of any kind, right or wrong: choices in and out of range, values of every kind, each
 /// command with good and bad words, and any bytes.
 fn anyRow(s: *shakedown.Source, a: std.mem.Allocator) ![]const u8 {
-    return switch (gen.intRange(s, u8, 0, 9)) {
+    return switch (gen.intRange(s, u8, 0, 10)) {
         0, 1, 2 => try a.print("{d}", .{gen.intRange(s, u8, 0, 6)}),
         3 => gen.oneOf(s, []const u8, &.{ "true", "false", "0", "-1", "3", "none", "\"words\"", "pelt" }),
         4 => gen.oneOf(s, []const u8, &.{ ":set met = true", ":set n += 2", ":set n = 99", ":set k -= 1", ":set got += pelt_bag", ":set got = pelt_bag, letter_bag", ":set mood = cross", ":set price(pelt) = 3", ":set price(letter) = -4", ":set who = pelt", ":set hour = 3", ":set furs = 2", ":set nothing = 1", ":set met += 1", ":set price = 3", ":set pay(1) = true" }),
         5 => gen.oneOf(s, []const u8, &.{ ":wait 2", ":wait 1 hour", ":wait 0", ":wait 1 met", ":wait x" }),
         6 => gen.oneOf(s, []const u8, &.{ ":back", ":back", ":restart", ":facts", ":facts met n got", ":facts nothing" }),
         7 => gen.oneOf(s, []const u8, &.{ ":quit", ":help", ":nonsense", "", "// a note", ":" }),
+        // the test package's commands, good and bad: a stock that is there and one that is not, a keeper the story
+        // names, one the game stands in for, none, twice; a ware restocked by a number, by nothing, by a word
+        8 => gen.oneOf(s, []const u8, &.{ ":open wares keeper=pelt", ":open wares keeper = hilde", ":open nowhere keeper=pelt", ":open wares", ":open wares keeper=none", ":open wares keeper=pelt keeper=letter", ":open", ":restock furs count=2", ":restock salt count = 1", ":restock furs count=-1", ":restock furs count=pelt", ":restock gold count=1", ":restock furs" }),
         else => blk: {
             var buffer: [24]u8 = undefined;
             break :blk try a.dupe(u8, gen.bytesInto(s, &buffer));
@@ -544,8 +712,19 @@ test "any story played by any script gives a transcript and a named ending; neve
             case.reached("played");
             if (std.mem.find(u8, text.written(), "\n> ") != null) case.reached("took an input");
             if (ending == .ended) case.reached("came to its end");
+            if (std.mem.find(u8, text.written(), "\n! restocked ") != null or std.mem.find(u8, text.written(), "\n! opened ") != null) case.reached("took a package's command");
+            if (ending == .refused) {
+                // the row refused, by the line its refusal is placed at
+                const at = std.mem.findLast(u8, text.written(), "\nscript:") orelse 0;
+                const line = std.fmt.parseInt(usize, text.written()[at + 8 ..][0 .. std.mem.findScalar(u8, text.written()[at + 8 ..], ':') orelse 0], 10) catch 0;
+                if (line > 0 and line <= rows.len and isCommand(rows[line - 1].text)) case.reached("refused a package's command");
+            }
         }
-    }.one, .{ .cases = 600, .seed = 0x91a7, .reach = &.{ "played", "took an input", "came to its end" } });
+    }.one, .{ .cases = 600, .seed = 0x91a7, .reach = &.{ "played", "took an input", "came to its end", "took a package's command", "refused a package's command" } });
+}
+
+fn isCommand(row: []const u8) bool {
+    return std.mem.startsWith(u8, row, ":open") or std.mem.startsWith(u8, row, ":restock");
 }
 
 /// What a front was told by the session, as both fronts see it: a line's speaker and words, the choices with
@@ -606,8 +785,7 @@ test "what play tells is what walk tells for the same choices: one runtime, two 
             var b: Built = undefined;
             if (!try b.of(a, case)) return;
             defer b.deinit();
-            // the walk fires no rules, and the play does: a story with rules is told the same only until one fires
-            if (b.hasRules() or b.loaded.story.len(.sections) == 0) return;
+            if (b.loaded.story.len(.sections) == 0) return;
             const picks = try a.alloc(usize, 64);
             for (picks) |*k| k.* = gen.intRange(case.source, usize, 0, 7);
             // the walk: the first section, every step recorded, the k-th open choice taken each time
@@ -669,8 +847,9 @@ test "what play tells is what walk tells for the same choices: one runtime, two 
             if (told.stopped > 0) try std.testing.expect(stopped and played_.list.items.len == n);
             case.reached("compared");
             if (told.chosen > 0) case.reached("took a choice");
+            if (told.fired > 0) case.reached("fired a rule");
         }
-    }.one, .{ .cases = 500, .seed = 0x2f0e7, .reach = &.{ "compared", "took a choice" } });
+    }.one, .{ .cases = 500, .seed = 0x2f0e7, .reach = &.{ "compared", "took a choice", "fired a rule" } });
 }
 
 test "going back one input then giving it again tells what giving it once told, and the play goes on the same" {
@@ -696,14 +875,19 @@ test "going back one input then giving it again tells what giving it once told, 
                 for (0..gen.intRange(case.source, usize, 1, 12)) |_| {
                     const row = try fitting(a, case.source, &p) orelse break;
                     var w: std.Io.Writer.Allocating = .init(a);
-                    if (try script.one(a, &w.writer, &t, &p, row, true) != .taken) break;
+                    const took = try script.one(a, &w.writer, &t, &p, row, true);
+                    if (took != .taken) break;
                     try rows.append(a, row);
                     try first.append(a, w.written());
                 }
             }
             if (rows.items.len == 0) return;
-            // the second: the same rows, and one of them given, gone back from, and given again
-            const j = gen.intRange(case.source, usize, 0, rows.items.len - 1);
+            // the second: the same rows, and one of them given, gone back from, and given again: a package's command
+            // where there is one, one time in two
+            var j = gen.intRange(case.source, usize, 0, rows.items.len - 1);
+            if (gen.boolean(case.source)) for (rows.items, 0..) |row, i| if (isCommand(row)) {
+                j = i;
+            };
             var p: Play = undefined;
             try p.init(gpa, &b.loaded, options);
             defer p.deinit();
@@ -720,6 +904,7 @@ test "going back one input then giving it again tells what giving it once told, 
                 try std.testing.expectEqualStrings(try std.mem.concat(a, u8, &.{ "> :back\n", before }), w.written());
                 try std.testing.expectEqualStrings(first.items[i + 1], try rowTold(a, &t, &p, row));
                 case.reached("went back");
+                if (isCommand(row)) case.reached("went back over a package's command");
             }
         }
 
@@ -740,7 +925,11 @@ test "going back one input then giving it again tells what giving it once told, 
         fn fitting(a: std.mem.Allocator, s: *shakedown.Source, p: *const Play) !?[]const u8 {
             switch (p.waitingFor() orelse return null) {
                 .choice => {
-                    if (gen.intRange(s, u8, 0, 4) == 0) return gen.oneOf(s, []const u8, &.{ ":set met = true", ":set n += 1", ":wait 1 hour", ":set price(pelt) = 2" });
+                    switch (gen.intRange(s, u8, 0, 5)) {
+                        0 => return gen.oneOf(s, []const u8, &.{ ":restock furs count=1", ":open wares keeper=hilde" }),
+                        1 => return gen.oneOf(s, []const u8, &.{ ":set met = true", ":set n += 1", ":wait 1 hour", ":set price(pelt) = 2" }),
+                        else => {},
+                    }
                     var open: std.ArrayList(usize) = .empty;
                     for (p.choices()) |c| if (c.open) try open.append(a, c.number);
                     return try a.print("{d}", .{gen.oneOf(s, usize, open.items)});
@@ -753,5 +942,61 @@ test "going back one input then giving it again tells what giving it once told, 
                 .end, .stopped => return null,
             }
         }
-    }.one, .{ .cases = 300, .seed = 0xbac4, .reach = &.{"went back"} });
+    }.one, .{ .cases = 300, .seed = 0xbac4, .reach = &.{ "went back", "went back over a package's command" } });
+}
+
+test "a run-time error is placed at the effect that met it, wherever that effect stands: the Nth of a run, of a line, of a rule" {
+    try shakedown.check(gpa, {}, struct {
+        fn one(_: void, case: *shakedown.Case) anyerror!void {
+            var arena: std.heap.ArenaAllocator = .init(gpa);
+            defer arena.deinit();
+            const a = arena.allocator();
+            // a story whose `big` holds the most an int holds, then a run of effects, one of which adds to it
+            var text: std.ArrayList(u8) = .empty;
+            try text.appendSlice(a, "facts:\n  big: int\n  n: int\n  met: bool\nconst:\n  most = 9223372036854775807\n== a\n[big = most]\n");
+            const count = gen.intRange(case.source, usize, 1, 6);
+            const bad = gen.intRange(case.source, usize, 0, count - 1);
+            const where = gen.oneOf(case.source, enum { run, line, rule }, &.{ .run, .line, .rule });
+            const indent: []const u8 = if (where == .run) "" else "  ";
+            switch (where) {
+                .run => {},
+                .line => try text.appendSlice(a, "Then.\n"),
+                .rule => try text.appendSlice(a, "Then.\n  [met = true]\n-> end\n== watch (rules)\n= woke   when { met }\n"),
+            }
+            // each on a row of its own, or several to a row
+            const together = gen.boolean(case.source);
+            var row: u32 = @intCast(std.mem.countScalar(u8, text.items, '\n') + 1);
+            var col: u32 = 1;
+            var want: ?struct { u32, u32 } = null;
+            for (0..count) |i| {
+                if (i == 0 or !together) {
+                    if (i > 0) {
+                        try text.append(a, '\n');
+                        row += 1;
+                    }
+                    try text.appendSlice(a, indent);
+                    col = @intCast(indent.len + 1);
+                } else {
+                    try text.append(a, ' ');
+                    col += 1;
+                }
+                const effect = if (i == bad) try a.dupe(u8, "[big += 1]") else try a.print("[n = {d}]", .{i});
+                if (i == bad) want = .{ row, col };
+                try text.appendSlice(a, effect);
+                col += @intCast(effect.len);
+            }
+            try text.appendSlice(a, if (where == .rule) "\n" else "\n-> end\n");
+            var p = try played(plain, &.{.{ .path = "story.river", .text = text.items }}, .{}, &.{});
+            defer p.deinit();
+            try std.testing.expectEqual(script.Ending.stopped, p.ending);
+            const last = p.text[std.mem.findScalarLast(u8, p.text[0 .. p.text.len - 1], '\n').? + 1 ..];
+            const expected = try a.print("story.river:{d}:{d}-{d}:{d}: error:", .{ want.?[0], want.?[1], want.?[0], want.?[1] + 10 });
+            std.testing.expect(std.mem.startsWith(u8, last, expected)) catch |e| {
+                std.debug.print("--- story\n{s}\n--- want {s}\n--- got\n{s}", .{ text.items, expected, p.text });
+                return e;
+            };
+            case.reached(@tagName(where));
+            if (bad > 0) case.reached("not the first");
+        }
+    }.one, .{ .cases = 200, .seed = 0xe44, .reach = &.{ "run", "line", "rule", "not the first" } });
 }

@@ -50,7 +50,7 @@ fn pieces(c: *Compiler, w: *Writing, t: ast.Text) Error!void {
         .select => |*sel| {
             const typed = c.checked.exprs.get(&sel.operand) orelse unreachable; // unreachable: the checker typed it
             const s: story.Slot = if (typed.ref != null and typed.ref.? == .speaker)
-                .{ .kind = .gender, .expr = try c.b.expr(&.{.of(.int, try c.b.int(c.cast[typed.ref.?.speaker.raw()].raw()))}) }
+                .{ .kind = .gender, .expr = try c.expr(&.{.of(.int, try c.b.int(c.cast[typed.ref.?.speaker.raw()].raw()))}) }
             else
                 .{ .kind = if (typed.type == .int) .plural else .gender, .expr = try exprs.value(c, &sel.operand) };
             const i = try slot(c, w, s);

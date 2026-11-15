@@ -47,6 +47,7 @@ pub const Text = model.Text;
 pub const Slot = model.Slot;
 pub const SlotKind = model.SlotKind;
 pub const Effect = model.Effect;
+pub const At = model.At;
 pub const Tag = model.Tag;
 pub const TagValue = model.TagValue;
 pub const FactId = model.FactId;

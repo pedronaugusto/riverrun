@@ -45,13 +45,15 @@ riverrun play [options] FILE…           play the story as the game would
 riverrun compile --graph P --words P FILE…   what addStory runs
 ```
 
-`riverrun play` starts where the game starts the story (or `--from SECTION`), with what the game has set
-(`--set 'spot = door'`, `--wait 27`), and runs the story's rules and its packages' runtimes as the game does. In a
-terminal a writer types a choice's number, an outcome when one is asked, or `:facts`, `:set`, `:wait`, `:back`,
-`:restart`, `:quit`, `:help`. With `--script PATH`, `--input ROW` or a script on standard input every row is given up
-front and the transcript is written to standard output; the exit status is 0 at the story's end, 3 waiting for an
-input the script did not give, 4 stopped on a run-time error, 1 when the story does not check or a row cannot be
-taken. `riverrun <command> --help` says the rest; the design's "The program" says it all.
+`riverrun play` starts where the game starts the story (or `--from SECTION`), with what the game has done
+(`--set 'spot = door'`, `--wait 27`, `--call 'start bounty target=wolf'`), and runs the story's rules and its
+packages' runtimes as the game does. In a terminal a writer types a choice's number, an outcome when one is asked,
+or `:facts`, `:set`, `:wait`, `:back`, `:restart`, `:quit`, `:help`, and the calls the game makes into its packages,
+which each package offers and `:help` lists (cairn's `:start QUEST ROLE=THING…`). With `--script PATH`, `--input ROW`
+or a script on standard input every row is given up front and the transcript is written to standard output; a
+run-time error is placed at the effect or condition that met it; the exit status is 0 at the story's end, 3 waiting
+for an input the script did not give, 4 stopped on a run-time error, 1 when the story does not check or a row
+cannot be taken. `riverrun <command> --help` says the rest; the design's "The program" says it all.
 
 ## Scope
 
@@ -66,7 +68,8 @@ checked, compiled and told; the runtime on compiled stories; and the program, wi
 checked by it, and played by it from a script, and every run the manual shows pinned. Properties hold the reader to
 printing any bytes back, `riverrun tag` to adding ids and nothing else, the whole compiler to giving a story or
 diagnostics for any text, never a crash, and play to a transcript and a named ending for any story and any script,
-to telling what the walk tells, and to going back and forward again as if never gone back; `bay fuzz` fuzzes them.
+to telling what the walk tells, to going back and forward again as if never gone back, and to placing a run-time
+error at the effect that met it; `bay fuzz` fuzzes them.
 
 ## Stability
 

@@ -196,6 +196,19 @@ pub const Effect = union(format.EffectKind) {
     pub const Item = struct { fact: FactId, item: u8, key: Range = .empty };
 };
 
+/// What of a compiled story a named error of the runtime was met at, as the graph numbers it: what a tool turns
+/// into the place it is written (the compiler's `Where`), so every run-time error is said where it is written.
+pub const At = union(enum) {
+    /// A step: a line's words, a jump, a call, a section's flow.
+    step: NodeId,
+    /// A choice, by its place among the story's choices: its words.
+    choice: u32,
+    /// An effect, by its place among the story's effects: worked out, or applied.
+    effect: u32,
+    /// A condition or a value, by its terms: a branch's, a choice's, a rule's, a pool's candidate's, a package's.
+    terms: Range,
+};
+
 pub const Tag = struct {
     key: []const u8,
     values: Range,

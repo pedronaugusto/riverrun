@@ -5,9 +5,12 @@
 //! type's first value, its things given handles, and each of its sections
 //! started in turn and told until it ends, stops on a named error, or runs
 //! out of steps, with every choice taken by the caller (`walk`). Effects are
-//! applied to the default store as they come. What the whole compiler's
-//! property tells a story by, what a package's own runtime is run over, and
-//! what `Play` plays.
+//! applied to the default store as they come, and the story's rules fire
+//! over them as a game fires them: settled when the story starts and after
+//! each change, a rule's effects applied in turn, the outcomes its actions
+//! owe given once the rules are settled. What the whole compiler's property
+//! tells a story by, what a package's own runtime is run over, and what
+//! `Play` plays.
 
 const std = @import("std");
 const runtime = @import("riverrun");
@@ -15,6 +18,7 @@ const runtime = @import("riverrun");
 const story = runtime.story;
 const facts = runtime.facts;
 const run = runtime.run;
+const react = runtime.react;
 
 pub const Options = struct {
     /// The most sections started, in the story's order.
@@ -49,11 +53,12 @@ pub const Chooser = struct {
     pick: *const fn (ctx: ?*anyopaque, open: usize) usize,
 };
 
-/// What the walk saw: how many lines, choices taken, ends, and sections stopped by a named error.
+/// What the walk saw: how many lines, choices taken, ends, rules fired, and sections stopped by a named error.
 pub const Told = struct {
     lines: u32 = 0,
     chosen: u32 = 0,
     ends: u32 = 0,
+    fired: u32 = 0,
     /// Sections the runtime stopped with an error of its own, which a game would be told by name.
     stopped: u32 = 0,
 };
@@ -136,53 +141,109 @@ pub fn walk(gpa: std.mem.Allocator, l: *Loaded, options: Options, chooser: Choos
     var session: run.Session = try .init(gpa, &l.story, &l.strings, l.memory.store(), &l.host, options.session);
     defer session.deinit();
     var told: Told = .{};
-    const flow: run.FlowId = .fromRaw(0);
+    const owners: [facts.max_scopes]u64 = @splat(0);
+    var rules: react.Rules = react.Rules.init(gpa, &l.story, l.memory.store(), &l.host, &owners, .{ .builtins = options.session.builtins }) catch |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        // a rule's condition that cannot be watched: the game stops before it tells anything
+        told.stopped += 1;
+        return told;
+    };
+    defer rules.deinit();
+    rules.start() catch {
+        told.stopped += 1;
+        return told;
+    };
+    var w: Walk = .{ .s = &l.story, .session = &session, .rules = &rules, .store = l.memory.store(), .options = options, .chooser = chooser, .told = &told };
     for (0..@min(l.story.len(.sections), options.sections)) |i| {
-        tell(&l.story, &session, l.memory.store(), flow, .fromRaw(@intCast(i)), options, chooser, &told) catch { // safe: below the story's section count
+        w.tell(.fromRaw(@intCast(i))) catch |e| { // safe: below the story's section count
+            if (e == error.OutOfMemory) return error.OutOfMemory;
             told.stopped += 1;
         };
     }
     return told;
 }
 
-// One section, from its start, until it ends or the steps run out; an error the runtime names stops it.
-fn tell(s: *const story.Story, session: *run.Session, store: facts.Store, flow: run.FlowId, section: story.SectionId, options: Options, chooser: Chooser, told: *Told) !void {
-    try session.start(flow, section);
-    for (0..options.steps) |_| {
-        const step = try session.next(flow);
-        if (options.seen) |seen| seen.step(seen.ctx, step);
-        switch (step) {
-            .line => |l| {
-                told.lines += 1;
-                for (l.effects) |e| _ = try facts.apply(store, e);
-                // the outcomes its effects owe, in order, each its type's first value
-                for (l.effects) |e| if (e == .call) if (e.call.result) |r| try session.outcome(flow, facts.Value.initial(s.fact(r).kind));
-            },
-            .choices => |list| {
-                var open: usize = 0;
-                for (list) |c| open += @intFromBool(c.open);
-                if (open == 0) return;
-                // the pick-th open choice
-                var left = chooser.pick(chooser.ctx, open) % open;
-                var i: usize = 0;
-                while (!list[i].open or left > 0) : (i += 1) left -= @intFromBool(list[i].open);
-                try session.choose(flow, i);
-                told.chosen += 1;
-            },
-            .effects => |list| for (list) |e| {
-                _ = try facts.apply(store, e);
-            },
-            .action => |a| {
-                const returns = s.externFn(a.call.action).returns orelse return error.NoOutcome;
-                try session.outcome(flow, facts.Value.initial(returns.kind));
-            },
-            .end => {
-                told.ends += 1;
-                return;
-            },
+const Walk = struct {
+    s: *const story.Story,
+    session: *run.Session,
+    rules: *react.Rules,
+    store: facts.Store,
+    options: Options,
+    chooser: Chooser,
+    told: *Told,
+
+    const flow: run.FlowId = .fromRaw(0);
+
+    // One section, from its start, until it ends or the steps run out; an error the runtime names stops it.
+    fn tell(w: *Walk, section: story.SectionId) !void {
+        try w.session.start(flow, section);
+        try w.settle();
+        for (0..w.options.steps) |_| {
+            const step = try w.session.next(flow);
+            if (w.options.seen) |seen| seen.step(seen.ctx, step);
+            switch (step) {
+                .line => |l| {
+                    w.told.lines += 1;
+                    for (l.effects) |e| _ = try facts.apply(w.store, e);
+                    // the outcomes its effects owe, in order, each its type's first value
+                    for (l.effects) |e| if (e == .call) if (e.call.result) |r| try w.session.outcome(flow, facts.Value.initial(w.s.fact(r).kind));
+                    try w.settle();
+                },
+                .choices => |list| {
+                    var open: usize = 0;
+                    for (list) |c| open += @intFromBool(c.open);
+                    if (open == 0) return;
+                    // the pick-th open choice
+                    var left = w.chooser.pick(w.chooser.ctx, open) % open;
+                    var i: usize = 0;
+                    while (!list[i].open or left > 0) : (i += 1) left -= @intFromBool(list[i].open);
+                    try w.session.choose(flow, i);
+                    w.told.chosen += 1;
+                },
+                .effects => |list| {
+                    for (list) |e| _ = try facts.apply(w.store, e);
+                    try w.settle();
+                },
+                .action => |a| {
+                    const returns = w.s.externFn(a.call.action).returns orelse return error.NoOutcome;
+                    try w.session.outcome(flow, facts.Value.initial(returns.kind));
+                    try w.settle();
+                },
+                .end => {
+                    w.told.ends += 1;
+                    return;
+                },
+            }
         }
     }
-}
+
+    // The rules fired to a fixed point over what changed, each one's effects applied in turn; the outcomes their
+    // actions owe given, each its type's first value, once they settle, and the rules settled again after.
+    fn settle(w: *Walk) !void {
+        while (true) {
+            var owed: std.ArrayList(facts.FactId) = .empty;
+            defer owed.deinit(w.rules.watch.gpa);
+            var rounds: u32 = 0;
+            while (true) : (rounds += 1) {
+                const fired = try w.rules.step();
+                if (fired.len == 0) break;
+                if (rounds == react.max_rounds) return error.NoFixedPoint;
+                for (fired) |f| {
+                    w.told.fired += 1;
+                    for (f.effects) |e| {
+                        if (e == .call) {
+                            if (e.call.result) |r| try owed.append(w.rules.watch.gpa, r);
+                            continue;
+                        }
+                        _ = try facts.apply(w.store, e);
+                    }
+                }
+            }
+            if (owed.items.len == 0) return;
+            for (owed.items) |r| try w.store.set(r, facts.Value.initial(w.s.fact(r).kind));
+        }
+    }
+};
 
 // Every query answered as `l.answers` says, every action with its return type's first value; every thing a handle
 // of its own.

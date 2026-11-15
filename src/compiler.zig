@@ -31,6 +31,11 @@ pub const Package = struct {
 /// editor's play button): started over the loaded story, stepped whenever the facts change, a clock it keeps moved
 /// by it, and what happened said, each time, as news the player sees. So a story with a package's quests or time
 /// plays as it would in a game, and the package is the one that says what its runtime did.
+///
+/// What the game does to the story through riverrun's own runtime (a fact set, a query answered, a clock moved, a
+/// choice, an outcome) is the play's own input. What the game does through the package (cairn's `start` of a quest
+/// with its roles) is the package's to offer, as `commands`: each a name, what it applies to in the story with its
+/// parameters, typed, and words for `:help`, which the play takes as an input like any other.
 pub const Running = struct {
     /// The package's name, as its news is shown under.
     name: []const u8,
@@ -50,6 +55,43 @@ pub const Running = struct {
     /// The clock fact `clock` moved on `by` ticks by the player: moved by the package, its facts written and what
     /// came due told, when it keeps that clock; false when it does not, and the player moves the fact itself.
     advance: ?*const fn (state: *anyopaque, clock: facts.FactId, by: u64, told: *Told) error{ OutOfMemory, Stopped }!bool = null,
+    /// The game's calls into the package that change what the story tells, offered to the player as commands of
+    /// the play (`:start bounty target=wolf`). No two packages' commands share a name, and none takes a name of the
+    /// play's own (`reserved`): `join` refuses it.
+    commands: []const Command = &.{},
+
+    /// The play's own commands, which no package's may be called.
+    pub const reserved = [_][]const u8{ "set", "wait", "facts", "back", "restart", "quit", "help" };
+
+    /// One of the game's calls into a package, offered to the player.
+    pub const Command = struct {
+        /// What the player types after `:`.
+        name: []const u8,
+        /// What it does, as the game's call, in a writer's words: for `:help`, and the editor's control.
+        help: []const u8,
+        /// What its forms apply to, as a writer calls it (`quest`); empty where they apply to nothing named.
+        object: []const u8 = "",
+        /// What it applies to in the story being played, each with its parameters (`start`: each quest, with its
+        /// roles), on `a`. The same story gives the same forms.
+        forms: *const fn (state: *anyopaque, a: std.mem.Allocator) error{OutOfMemory}![]const Form,
+        /// Does what the game's call does: the form, by its place in `forms`, with its arguments in the order of its
+        /// parameters, each of its type. What that did is news in `told`, as `step` says it. Refused, with words a
+        /// writer acts on (`Told.refuse`), where the call does not fit the story as it stands now, before anything
+        /// changed.
+        run: *const fn (state: *anyopaque, form: usize, args: []const facts.Value, told: *Told) error{ OutOfMemory, Refused, Stopped }!void,
+    };
+
+    /// What a command applies to, and what it takes.
+    pub const Form = struct {
+        /// The name of what it applies to, the word after the command (`bounty`); empty where it applies to nothing
+        /// named.
+        object: []const u8 = "",
+        params: []const Param = &.{},
+    };
+
+    /// A parameter of a command: its name, which the player writes before its value (`target=wolf`), and its
+    /// type, as a story's extern's parameter is typed: a thing of a kind, a number, a value of a list, words.
+    pub const Param = struct { name: []const u8, type: story.Param };
 
     /// What the runtime runs over: the loaded story, its facts and its bound host, as a game holds them.
     pub const Game = struct {
@@ -76,15 +118,25 @@ pub const Running = struct {
         name: []const u8,
         words: []const []const u8 = &.{},
         effects: []const facts.Effect = &.{},
+        /// Where each of `effects` is written: its place among the story's effects (`story.At.effect`), for an error
+        /// applying it to be placed there; empty where the package does not know.
+        written: []const u32 = &.{},
         section: ?story.SectionId = null,
     };
 
     /// Where a runtime says what it did: its news in order, copied by `say` onto the player's arena, and why it
-    /// stopped, if it did (`Stopped`).
+    /// stopped, if it did (`Stopped`), with what of the story that was met at, or why a command was refused.
     pub const Told = struct {
         arena: std.mem.Allocator,
         news: std.ArrayList(News) = .empty,
         stopped: ?[]const u8 = null,
+        /// What of the story the error it stopped on was met at, where it knows.
+        at: ?story.At = null,
+        refused: ?[]const u8 = null,
+        /// How many queries the play has been asked so far, which `say` notes with each news (`asked`), so what the
+        /// package asked while it worked a news out is told as part of that news.
+        queries: ?*const usize = null,
+        asked: std.ArrayList(usize) = .empty,
 
         /// News, its words and effects copied.
         pub fn say(t: *Told, n: News) error{OutOfMemory}!void {
@@ -92,13 +144,26 @@ pub const Running = struct {
             for (words, n.words) |*to, from| to.* = try t.arena.dupe(u8, from);
             const effects = try t.arena.alloc(facts.Effect, n.effects.len);
             for (effects, n.effects) |*to, from| to.* = try from.dupe(t.arena);
-            try t.news.append(t.arena, .{ .what = try t.arena.dupe(u8, n.what), .name = try t.arena.dupe(u8, n.name), .words = words, .effects = effects, .section = n.section });
+            try t.news.append(t.arena, .{ .what = try t.arena.dupe(u8, n.what), .name = try t.arena.dupe(u8, n.name), .words = words, .effects = effects, .written = try t.arena.dupe(u32, n.written), .section = n.section });
+            try t.asked.append(t.arena, if (t.queries) |q| q.* else 0);
         }
 
         /// Stops the play: what the runtime refused or could not do, in words a writer acts on.
         pub fn stop(t: *Told, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, Stopped } {
+            return t.stopAt(null, fmt, args);
+        }
+
+        /// Stops the play on an error met at `at` of the story, which the play places where it is written.
+        pub fn stopAt(t: *Told, at: ?story.At, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, Stopped } {
             t.stopped = try t.arena.print(fmt, args);
+            t.at = at;
             return error.Stopped;
+        }
+
+        /// Refuses a command: why it does not fit the story as it stands, in words a writer acts on.
+        pub fn refuse(t: *Told, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, Refused } {
+            t.refused = try t.arena.print(fmt, args);
+            return error.Refused;
         }
     };
 };
@@ -137,6 +202,7 @@ pub fn join(comptime vocabulary: type) Joined {
         // every pair compared: a host's schema of a few dozen keys is past the default quota
         @setEvalBranchQuota(1000 + 200 * (keys.len * keys.len + options.kinds.len * options.kinds.len));
         distinct(options.kinds, keys);
+        commandsDistinct(running);
         if (options.schema == null and keys.len == 0) return .{ .options = options, .passes = passes, .running = running };
         const schema: check.Schema = .{ .keys = keys };
         options.schema = &schema;
@@ -150,6 +216,16 @@ fn distinct(comptime kinds: []const check.Kind, comptime keys: []const check.Sch
     };
     for (keys, 0..) |k, i| for (keys[0..i]) |before| if (std.mem.eql(u8, k.name, before.name) and overlap(k.on, before.on)) {
         @compileError("the tag `" ++ k.name ++ "` is added twice where both may stand");
+    };
+}
+
+fn commandsDistinct(comptime running: []const Running) void {
+    var names: []const []const u8 = &Running.reserved;
+    for (running) |r| for (r.commands) |c| {
+        for (names) |n| if (std.mem.eql(u8, n, c.name)) {
+            @compileError("the play's command `:" ++ c.name ++ "` is taken twice: by `" ++ r.name ++ "`, and by the play or another package");
+        };
+        names = names ++ &[_][]const u8{c.name};
     };
 }
 
