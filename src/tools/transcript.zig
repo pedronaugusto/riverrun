@@ -198,15 +198,18 @@ pub const Transcript = struct {
                 return wrote;
             },
             .ref => |kind_id| {
+                // every key the fact holds a value for, in the order first set: a thing of the story's, a stand-in
+                // for one of the game's by the name it was given, or a package's own (a repeat quest's instance,
+                // `parcel(2)`), by its kind and number
                 const kind = s.refKind(kind_id);
                 var wrote = false;
-                for (0..s.len(.things)) |i| {
-                    const named = s.thing(@intCast(i)); // safe: below a u32 count
-                    if (!std.mem.eql(u8, named.kind, kind)) continue;
-                    const v = store.getKey(f, t.play.loaded.host.refs[i]);
-                    if (!all and v.eql(d.start())) continue;
-                    try w.print("  {s}({s}) = ", .{ d.name, named.id });
-                    try t.value(w, v, shape);
+                const kept = &t.play.loaded.memory.keyed[f.raw()];
+                for (kept.keys(), kept.values()) |key, v| {
+                    if (!all and v.value.eql(d.start())) continue;
+                    if (t.play.thingName(kind, key)) |name| {
+                        try w.print("  {s}({s}) = ", .{ d.name, name });
+                    } else try w.print("  {s}({s}({d})) = ", .{ d.name, kind, key });
+                    try t.value(w, v.value, shape);
                     try w.writeByte('\n');
                     wrote = true;
                 }

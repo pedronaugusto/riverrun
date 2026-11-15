@@ -84,6 +84,7 @@ pub fn run(gpa: std.mem.Allocator, diags: *syntax.Diagnostics, files: []const sy
         .tags = c.tags,
         .text_tags = c.text_tags,
         .line_tags = c.line_tags,
+        .value_first = c.value_first,
     };
     for (options.passes) |p| try p.run(p.user, &c, &out);
     return out;

@@ -44,6 +44,12 @@ fn stmt(c: *Compiler, s: *const ast.Stmt, after: Next) Error!Next {
     switch (s.kind) {
         .line => |*l| return try line(c, s, l, after),
         .cond => |*k| {
+            // a narration row that begins with a value is a line saying it first (the checker read it so)
+            if (c.checked.value_first.get(s)) |words| {
+                var said = k.body[0].kind.line;
+                said.text = words;
+                return try line(c, &k.body[0], &said, after);
+            }
             const then = if (k.on_row) try stmt(c, &k.body[0], after) else try chain(c, k.body, after);
             const otherwise = if (k.otherwise.len > 0) try chain(c, k.otherwise, after) else after;
             return try c.node(.{ .step = .{ .branch = .{ .cond = try exprs.condition(c, &k.cond), .then = then, .otherwise = otherwise } } });

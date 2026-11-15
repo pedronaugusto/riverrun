@@ -28,6 +28,8 @@ pub const How = struct {
     from: ?[]const u8 = null,
     /// What the game has set at the start, as `:set` and `:wait` take it (`:set spot = door`).
     given: []const []const u8 = &.{},
+    /// The game's things as the vocabulary lists them, which a play holds a thing named to (`Play.Options.things`).
+    things: bool = false,
 };
 
 pub fn played(with: river.Joined, pages: []const Manuscript.Page, how: How, rows: []const []const u8) !Played {
@@ -47,7 +49,7 @@ pub fn played(with: river.Joined, pages: []const Manuscript.Page, how: How, rows
     const a = arena.allocator();
     const start = if (how.from) |name| loaded.story.sectionNamed(name).? else Play.entry(&m.checked.?, &loaded.story).?;
     var p: Play = undefined;
-    try p.init(gpa, &loaded, .{ .start = start, .leads = try Play.leadsOf(a, with.options), .delivery = with.options.delivery, .running = with.running });
+    try p.init(gpa, &loaded, .{ .start = start, .leads = try Play.leadsOf(a, with.options), .delivery = with.options.delivery, .running = with.running, .things = if (how.things) with.options.things else &.{} });
     defer p.deinit();
     const t: transcript.Transcript = .{ .play = &p, .files = m.files, .where = &compiled.where };
     var text: std.Io.Writer.Allocating = .init(gpa);
@@ -279,6 +281,62 @@ test "a clock only moves on: setting one is refused, naming how it is moved in a
     defer p.deinit();
     try std.testing.expectEqual(script.Ending.refused, p.ending);
     try std.testing.expect(std.mem.endsWith(u8, p.text, "error: `hour` is a clock, which only moves on: wait (`:wait N` in a play, `--wait N` before it starts)\n"));
+}
+
+test "a thing of a kind the vocabulary lists is one of those it lists: a name it does not hold is refused, not stood in for" {
+    const story =
+        \\facts:
+        \\  given: ref of item   (game)
+        \\== a
+        \\* Look.
+        \\  -> end
+    ;
+    var held = try played(plain, &.{.{ .path = "story.river", .text = story }}, .{ .things = true }, &.{":set given = letter"});
+    defer held.deinit();
+    try std.testing.expectEqual(script.Ending.waiting, held.ending);
+    var refused = try played(plain, &.{.{ .path = "story.river", .text = story }}, .{ .things = true }, &.{":set given = ring"});
+    defer refused.deinit();
+    try std.testing.expectEqual(script.Ending.refused, refused.ending);
+    try std.testing.expect(std.mem.endsWith(u8, refused.text, "error: the game has no item called `ring`\n"));
+}
+
+test ":facts lists a fact kept per thing for every key it holds, a stand-in's by the name it was given" {
+    try expectPlayed(plain,
+        \\facts:
+        \\  caught(item): bool   (game)
+        \\== a
+        \\* Look.
+        \\  -> end
+    , &.{ ":set caught(ring) = true", ":set caught(pelt) = true", ":facts", ":facts caught" }, .waiting,
+        \\== a
+        \\* 1 Look.
+        \\> :set caught(ring) = true
+        \\* 1 Look.
+        \\> :set caught(pelt) = true
+        \\* 1 Look.
+        \\> :facts
+        \\  caught(ring) = true
+        \\  caught(pelt) = true
+        \\> :facts caught
+        \\  caught(ring) = true
+        \\  caught(pelt) = true
+        \\
+    );
+}
+
+test "a line may begin with a value: `{coins} coins` says the value, then the words" {
+    try expectPlayed(plain,
+        \\facts:
+        \\  coins: int   (game)
+        \\== a
+        \\{coins} coins, and no more.
+        \\-> end
+    , &.{}, .ended,
+        \\== a
+        \\0 coins, and no more.
+        \\-> end
+        \\
+    );
 }
 
 test "a line whose words come out empty is not delivered, and none of its effects is applied" {
@@ -759,6 +817,8 @@ const Bell = struct {
         if (!st.rung) {
             st.rung = true;
             try told.say(.{ .what = "due", .name = "bell", .words = &.{"Ding."}, .section = st.story.sectionNamed("bell") });
+            // a second scene due in the same move, where the story has one
+            if (st.story.sectionNamed("horn")) |horn| try told.say(.{ .what = "due", .name = "horn", .section = horn });
         }
         return false;
     }
@@ -799,6 +859,39 @@ test "a package's runtime runs as in a game: what it says it did is told, and a 
         \\* 1 Wait.
         \\* 2 Leave.
         \\> 2
+        \\-> end
+        \\
+    );
+}
+
+test "scenes due in the same move are each told in turn, though the first ends the story" {
+    try expectPlayed(bell,
+        \\facts:
+        \\  hour: int   (clock)
+        \\== a
+        \\- (top) Waiting.
+        \\+ Wait.
+        \\  -> top
+        \\== bell
+        \\The bell rings, and the day is over.
+        \\-> end
+        \\== horn
+        \\A horn, far off.
+        \\<-
+    , &.{":wait 4"}, .ended,
+        \\! hung bell
+        \\== a
+        \\Waiting.
+        \\* 1 Wait.
+        \\> :wait 4
+        \\! due bell
+        \\  Ding.
+        \\! due horn
+        \\== bell
+        \\The bell rings, and the day is over.
+        \\-> end
+        \\== horn
+        \\A horn, far off.
         \\-> end
         \\
     );

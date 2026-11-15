@@ -122,6 +122,45 @@ test "a line that can say nothing and carries effects is a warning: such a line 
     try std.testing.expectEqual(@as(usize, 2), o.diags.list.items.len);
 }
 
+test "a narration row that begins with a value is a line that says it first; braces holding a condition still gate the row" {
+    var o = try checkOne(
+        \\facts:
+        \\  coins: int   (game)
+        \\  met: bool   (game)
+        \\extern:
+        \\  name(int) -> text
+        \\== a
+        \\{name(coins)} has the parcel.
+        \\{coins} coins, and no more.
+        \\{ met } She knows.
+        \\{ seen(a) } Back again.
+        \\{ coins + 1 } is one more.
+        \\-> end
+    , .{});
+    defer o.deinit();
+    // a sum at a row's start is a condition, as written: a line says a sum after its first words
+    try o.only(.err, 11, 3, "a condition is true or false; this is a number");
+    try std.testing.expectEqual(@as(u32, 2), o.checked.?.value_first.count());
+}
+
+test "a section the game runs into a running flow goes back with `<-`, as from a call" {
+    const schema: check.Schema = .{ .keys = &.{.{ .name = "at", .on = .{ .section = true }, .value = .number, .interrupts = true }} };
+    var o = try checkOne(
+        \\== a
+        \\Waiting.
+        \\-> end
+        \\== bell
+        \\  [at 4]
+        \\The bell rings.
+        \\<-
+        \\== horn
+        \\A horn.
+        \\<-
+    , .{ .schema = &schema });
+    defer o.deinit();
+    try o.only(.warning, 10, 1, "`<-` goes back to a caller, but nothing calls `horn` with `-> horn ->`");
+}
+
 test "a fact must be declared" {
     var o = try checkOne(
         \\== a

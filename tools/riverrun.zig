@@ -237,7 +237,7 @@ fn play(init: std.process.Init, out: *std.Io.Writer, err: *std.Io.Writer, p: Pla
         return 1;
     };
     var session: tools.Play = undefined;
-    try session.init(init.gpa, &loaded, .{ .start = start, .leads = try tools.Play.leadsOf(a, joined.options), .delivery = joined.options.delivery, .running = joined.running });
+    try session.init(init.gpa, &loaded, .{ .start = start, .leads = try tools.Play.leadsOf(a, joined.options), .delivery = joined.options.delivery, .running = joined.running, .things = joined.options.things });
     defer session.deinit();
     // what the game has set when the story starts, read as :set and :wait read it
     var given: std.ArrayList(tools.Play.Input) = .empty;

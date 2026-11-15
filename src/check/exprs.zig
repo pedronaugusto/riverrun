@@ -31,9 +31,19 @@ pub const Scope = struct {
 /// A condition: true or false, or a visit count.
 pub fn condition(c: *Checker, scope: Scope, e: *const ast.Expr) Error!void {
     const t = try infer(c, scope, e, .boolean) orelse return;
+    return typedCondition(c, e, t);
+}
+
+/// A condition already typed as `t`: true or false, or a visit count.
+pub fn typedCondition(c: *Checker, e: *const ast.Expr, t: sym.Type) Error!void {
     if (t == .boolean) return;
     if (t == .int and isVisits(c, e)) return;
     try c.err(e.span, "a condition is true or false; this is {s}", .{try c.describe(t)});
+}
+
+/// What `e` is, typed as nothing in particular; null where it is not typed (what is wrong is reported).
+pub fn typeOf(c: *Checker, scope: Scope, e: *const ast.Expr) Error!?sym.Type {
+    return infer(c, scope, e, null);
 }
 
 /// An expression whose type must be `want`.
@@ -62,7 +72,8 @@ fn isOwn(c: *const Checker, scope: Scope, id: sym.FactId) bool {
     return by.eql(scope.section) and c.sections.items[scope.section.raw()].declares;
 }
 
-fn isVisits(c: *const Checker, e: *const ast.Expr) bool {
+/// Whether `e` reads a visit count, which a condition takes as true once above zero.
+pub fn isVisits(c: *const Checker, e: *const ast.Expr) bool {
     const typed = c.exprs.get(e) orelse return false;
     const ref = typed.ref orelse return false;
     return ref == .visits;

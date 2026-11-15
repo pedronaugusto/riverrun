@@ -60,6 +60,10 @@ pub const Options = struct {
     steps: ?u32 = null,
     /// The language plurals and genders are worded in.
     language: run.Language = .{},
+    /// The game's things by kind, as its vocabulary lists them (`check.Options.things`): a kind listed there holds
+    /// those things alone, so a name it does not hold is refused; a kind not listed is the game's to fill, and a
+    /// name the story does not hold is stood in for.
+    things: []const river.check.Things = &.{},
 };
 
 /// The most arguments a package's command takes.
@@ -242,6 +246,10 @@ section: ?story.SectionId = null,
 part: ?story.SectionId = null,
 /// Sections a package said the game tells now (a scheduled scene come due), in order.
 due: std.ArrayList(story.SectionId) = .empty,
+/// The scenes that came due together and were told into the flow one under another, in the order told, and how
+/// many of them the flow has come to: one that ends the story leaves the rest still to tell.
+stacked: std.ArrayList(story.SectionId) = .empty,
+entered: usize = 0,
 /// Steps taken since the last input, and the sections their lines were told in, with how often.
 steps: u32 = 0,
 stretch: std.ArrayList(struct { section: story.SectionId, lines: u32 }) = .empty,
@@ -340,6 +348,7 @@ pub fn deinit(p: *Play) void {
     p.offered.deinit(gpa);
     p.owed.deinit(gpa);
     p.due.deinit(gpa);
+    p.stacked.deinit(gpa);
     p.stretch.deinit(gpa);
     p.* = undefined;
 }
@@ -455,6 +464,8 @@ fn begin(p: *Play) GiveError!void {
     p.section = null;
     p.part = null;
     p.due.clearRetainingCapacity();
+    p.stacked.clearRetainingCapacity();
+    p.entered = 0;
     p.steps = 0;
     p.rounds = 0;
     p.stretch.clearRetainingCapacity();
@@ -497,7 +508,7 @@ fn startingWith(p: *Play) GiveError!void {
 }
 
 // The game's first moments: its rules told it is a new game, each package's runtime started and its commands
-// offered, the flow begun at its start, and what holds at the start reacted to.
+// offered, what the game did before the start taken and reacted to, then the flow begun at its start.
 fn starting(p: *Play) (Failure || error{Refused})!void {
     try p.rules.start();
     for (p.options.running, p.states) |r, *state| {
@@ -514,6 +525,12 @@ fn starting(p: *Play) (Failure || error{Refused})!void {
     }
     try p.offer();
     try p.startingWith();
+    if (p.waiting == .stopped) return;
+    // what the game did before the story starts, and what that and the facts it starts with set off, is told
+    // before the story's first heading: a quest the game started is started before the first scene
+    p.blame = .nowhere;
+    try p.settleRounds();
+    p.blame = .cursor;
     if (p.waiting == .stopped) return;
     try p.session.start(flow, p.options.start);
     try p.heading(p.options.start, null);
@@ -625,6 +642,15 @@ fn advance(p: *Play) Failure!void {
         },
         .end => {
             try p.flush();
+            // a scene that came due ended the story: the scenes due with it that it came before still come up
+            if (p.entered < p.stacked.items.len) {
+                try p.due.appendSlice(p.gpa, p.stacked.items[p.entered..]);
+                p.stacked.clearRetainingCapacity();
+                p.entered = 0;
+                try p.push(.end);
+                p.waiting = .end;
+                return p.tellDue();
+            }
             if (try p.leadsTo()) |to| {
                 try p.session.start(flow, to);
                 try p.heading(to, null);
@@ -803,6 +829,10 @@ fn tellDue(p: *Play) Failure!void {
         p.waiting = null;
         p.choosing = &.{};
     }
+    // each comes up when the one before it goes back; one that ends the story leaves the rest (`leftDue`)
+    p.stacked.clearRetainingCapacity();
+    try p.stacked.appendSlice(p.gpa, p.due.items);
+    p.entered = 0;
     p.due.clearRetainingCapacity();
 }
 
@@ -838,6 +868,8 @@ fn heading(p: *Play, section: story.SectionId, part: ?story.SectionId) error{Out
         part_ = section;
     };
     if (p.section != null and p.section.?.eql(whole_) and eqlPart(p.part, part_)) return;
+    // the flow came to the next of the scenes due together
+    if (p.entered < p.stacked.items.len and p.stacked.items[p.entered].eql(part_ orelse whole_)) p.entered += 1;
     const whole = p.section == null or !p.section.?.eql(whole_) or part_ == null;
     p.section = whole_;
     p.part = part_;
@@ -1095,6 +1127,11 @@ fn thingFor(p: *Play, param: Running.Param, name: []const u8) GiveError!u64 {
 fn thingOf(p: *Play, kind: []const u8, name: []const u8, wanted_by: []const u8) GiveError!u64 {
     const s = &p.loaded.story;
     if (p.thingNamed(kind, name)) |h| return h;
+    // a kind the vocabulary lists holds those things alone, as the checker holds the story to them
+    for (p.options.things) |listed| if (std.mem.eql(u8, listed.kind, kind)) {
+        for (listed.ids) |id| if (std.mem.eql(u8, id, name)) return standIn(p, kind, name);
+        return p.refuse("the game has no {s} called `{s}`", .{ kind, name });
+    };
     for (0..s.len(.things)) |i| {
         const t = s.thing(@intCast(i)); // safe: below a u32 count
         if (std.mem.eql(u8, t.id, name)) return p.refuse("`{s}` is a thing of the kind `{s}`, and `{s}` takes one of the kind `{s}`", .{ name, t.kind, wanted_by, kind });

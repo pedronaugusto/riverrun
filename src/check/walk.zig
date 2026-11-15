@@ -74,6 +74,7 @@ fn stmt(c: *Checker, u: *Unit, s: *const ast.Stmt) Error!void {
         .line => |*l| try line(c, u, s, l),
         .choice => |*ch| try choice(c, u, s, ch),
         .cond => |*k| {
+            if (try valueFirst(c, u, s, k)) return;
             try exprs.condition(c, u.scope, &k.cond);
             if (never(c, &k.cond)) try c.warn(k.cond.span, "this condition can never hold: what it gates is never said", .{});
             try body(c, u, k.body);
@@ -130,6 +131,49 @@ fn canSayNothing(t: ast.Text) bool {
         };
         if (!empty) return false;
     }
+    return true;
+}
+
+// A narration row that begins with a value, `{name(to)} has the parcel.`: the reader reads braces at a row's start
+// as a condition on the row, and only the type says otherwise. Braces holding a value a line can say (words, a
+// number, a value of a list) before narration are the line's first words, as `{…}` is anywhere in a line. True where
+// it was read so, and the line checked with its words.
+fn valueFirst(c: *Checker, u: *Unit, s: *const ast.Stmt, k: *const ast.Cond) Error!bool {
+    if (!k.on_row or k.otherwise.len > 0 or k.body.len != 1 or k.body[0].kind != .line) return false;
+    const l = &k.body[0].kind.line;
+    if (l.speaker != null) return false;
+    const e = &k.cond;
+    // a name or a query's answer, as a value a line says is written; a sum or a comparison stays a condition
+    if (e.kind != .name and e.kind != .call) return false;
+    const t = try exprs.typeOf(c, u.scope, e) orelse {
+        // what is wrong with it is said once, and the row is walked as written
+        try body(c, u, k.body);
+        return true;
+    };
+    // a visit count before a row is a condition, true once the place was seen (`{ kitchen } Again.`)
+    const sayable = switch (t) {
+        .text, .one_of => true,
+        .int => !exprs.isVisits(c, e),
+        else => false,
+    };
+    switch (@as(enum { line, condition }, if (sayable) .line else .condition)) {
+        .line => {},
+        .condition => {
+            // a condition after all, typed once
+            try exprs.typedCondition(c, e, t);
+            if (never(c, e)) try c.warn(e.span, "this condition can never hold: what it gates is never said", .{});
+            try body(c, u, k.body);
+            return true;
+        },
+    }
+    const text = try c.arena.alloc(ast.Piece, l.text.len + 2);
+    text[0] = .{ .span = k.cond_span, .kind = .{ .value = e.* } };
+    text[1] = .{ .span = .{ .file = k.cond_span.file, .start = k.cond_span.end, .end = k.cond_span.end }, .kind = .{ .literal = " " } };
+    @memcpy(text[2..], l.text);
+    try c.value_first.put(c.arena, s, text);
+    var said = l.*;
+    said.text = text;
+    try line(c, u, &k.body[0], &said);
     return true;
 }
 

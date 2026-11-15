@@ -161,6 +161,9 @@ pub const Schema = struct {
         count: Count = .one,
         /// On a section, with a section value: when the section ends the host goes on to that one.
         leads: bool = false,
+        /// On a section or a part: the game runs it into a running flow, as an interruption (a scheduled scene
+        /// come due), so `<-` there goes back to where the flow was, as from a call.
+        interrupts: bool = false,
     };
 
     pub const Found = union(enum) { found: *const Key, elsewhere, unknown };
@@ -245,6 +248,7 @@ lines: std.AutoHashMapUnmanaged(*const ast.Stmt, sym.LineId) = .empty,
 tags: std.AutoHashMapUnmanaged(*const ast.Tag, []const sym.SectionId) = .empty,
 /// A line's tags where it has a delivery: the delivery, as a tag of the host's key, then its own.
 line_tags: std.AutoHashMapUnmanaged(*const ast.Stmt, []const ast.Tag) = .empty,
+value_first: std.AutoHashMapUnmanaged(*const ast.Stmt, ast.Text) = .empty,
 /// The tags whose values the schema types as words a player reads, which a translation carries.
 text_tags: std.AutoHashMapUnmanaged(*const ast.Tag, void) = .empty,
 /// Each line id in use, and where, so a second use can say where the first is.

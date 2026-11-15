@@ -137,6 +137,10 @@ fn count(c: *Checker, tag: *const ast.Tag, key: *const Schema.Key) Error!bool {
 
 fn values(c: *Checker, where: Where, tag: *const ast.Tag, key: *const Schema.Key) Error!void {
     if (!try count(c, tag, key)) return;
+    // a section the game runs into a running flow is gone back from as a call is
+    if (key.interrupts and (where.place == .section or where.place == .part)) if (where.section) |s| {
+        c.section(s).called = true;
+    };
     if (key.value == .judge) return key.value.judge(c, .{ .tag = tag, .beside = where.beside, .section = where.section, .part = where.part, .place = where.place, .module = where.module });
     const module = where.module;
     const from = where.section;

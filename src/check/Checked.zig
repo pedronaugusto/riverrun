@@ -52,6 +52,10 @@ tags: std.AutoHashMapUnmanaged(*const ast.Tag, []const sym.SectionId),
 text_tags: std.AutoHashMapUnmanaged(*const ast.Tag, void),
 /// A line's tags where it has a delivery: the delivery, a tag of the host's key, then the line's own.
 line_tags: std.AutoHashMapUnmanaged(*const ast.Stmt, []const ast.Tag),
+/// A narration row that begins with a value, `{name(to)} has the parcel.`: read as a condition on its row, and,
+/// the braces holding a value a line can say, a line that says it first. By the condition's statement: the line's
+/// words, the value first.
+value_first: std.AutoHashMapUnmanaged(*const ast.Stmt, ast.Text),
 
 pub fn deinit(c: *Checked) void {
     const gpa = c.arena.child_allocator;

@@ -230,7 +230,10 @@ the package that defines the key (`[every week]` names one of a calendar's units
   returned, marked closed, so a host can show it locked. A gather `-` joins the branches; `- (label)` names it.
   Nesting is by indentation alone.
 - **Conditions:** `{ condition } line` for one line; `{ condition }` above an indented block, with `{ else }` after
-  it. Inline conditions are for words, blocks for whole lines.
+  it. Inline conditions are for words, blocks for whole lines. Braces at a row's start holding a value a line can
+  say, a name or a query's answer that is words, a number or a value of a list (not a visit count, which a
+  condition reads as seen), begin a line of narration that says it first: `{name(to)} has the parcel.` A sum there
+  is a condition, as written.
 - **Expressions:** `=`, `!=`, `<`, `<=`, `>`, `>=` on ints, `+` and `-` between them (below), `has` and `hasnt`
   on sets, `and`, `or`, `not`, queries, `seen(name)`, the visits of a section, part or label (an int; true when
   above zero), and in rules `since_changed(fact, clock)`. No multiplication, division or loops: the host computes,
@@ -316,7 +319,7 @@ row         = IND ( declaration | heading | brackets | statement ) [ " ^" id ] [
 comment     = "//" { any }                     ; at the start of the words, or after a space
 
 declaration = "version:" int
-            | "cast:" NL { IND name quoted [ "—" words ] NL { IND brackets NL } }
+            | "cast:" NL { IND name quoted [ words ] NL { IND brackets NL } }
             | "extras:" words { "," words }
             | "facts" [ "(" name ")" ] ":" NL { IND fact NL }
             | "const:" NL { IND name "=" value NL }
@@ -366,7 +369,8 @@ A conversation with several speakers needs no construct of its own:
 - **Interjections** are calls into a pool: `-> barks ->` after a line, whose candidates are conditioned on who is
   present (a `(game)` fact). A pool where nothing holds says nothing.
 - **Interruptions** are the host's: it calls a section into a running flow, which says it and returns to the line
-  after the one being delivered, or ends with `-> end`.
+  after the one being delivered, with `<-`, or ends with `-> end`. A key the vocabulary marks `interrupts` (tide's
+  `at` and `every`) says the game runs the section so: the checker takes `<-` there as going back to a caller.
 - **Flows:** several cursors over the same facts, for conversations held at once.
 - **Checks with outcomes:** `[persuaded = persuade(margaret, 12)]` stops the flow at an action; the host decides the
   outcome, sets the fact, and the story branches on it. riverrun never rolls.
@@ -577,7 +581,13 @@ the first section nothing leads to), or at `--from SECTION`, with what the game 
 line was shown, so a rule its effect wakes fires after it. A section that runs out, or ends, with a tag the
 vocabulary marks `leads` naming a section goes on there, as the game's mechanic would. A package's runtime is
 started over the loaded story and stepped whenever the facts change; a clock it keeps is moved by it, and a
-section it says came due is told into the flow as an interruption, as a game tells a scene that comes up. Nothing
+section it says came due is told into the flow as an interruption, as a game tells a scene that comes up; scenes due
+in one move are told in turn, each when the one before goes back, and one that ends the story leaves the rest to be
+told, each anew. What the game did before the story starts (`--set`, `--wait`, `--call`), and what that and the
+facts the story starts with set off (a quest started, a rule fired), is told before the story's first heading; a
+scene it made due comes up as the story starts, before its first row, and the start goes on when it goes back. A
+thing a command, a set or an outcome names is held to the vocabulary's list where the vocabulary lists that kind
+(`check.Options.things`, as the checker holds the story), and stood in for where it does not. Nothing
 is random and nothing reads the time, so a play is its inputs: going back one input is playing again from the
 start with the inputs but the last (`back`).
 

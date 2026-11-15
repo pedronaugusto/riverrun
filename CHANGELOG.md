@@ -222,6 +222,18 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Fixed
 
+- Scenes due in one move are each told in turn: one that ended the story with `-> end` dropped the others
+  (`Play.stacked`). A key marked `interrupts` (`Schema.Key.interrupts`, tide's `at` and `every`) makes a section one
+  the game runs into a flow, so its `<-` draws no warning.
+- What the game did before the story starts is told before the first heading: a quest started by `--call` was told
+  after the first scene's heading.
+- A thing a command, a set or an outcome names is held to the vocabulary's list of its kind (`Play.Options.things`);
+  stood in for only where the vocabulary lists none of that kind.
+- A narration row may begin with a value: `{name(to)} has the parcel.` (`Checked.value_first`); a sum or a visit count
+  there is a condition, as before.
+- `:facts` lists every key a fact kept per thing holds, a stand-in's by its name and a package's own (a repeat
+  quest's instance) by its kind and number.
+
 - The checker crashed (`reached unreachable code`) on a choice written on a gather's row (`- * Go.`, `- (ask) *
   Run.`): it checks as a choice point of that one choice, as it compiles. The whole compiler's generator writes such
   rows.
