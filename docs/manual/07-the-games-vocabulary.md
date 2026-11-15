@@ -249,8 +249,8 @@ const width: riverrun.check.Width = .{ .line = 100, .choice = 40 };
 pub const options: riverrun.check.Options = .{ .schema = &schema, .delivery = "delivery", .things = things, .width = width };
 ```
 
-It is Zig, not a data file, because a package's kinds and checks are functions: quests and time, chapters 10 and
-11 in [the index](README.md), are packages. It declares `pub const options`, a `riverrun.check.Options`:
+It is Zig, not a data file, because a package's kinds and checks are functions: quests and time, chapters
+[10](https://github.com/pedronaugusto/cairn/blob/main/docs/manual/10-quests.md) and [11](https://github.com/pedronaugusto/tide/blob/main/docs/manual/11-time.md), are packages. It declares `pub const options`, a `riverrun.check.Options`:
 
 - `schema`: the tags, each key with where it may stand (`.on`: a cast entry, a section, a part, a line, a choice),
   its value (`.none` for a mark, `.number`, `.word`, `.text`, `.words` for a fixed list, `.values_of` a fact's

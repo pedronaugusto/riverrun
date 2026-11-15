@@ -55,14 +55,16 @@ linked from this index by its URL. Every chapter is listed in `manual.documents`
 [stories/vocabulary.zig](stories/vocabulary.zig): its tags (`music`, `picture`, `sound`, `pause`, `marked`,
 `delivery`, and a night of rooms' `rooms`, `hours`, `pool` and `then`), the delivery's key, the ids of its things
 and the width of its lines and choices. A chapter that needs another tag adds it there, with a comment saying what
-the game does with it. Chapters 10 and 11 add their packages to a vocabulary of their own.
+the game does with it. Chapters 10 and 11 write for the same game with their package added, each in a vocabulary of
+its own in its repository (`docs/manual/stories/vocabulary.zig`), shown whole in the chapter.
 
 **The running story.** The ferry at Hollin: Ada, who keeps it; Otto, a pedlar; a boy; the player, who wants to
 cross at night. Chapter 1 is its landing; each chapter after grows it by what it teaches (choices, facts, tags and
 actions, the crossing and the far bank, words that vary), so a reader meets the same people and places throughout.
 `stories/NN/ferry.river` is the whole story as it stands at chapter NN, and the next chapter starts from a copy of
 it. A chapter whose subject needs another shape (a pool, a rule set, a day of slots) writes a short story of its own
-beside it, as chapter 6's `bank.river`.
+beside it, as chapter 6's `bank.river`. Chapter 10 goes back to the fair on the far bank, where Otto has an errand
+and the player's purse goes in the crowd; chapter 11 keeps the landing by the clock.
 
 **Stories.** Every ` ```river ` block is consecutive rows of a story in `stories/`, copied exactly, indentation and
 all, with no row left out or standing for others. Every story there is listed in `manual.stories` and is checked

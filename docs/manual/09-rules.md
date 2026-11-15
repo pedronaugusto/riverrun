@@ -94,7 +94,7 @@ a guard's suspicion drifts back.
 
 `happened(bell)` is true when the moment `bell` has just happened. `bell` is a `(moment)` fact: the game sets it when
 the boy rings the bell, and it holds only until every rule that reads it has seen it, then goes back to nothing. A
-moment is never saved. Only rules, and quests ([chapter 10](README.md)), read one: a moment is over before a line
+moment is never saved. Only rules, and quests ([chapter 10](https://github.com/pedronaugusto/cairn/blob/main/docs/manual/10-quests.md)), read one: a moment is over before a line
 could ask about it.
 
 `since_changed` and `happened` are for rules and quests alone, since only they are looked at as the facts change.
@@ -265,5 +265,5 @@ ferry.river:99:64-99:68: error: `rain` is not a clock: since_changed counts on a
 ```
 
 A rule that should be heard sets a fact, and the story says the line where it asks about the fact, as the landing
-does with `boat`. [Chapter 10](README.md), cairn's, is about quests; [chapter 12](12-what-the-checker-proves.md) is
+does with `boat`. [Chapter 10](https://github.com/pedronaugusto/cairn/blob/main/docs/manual/10-quests.md), cairn's, is about quests; [chapter 12](12-what-the-checker-proves.md) is
 about everything the checker says.
