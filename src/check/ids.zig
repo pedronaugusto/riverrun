@@ -31,19 +31,27 @@ pub fn give(c: *Checker, stmt: *const ast.Stmt, path: Path, speaker: ?[]const u8
         .release => return c.err(rowOf(stmt, text), "a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them", .{}),
         .development => .{ .text = try derive(c, path, speaker, text), .written = false },
     };
+    // a written id is placed on itself, `^k7f3a2`; a derived one on the row it is derived from
+    const at = if (idOf(stmt.tags)) |t| t.span else rowOf(stmt, text);
     const slot = try c.line_ids.getOrPut(c.arena, id.text);
     if (slot.found_existing) {
-        return c.err(stmt.span, "the line id `{s}` is used twice: first at {f}", .{ id.text, c.place(slot.value_ptr.*) });
+        return c.err(at, "the line id `{s}` is used twice: first at {f}", .{ id.text, c.place(slot.value_ptr.*) });
     }
-    slot.value_ptr.* = stmt.span;
+    slot.value_ptr.* = at;
     try c.lines.put(c.arena, stmt, id);
 }
 
-// A line's or a choice's own row, its words to their end, without what stands under it.
-fn rowOf(stmt: *const ast.Stmt, text: ast.Text) syntax.Span {
+/// A line's or a choice's own row, its words to their end, without what stands under it: where what is said of
+/// the line or the choice itself is placed.
+pub fn rowOf(stmt: *const ast.Stmt, text: ast.Text) syntax.Span {
     var row = stmt.span;
     if (text.len > 0) row.end = text[text.len - 1].span.end;
     return row;
+}
+
+fn idOf(tagged: []const ast.Tag) ?*const ast.Tag {
+    for (tagged) |*tag| if (std.mem.eql(u8, tag.key.text, id_key)) return tag;
+    return null;
 }
 
 fn written(c: *Checker, tagged: []const ast.Tag) Error!?[]const u8 {

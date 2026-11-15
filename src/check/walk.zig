@@ -99,7 +99,7 @@ fn line(c: *Checker, u: *Unit, s: *const ast.Stmt, l: *const ast.Line) Error!voi
         } else try c.err(who.span, "`{s}` is not a speaker: speakers come from `cast:` and `extras:`", .{who.text});
     }
     try exprs.text(c, u.scope, l.text);
-    try width.check(c, s.span, l.text, c.options.width.line, "line");
+    try width.check(c, ids.rowOf(s, l.text), l.text, c.options.width.line, "line");
     try tags.check(c, u.scope.module, u.scope.section, u.scope.part, try delivered(c, s, l), .line);
     try ids.give(c, s, u.path, key, l.text);
     u.path.ordinal += 1;
@@ -131,7 +131,7 @@ fn choice(c: *Checker, u: *Unit, s: *const ast.Stmt, ch: *const ast.Choice) Erro
         if (never(c, k)) try c.warn(k.span, "this choice can never be offered: its condition can never hold", .{});
     }
     try exprs.text(c, u.scope, ch.text);
-    try width.check(c, s.span, ch.text, c.options.width.choice, "choice");
+    try width.check(c, ids.rowOf(s, ch.text), ch.text, c.options.width.choice, "choice");
     try tags.check(c, u.scope.module, u.scope.section, u.scope.part, s.tags, .choice);
     try ids.give(c, s, u.path, null, ch.text);
     u.path.ordinal += 1;

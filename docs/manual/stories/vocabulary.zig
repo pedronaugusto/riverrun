@@ -34,4 +34,7 @@ const things: []const riverrun.check.Things = &.{
     .{ .kind = "person", .ids = &.{ "ada", "otto", "miller" } },
 };
 
-pub const options: riverrun.check.Options = .{ .schema = &schema, .delivery = "delivery", .things = things };
+// the game's subtitles hold 100 columns, and its choices 40
+const width: riverrun.check.Width = .{ .line = 100, .choice = 40 };
+
+pub const options: riverrun.check.Options = .{ .schema = &schema, .delivery = "delivery", .things = things, .width = width };

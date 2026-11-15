@@ -300,17 +300,30 @@ test "a key stands once where it is, all its values in its one bracket" {
     try std.testing.expectEqual(@as(usize, 4), o.diags.list.items.len);
 }
 
-test "a line wider than the host allows is refused" {
+test "a line or a choice wider than the host allows is refused, on its own row" {
     var o = try checkOne(
         \\const:
         \\  dies_at = "ten past nine"
+        \\facts:
+        \\  x: bool
         \\== a
         \\Frank died at {dies_at}.
         \\Frank Marlowe died at {dies_at} that night, with the radio on.
-        \\-> end
-    , .{ .width = .{ .line = 40, .value = 13 } });
+        \\  [x = true]
+        \\* Go to the hospital, and sit with him all night.
+        \\  Frank died at {dies_at}.
+        \\  -> end
+    , .{ .width = .{ .line = 40, .choice = 20, .value = 13 } });
     defer o.deinit();
-    try o.only(.err, 5, 1, "the line is 66 columns wide, past the game's 40");
+    try o.has(.err, 7, 1, "the line is 66 columns wide, past the game's 40");
+    try o.has(.err, 9, 1, "the choice is 47 columns wide, past the game's 20");
+    try std.testing.expectEqual(@as(usize, 2), o.diags.list.items.len);
+    // each on its own row, to its words' end, never over what stands under it
+    for (o.diags.list.items, [_]u32{ 7, 9 }, [_]u32{ 63, 50 }) |d, row, end| {
+        const at = o.files[0].place(.{ .file = 0, .start = d.span.end, .end = d.span.end });
+        try std.testing.expectEqual(row, at.line);
+        try std.testing.expectEqual(end, at.col);
+    }
 }
 
 test "a name is declared once, and the second says where the first is" {
@@ -345,7 +358,7 @@ test "a line id is used once, and a release needs one on every line and choice, 
         \\  -> end
     , .{ .mode = .release });
     defer o.deinit();
-    try o.has(.err, 5, 1, "the line id `k7f3a2` is used twice: first at a.river:4:1");
+    try o.has(.err, 5, 7, "the line id `k7f3a2` is used twice: first at a.river:4:5");
     const missing = "a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them";
     try o.has(.err, 6, 1, missing);
     try o.has(.err, 10, 1, missing);
