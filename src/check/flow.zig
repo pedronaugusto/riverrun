@@ -352,7 +352,7 @@ const Ways = struct {
             .gather => |g| {
                 try w.only(c.row(s.span));
                 // a statement on the gather's row, a choice among them (`- (ask) * Run.`), comes after it
-                if (g.then) |then| if (then.kind == .choice) try w.point(then[0..1]) else try w.stmt(then);
+                if (g.then) |then| try w.stmt(then);
             },
             .choice => try w.point(s[0..1]),
         }

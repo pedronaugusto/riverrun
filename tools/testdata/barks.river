@@ -1,0 +1,10 @@
+// A pool called from a scene: its candidate is the pool's to pick, never a place a play starts.
+extras: a boy
+
+== landing
+-> barks ->
+-> end
+
+== barks (pool)
+= boy   when { true }
+  A BOY: Ferry!

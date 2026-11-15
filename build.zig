@@ -352,6 +352,15 @@ fn programTests(b: *std.Build, test_step: *std.Build.Step) void {
     unoffered.expectExitCode(1);
     unoffered.expectStdOutMatch("> 3\nriverrun: error: the input `3`: there is no choice 3: 2 are offered\n");
     test_step.dependOn(&unoffered.step);
+    // a pool's candidate is named as a part is, and is the pool's to pick
+    const candidate = playRun(b, program, &.{ "--from", "barks.boy" }, p.path("tools/testdata/barks.river"));
+    candidate.expectExitCode(1);
+    candidate.expectStdErrEqual("riverrun: error: `barks.boy` is a candidate of the pool `barks`, which picks it: a play starts at a section, or a part of a scene\n");
+    test_step.dependOn(&candidate.step);
+    const nowhere = playRun(b, program, &.{ "--from", "nowhere" }, p.path("tools/testdata/sample.river"));
+    nowhere.expectExitCode(1);
+    nowhere.expectStdErrEqual("riverrun: error: the story has no section or part called `nowhere` to start at\n");
+    test_step.dependOn(&nowhere.step);
     const broken = playRun(b, program, &.{}, p.path("tools/testdata/broken.river"));
     broken.expectExitCode(4);
     broken.expectStdOutMatch("broken.river:9:1-9:11: error: a sum, or a change, passed what an int holds (64 bits) (Overflow)\n");

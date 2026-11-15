@@ -267,6 +267,20 @@ test "a `one of` fact holds its first value until something sets it, and a query
     );
 }
 
+test "a clock only moves on: setting one is refused, naming how it is moved in a play and before one" {
+    var p = try played(plain, &.{.{ .path = "story.river", .text =
+        \\facts:
+        \\  hour: int   (clock)
+        \\== a
+        \\{ hour > 2 } Late.
+        \\* Wait.
+        \\  -> end
+    }}, .{}, &.{":set hour = 3"});
+    defer p.deinit();
+    try std.testing.expectEqual(script.Ending.refused, p.ending);
+    try std.testing.expect(std.mem.endsWith(u8, p.text, "error: `hour` is a clock, which only moves on: wait (`:wait N` in a play, `--wait N` before it starts)\n"));
+}
+
 test "a line whose words come out empty is not delivered, and none of its effects is applied" {
     try expectPlayed(plain,
         \\facts:
