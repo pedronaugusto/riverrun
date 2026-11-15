@@ -319,6 +319,31 @@ fn programTests(b: *std.Build, test_step: *std.Build.Step) void {
         \\
     );
     test_step.dependOn(&played.step);
+    // a call the game made into a package before the story starts, as the package's command
+    const called = playRun(b, program, &.{ "--call", "restock furs count=2", "-i", "2" }, p.path("tools/testdata/sample.river"));
+    called.expectExitCode(0);
+    called.expectStdOutEqual(
+        \\> :restock furs count=2
+        \\! opens stall
+        \\  2 wares
+        \\! restocked furs
+        \\  [furs += 2]
+        \\== market
+        \\  [stall] [sells furs]
+        \\HILDE: Ten pelts before the frost.
+        \\HILDE: You have furs already.
+        \\* 1 I'll bring them.
+        \\* 2 Not this year.
+        \\> 2
+        \\HILDE: Then next.
+        \\-> end
+        \\
+    );
+    test_step.dependOn(&called.step);
+    const not_a_call = playRun(b, program, &.{ "--call", "set furs = 2" }, p.path("tools/testdata/sample.river"));
+    not_a_call.expectExitCode(1);
+    not_a_call.expectStdErrEqual("riverrun: error: --call `set furs = 2`: a package's command, as :help lists them, is what the game calls before the story starts\n");
+    test_step.dependOn(&not_a_call.step);
     const waiting = playRun(b, program, &.{}, p.path("tools/testdata/sample.river"));
     waiting.expectExitCode(3);
     waiting.expectStdErrEqual("riverrun: the story waits for a choice, and the script gives no more\n");

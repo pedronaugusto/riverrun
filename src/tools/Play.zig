@@ -1038,9 +1038,9 @@ fn thingFor(p: *Play, param: Running.Param, name: []const u8) GiveError!u64 {
     if (p.thingNamed(kind, name)) |h| return h;
     for (0..s.len(.things)) |i| {
         const t = s.thing(@intCast(i)); // safe: below a u32 count
-        if (std.mem.eql(u8, t.id, name)) return p.refuse("`{s}` is a {s}, and `{s}` takes a {s}", .{ name, t.kind, param.name, kind });
+        if (std.mem.eql(u8, t.id, name)) return p.refuse("`{s}` is a thing of the kind `{s}`, and `{s}` takes one of the kind `{s}`", .{ name, t.kind, param.name, kind });
     }
-    for (p.stand_ins.items) |t| if (std.mem.eql(u8, t.name, name)) return p.refuse("`{s}` stands in for a {s}, and `{s}` takes a {s}", .{ name, t.kind, param.name, kind });
+    for (p.stand_ins.items) |t| if (std.mem.eql(u8, t.name, name)) return p.refuse("`{s}` stands in for a thing of the kind `{s}`, and `{s}` takes one of the kind `{s}`", .{ name, t.kind, param.name, kind });
     return standIn(p, kind, name);
 }
 
