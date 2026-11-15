@@ -1,0 +1,47 @@
+// Supper at the Bell: Otto tells how he lost his cart, and whoever is at the table puts in a word.
+cast:
+  ada    "Ada"    — keeps the ferry
+  otto   "Otto"   — a pedlar, going over for the fair
+extras: a boy
+
+facts:
+  at_table: set of ada, boy   (game)   // who else is sitting with you
+  heard: set of cart, horse, wife      // what Otto has told
+
+== supper
+  [music fair_far_off]
+Otto has a bowl of stew and an audience, which is all he ever wants.
+OTTO: I had a cart once. A good one, green wheels.
+-> puts_in ->
+- (ask)
+* What happened to it?
+  [heard += cart]
+  OTTO: Lost it at cards, to a man with one eye and two aces.
+  -> puts_in ->
+  -> ask
+* { heard has cart } And the horse?
+  [heard += horse]
+  OTTO: The horse came back on her own. She never liked him either.
+  -> puts_in ->
+  -> ask
+* { heard has horse } Who's "she"?
+  [heard += wife]
+  OTTO: The horse. Who else would I mean?
+  -> puts_in ->
+  -> ask
++ Eat your stew.
+  You eat. It is better than it looks.
+  -> end
+
+// Someone at the table puts in a word after Otto speaks; nobody, if nobody is there.
+== puts_in (pool)
+= ada             when { at_table has ada }
+  ADA: Here we go.
+= ada_cards       when { at_table has ada and heard has cart }
+  ADA: Two aces. It was three, last time.
+= ada_wife        when { at_table has ada and heard has wife }
+  ADA (to you): He was married. Ask him about Bremen sometime. Not tonight.
+= boy             when { at_table has boy }
+  A BOY: Did it have a bell? A cart should have a bell.
+= boy_horse       when { at_table has boy and heard has horse }
+  A BOY: What was she called?

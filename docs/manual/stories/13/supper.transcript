@@ -1,0 +1,43 @@
+> :set at_table = ada, boy
+== supper
+  [music fair_far_off]
+Otto has a bowl of stew and an audience, which is all he ever wants.
+OTTO: I had a cart once. A good one, green wheels.
+== puts_in
+A BOY: Did it have a bell? A cart should have a bell.
+== supper
+  [music fair_far_off]
+* 1 What happened to it?
+* 2 (closed) And the horse?
+* 3 (closed) Who's "she"?
+* 4 Eat your stew.
+> 1
+[heard += cart]
+OTTO: Lost it at cards, to a man with one eye and two aces.
+== puts_in
+ADA: Two aces. It was three, last time.
+== supper
+  [music fair_far_off]
+* 1 And the horse?
+* 2 (closed) Who's "she"?
+* 3 Eat your stew.
+> 1
+[heard += horse]
+OTTO: The horse came back on her own. She never liked him either.
+== puts_in
+A BOY: What was she called?
+== supper
+  [music fair_far_off]
+* 1 Who's "she"?
+* 2 Eat your stew.
+> 1
+[heard += wife]
+OTTO: The horse. Who else would I mean?
+== puts_in
+ADA (to you): He was married. Ask him about Bremen sometime. Not tonight.
+== supper
+  [music fair_far_off]
+* 1 Eat your stew.
+> 1
+You eat. It is better than it looks.
+-> end

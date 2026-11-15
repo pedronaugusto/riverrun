@@ -1,0 +1,9 @@
+// the storm breaks
+:set thunder = true
+// wait under the shelter, then try to haul the boat clear: the game says the rope slips
+2
+1
+false
+// a quarter of an hour goes by, and you wait it out
+:wait 15
+2

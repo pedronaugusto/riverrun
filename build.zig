@@ -402,6 +402,7 @@ const manual = struct {
         "docs/manual/08-pools.md",
         "docs/manual/09-rules.md",
         "docs/manual/12-what-the-checker-proves.md",
+        "docs/manual/13-worked-scenes.md",
     };
     const stories = [_][]const u8{
         "docs/manual/stories/01/ferry.river",
@@ -419,6 +420,10 @@ const manual = struct {
         "docs/manual/stories/12/draft/toll.river",
         "docs/manual/stories/12/toll.river",
         "docs/manual/stories/12/round/toll.river",
+        "docs/manual/stories/13/supper.river",
+        "docs/manual/stories/13/day.river",
+        "docs/manual/stories/13/confession.river",
+        "docs/manual/stories/13/storm.river",
     };
     const runs = [_]ShownRun{
         .{ .dir = "docs/manual/stories/01", .args = &.{ "play", "ferry.river" }, .output = "ferry.transcript" },
@@ -455,6 +460,12 @@ const manual = struct {
         .{ .dir = "docs/manual/stories/12/draft", .args = &.{ "check", "toll.river" }, .output = "toll.diagnostics" },
         .{ .dir = "docs/manual/stories/12/draft", .args = &.{ "play", "--set", "coins = 1", "--script", "toll.play", "toll.river" }, .output = "toll.transcript", .status = 1 },
         .{ .dir = "docs/manual/stories/12", .args = &.{ "play", "--set", "coins = 1", "--script", "toll.play", "toll.river" }, .output = "toll.transcript" },
+        .{ .dir = "docs/manual/stories/13", .args = &.{ "play", "--set", "at_table = ada, boy", "-i", "1", "-i", "1", "-i", "1", "-i", "1", "supper.river" }, .output = "supper.transcript" },
+        .{ .dir = "docs/manual/stories/13", .args = &.{ "play", "--set", "coins = 2", "-i", "2", "-i", "2", "-i", "3", "day.river" }, .output = "day.transcript" },
+        .{ .dir = "docs/manual/stories/13", .args = &.{ "play", "-i", "1", "-i", "1", "-i", "1", "-i", "2", "confession.river" }, .output = "confession.transcript" },
+        .{ .dir = "docs/manual/stories/13", .args = &.{ "play", "-i", "2", "confession.river" }, .output = "quiet.transcript" },
+        .{ .dir = "docs/manual/stories/13", .args = &.{ "play", "--script", "storm.play", "storm.river" }, .output = "storm.transcript" },
+        .{ .dir = "docs/manual/stories/13", .args = &.{ "play", "-i", ":set thunder = true", "-i", "1", "-i", "true", "storm.river" }, .output = "saved.transcript" },
     };
     const tagged = [_]TaggedStory{.{ .before = "docs/manual/stories/06/bank.river", .after = "docs/manual/stories/06/tagged/bank.river" }};
 };

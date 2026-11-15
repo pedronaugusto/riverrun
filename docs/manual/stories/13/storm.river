@@ -1,0 +1,42 @@
+// The night the river came up: a storm the game sends, a rule that keeps time, and a rope that may not hold.
+cast:
+  ada    "Ada"    — keeps the ferry
+  otto   "Otto"   — a pedlar, sheltering at the landing
+
+facts:
+  minute: int   (clock)                  // the game's clock
+  thunder: bool   (moment)               // the game's storm breaks
+  water: one of low, rising, over
+  hauled: bool
+
+extern:
+  haul(with: ref of person) -> bool (action)   // can the player and this person haul the boat clear?
+
+== storm
+  [music rain_on_water]
+[water = low]
+Rain on the landing roof, and Ada's boat pulling at its rope.
+- (now)
+{ water = over }
+  The river comes over the landing and takes the boat with it, rope and all.
+  ADA: Well. That's that.
+  -> end
+{ water = rising } ADA: It's coming up! Help me get her out of the water!
++ { water = rising } Haul the boat up the slip, with Otto.
+  [hauled = haul(otto)]
+  { hauled }
+    The keel grinds up the stones, out of the river's reach.
+    ADA: There. She'll do.
+    -> end
+  The rope burns through your hands, and the boat slides back.
+  -> now
++ Wait under the shelter.
+  You wait. The rain hammers on the roof.
+  -> now
+
+// The river, which pays no attention to anyone.
+== river (rules)
+= storm_breaks   when { water = low and happened(thunder) }
+  [water = rising]
+= comes_over     when { water = rising and since_changed(water, minute) >= 15 }
+  [water = over]

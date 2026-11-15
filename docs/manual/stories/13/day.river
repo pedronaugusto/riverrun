@@ -1,0 +1,50 @@
+// A day at the fair: three hours before the last ferry home, and five things that want them.
+cast:
+  ada    "Ada"    — keeps the ferry
+  otto   "Otto"   — a pedlar, at his stall
+
+facts (player):
+  coins: int from 0 to 9   (game)
+facts:
+  hours: int from 0 to 3              // the hours spent so far
+  done: set of stall, horses, ribbon, fortune, river
+
+extern:
+  pay(int)
+
+== fair_day
+  [music fair_far_off]
+Three hours before the last ferry home, and more to do than three hours hold.
+- (hour)
+{ hours = 3 }
+  -> last_ferry
+The church clock says {hours + 10} o'clock.
+* { hours = 0 } Help Otto set out his stall.
+  You hang his ribbons in rows, and he lets you keep a blue one.
+  [done += stall] [hours += 1]
+  -> hour
+* Watch the horses being sold.
+  A grey mare goes for more than the man selling her expected. He looks sorry about it.
+  [done += horses] [hours += 1]
+  -> hour
+* { coins >= 1 and done hasnt stall } Buy a ribbon.
+  [pay(1)]
+  You buy a red one, from a stall that is not Otto's.
+  [done += ribbon] [hours += 1]
+  -> hour
+* { coins >= 2 } Have your fortune told.
+  [pay(2)]
+  The woman tells you that you will cross water. You have, twice.
+  [done += fortune] [hours += 1]
+  -> hour
+* Sit by the river for an hour.
+  The ferry goes over and comes back. Ada does not wave. Then she does.
+  [done += river] [hours += 1]
+  -> hour
+
+== last_ferry
+ADA: Last one. In you get.
+{ done has stall } You have a blue ribbon from Otto in your pocket.
+{ done has ribbon } You have a ribbon you paid for, which is not the same.
+{ done hasnt river } You never did sit by the river. Next fair.
+-> end

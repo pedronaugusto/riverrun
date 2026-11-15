@@ -1,0 +1,10 @@
+== confession
+  [music oars]
+OTTO (low, so Ada won't hear): That lantern. It wasn't mine to give you.
+* 1 Whose was it, then?
+* 2 Say nothing.
+> 2
+You say nothing. Otto takes that for an answer, and is wrong.
+ADA: You two are quiet.
+OTTO: Tired, is all.
+-> end

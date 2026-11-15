@@ -1,0 +1,45 @@
+// Halfway back across the river, Otto says the lantern was never his to give.
+cast:
+  ada    "Ada"    — keeps the ferry
+  otto   "Otto"   — a pedlar, coming home from the fair
+
+facts:
+  knows: set of thief, owner, sorry   // what Otto has owned up to
+
+== confession
+  [music oars]
+OTTO (low, so Ada won't hear): That lantern. It wasn't mine to give you.
+* Whose was it, then?
+  [knows += thief]
+  OTTO: I took it off a hook at the Bell. The night we waited.
+  * Take it back, then.
+    OTTO: Can't. They'd know it was me.
+    * They'd know anyway.
+      [knows += sorry]
+      OTTO: ...Aye. They would.
+    * Then I'll take it back.
+      [knows += owner]
+      OTTO: You'd do that? It was Ada's husband's, they say. Hung there since he drowned.
+  * Keep your voice down.
+    OTTO: Aye. Aye.
+  - He looks at the lantern in your lap, and then at the water.
+* Say nothing.
+  You say nothing. Otto takes that for an answer, and is wrong.
+- ADA: You two are quiet.
+{ knows has owner or knows has sorry }
+  You hold up the lantern. Ada looks at it for a long time.
+  ADA: Where did you get that?
+  -> owned_up
+OTTO: Tired, is all.
+-> end
+
+== owned_up
+* { knows has owner } I'm taking it back to the Bell.
+  ADA: Keep it. He'd want it used.
+  -> end
+* { knows has sorry } Otto took it. He's sorry.
+  ADA: He's always sorry. Otto, sit where I can see you.
+  -> end
+* Otto gave it me.
+  ADA: Did he.
+  -> end

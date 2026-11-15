@@ -1,0 +1,33 @@
+> :set coins = 2
+== fair_day
+  [music fair_far_off]
+Three hours before the last ferry home, and more to do than three hours hold.
+The church clock says 10 o'clock.
+* 1 Help Otto set out his stall.
+* 2 Watch the horses being sold.
+* 3 Buy a ribbon.
+* 4 Have your fortune told.
+* 5 Sit by the river for an hour.
+> 2
+A grey mare goes for more than the man selling her expected. He looks sorry about it.
+[done += horses] [hours += 1]
+The church clock says 11 o'clock.
+* 1 (closed) Help Otto set out his stall.
+* 2 Buy a ribbon.
+* 3 Have your fortune told.
+* 4 Sit by the river for an hour.
+> 2
+[pay(1)]
+You buy a red one, from a stall that is not Otto's.
+[done += ribbon] [hours += 1]
+The church clock says 12 o'clock.
+* 1 (closed) Help Otto set out his stall.
+* 2 Have your fortune told.
+* 3 Sit by the river for an hour.
+> 3
+The ferry goes over and comes back. Ada does not wave. Then she does.
+[done += river] [hours += 1]
+== last_ferry
+ADA: Last one. In you get.
+You have a ribbon you paid for, which is not the same.
+-> end

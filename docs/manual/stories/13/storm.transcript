@@ -1,0 +1,33 @@
+== storm
+  [music rain_on_water]
+[water = low]
+Rain on the landing roof, and Ada's boat pulling at its rope.
+* 1 (closed) Haul the boat up the slip, with Otto.
+* 2 Wait under the shelter.
+> :set thunder = true
+! rule river.storm_breaks
+  [water = rising]
+* 1 Haul the boat up the slip, with Otto.
+* 2 Wait under the shelter.
+> 2
+You wait. The rain hammers on the roof.
+ADA: It's coming up! Help me get her out of the water!
+* 1 Haul the boat up the slip, with Otto.
+* 2 Wait under the shelter.
+> 1
+? haul(otto) -> true or false
+> false
+The rope burns through your hands, and the boat slides back.
+ADA: It's coming up! Help me get her out of the water!
+* 1 Haul the boat up the slip, with Otto.
+* 2 Wait under the shelter.
+> :wait 15
+! rule river.comes_over
+  [water = over]
+* 1 (closed) Haul the boat up the slip, with Otto.
+* 2 Wait under the shelter.
+> 2
+You wait. The rain hammers on the roof.
+The river comes over the landing and takes the boat with it, rope and all.
+ADA: Well. That's that.
+-> end
