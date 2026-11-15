@@ -250,6 +250,8 @@ due: std.ArrayList(story.SectionId) = .empty,
 /// many of them the flow has come to: one that ends the story leaves the rest still to tell.
 stacked: std.ArrayList(story.SectionId) = .empty,
 entered: usize = 0,
+/// The section or part of the step told last, which `entered` counts the next due scene's start by.
+told_in: ?story.SectionId = null,
 /// Steps taken since the last input, and the sections their lines were told in, with how often.
 steps: u32 = 0,
 stretch: std.ArrayList(struct { section: story.SectionId, lines: u32 }) = .empty,
@@ -613,7 +615,17 @@ fn advance(p: *Play) Failure!void {
     p.walking = true;
     const step = p.session.next(flow);
     p.walking = false;
-    switch (try step) {
+    const taken = try step;
+    // the flow came to the next of the scenes due together: its first step told
+    if (p.entered < p.stacked.items.len and taken != .end) if (try p.session.told(flow)) |node| if (p.session.places.where(&p.loaded.story, node)) |w| {
+        const here = w.part orelse w.section;
+        const next_due = p.stacked.items[p.entered];
+        if (here.eql(next_due) or w.section.eql(next_due)) {
+            if (p.told_in == null or !p.told_in.?.eql(here)) p.entered += 1;
+        }
+        p.told_in = here;
+    };
+    switch (taken) {
         .line => |l| {
             try p.flush();
             try p.heading(l.section, l.part);
@@ -833,6 +845,7 @@ fn tellDue(p: *Play) Failure!void {
     p.stacked.clearRetainingCapacity();
     try p.stacked.appendSlice(p.gpa, p.due.items);
     p.entered = 0;
+    p.told_in = null;
     p.due.clearRetainingCapacity();
 }
 
@@ -868,8 +881,6 @@ fn heading(p: *Play, section: story.SectionId, part: ?story.SectionId) error{Out
         part_ = section;
     };
     if (p.section != null and p.section.?.eql(whole_) and eqlPart(p.part, part_)) return;
-    // the flow came to the next of the scenes due together
-    if (p.entered < p.stacked.items.len and p.stacked.items[p.entered].eql(part_ orelse whole_)) p.entered += 1;
     const whole = p.section == null or !p.section.?.eql(whole_) or part_ == null;
     p.section = whole_;
     p.part = part_;
