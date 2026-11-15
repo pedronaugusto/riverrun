@@ -50,30 +50,37 @@ fn unkeyed(a: std.mem.Allocator, graph: []const u8, words: []const u8) !struct {
     }
     var named: std.ArrayList(u8) = .empty;
     var i: usize = 0;
+    // a line's id text is named only inside a string: a hand-written id may be a number (`^0`), which the JSON's own
+    // numbers are not
+    var quoted = false;
     while (i < json.len) {
         if (std.mem.startsWith(u8, json[i..], key_hash)) {
             try named.appendSlice(a, key_hash);
             i += key_hash.len + 16;
+            // inside the string the key's value opens
+            quoted = true;
             continue;
         }
         if (std.mem.startsWith(u8, json[i..], key_line)) {
             const id = try std.fmt.parseInt(u64, json[i + key_line.len ..][0..16], 16);
             try named.print(a, "{s}#{d}", .{ key_line, std.mem.findScalar(u64, order.items, id).? });
             i += key_line.len + 16;
+            quoted = true;
             continue;
         }
         // a word: a line's id where it is one
         var end = i;
         while (end < json.len and isIdByte(json[end])) end += 1;
         if (end == i) {
+            if (json[i] == '"' and (i == 0 or json[i - 1] != '\\')) quoted = !quoted;
             try named.append(a, json[i]);
             i += 1;
             continue;
         }
         const word = json[i..end];
-        for (texts.items, 0..) |t, n| {
+        if (quoted) for (texts.items, 0..) |t, n| {
             if (std.mem.eql(u8, t, word)) break try named.print(a, "#{d}", .{n});
-        } else try named.appendSlice(a, word);
+        } else try named.appendSlice(a, word) else try named.appendSlice(a, word);
         i = end;
     }
     // a written id is carried as the line's `id` tag too; a derived one is not
@@ -139,7 +146,13 @@ test "tagging any story the reader reads adds ids and nothing else, once, new to
                 return e;
             };
         }
-    }.one, .{ .cases = 1000, .seed = 0x7a6, .reach = &.{ "tagged", "compared compiled" } });
+    }.one, .{
+        .cases = 1000,
+        .seed = 0x7a6,
+        // a choice's hand-written id `^0`: its text is a JSON number's too, and naming it there broke the JSON
+        .regressions = &.{"2:3:1:5:0:0:5:0:6:0:a:0:0:3:8:7:1:2:0:0:3:0:0:8:0:0:5:0:1:0:0:3:5:0:0:3:2:3:7:1:0:3:0:1:0:0:4:4:1:8:1:0:2:1:0:0:0:0:8:8:0:0:0:1:1:341:0:1"},
+        .reach = &.{ "tagged", "compared compiled" },
+    });
 }
 
 fn expectTagged(a: std.mem.Allocator, pages: []const Manuscript.Page, case: *shakedown.Case) !void {
