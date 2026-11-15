@@ -11,6 +11,11 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
   in `docs/manual/stories/`, its mistakes in `docs/manual/mistakes/`, and a play of it. Every story it shows is
   checked and prints nothing, every run it shows is pinned in the test step (`bay dev manual-test` alone), and
   `bay manual` builds the program its stories are written for.
+- The manual's chapters 7 to 9 and 12 to 14: the game's vocabulary (for the writer, and for the programmer who
+  wires the game: the vocabulary file, `extern:`, facts the game writes, facts kept per thing, `const:`, modules,
+  counting, the build), pools, rules, what the checker proves (each kind of message, widths and limits, exit
+  statuses, the loop an AI runs), worked scenes, and the reference card with the grammar; each over stories that
+  check, with their mistakes and pinned plays. The manual's game knows its things, a night of rooms, and a width.
 - `addShownRuns`: runs of the program a package's documents show (`ShownRun`: a folder, the arguments, the file
   holding what it prints, the exit status), each run with nothing on standard input and held to its file byte for
   byte and to its status. `addExcerptsTest` takes them (`runs`) and holds every ` ```console ` block, `$ riverrun …`
@@ -175,6 +180,10 @@ All notable changes are documented here, following Keep a Changelog 1.1.0.
 
 ### Fixed
 
+- A line or a choice wider than the game allows is reported on its own row, and a line id used twice on the id
+  itself, where both were placed over the statement and every row under it.
+- An extern written with two unnamed parameters, `pay(int, int)`, is refused as more than one parameter, each to
+  be named, where the reader said the pair was not a type.
 - What the compiled format cannot hold is refused where it is written: a name that, joined with the names it is
   written within, passes 256 bytes, more facts, values, scopes, choices or speakers than the format holds. The
   builder's error used to escape the compiler with no place (`NameTooLong` for a 300-letter fact or section name, or

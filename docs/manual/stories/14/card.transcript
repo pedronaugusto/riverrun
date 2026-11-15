@@ -1,0 +1,52 @@
+> :set name = "Pip"
+> :set coins = 2
+> :set rain = easing
+> :set crossings_left() = 1
+> :set lamps(near) = 1
+== landing
+  [music rain_on_water]
+[boat = tied]
+Rain on the river.
+ADA: Two coins.
+ADA (without looking up): Same as always.
+OTTO: She heard you.
+  [pause 1.5]
+  [told += 1]
+OTTO (to himself, and nobody else): Hm.
+Rain, thinning.
+ADA: 2 coins, Pip.
+ADA: Soon.
+ADA: 2 coins.
+ADA: Tell him.
+ADA: That's 2 more.
+OTTO: Wet.
+OTTO: Hm.
+OTTO: Ferry, at last.
+OTTO: Rain.
+Ten { braces }, a [ bracket ], a ^ and a #.
+== barks
+Nobody says anything.
+== landing
+  [music rain_on_water]
+* 1 How much?
+* 2 Look at the river.
+* 3 Pay.
+  [marked]
+* 4 (closed) Offer one coin.
+* 5 Go home.
+> 3
+[pay(2)]
+== crossing
+= midstream
+  [picture fog]
+Light.
+[owes(otto) += 1] [carrying += lantern] [carrying -= needles]
+== lamp
+The lamp swings at the prow.
+? crossings_left() = 1
+? lamps(near) = 1
+Lit.
+== fair.gate
+OTTO: That's the fair. Sold 0 today.
+[fair.sold += 1]
+-> end

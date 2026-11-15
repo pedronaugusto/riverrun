@@ -14,14 +14,22 @@ of words and a play of it, and every chapter ends with something you can run.
    `--from`.
 6. [Text that varies, and travels](06-text-that-varies.md): alternatives, plurals and genders, why a line is said
    whole, ids and `riverrun tag`.
-7. [The game's vocabulary](07-the-games-vocabulary.md): not written yet.
-8. [Pools](08-pools.md): not written yet.
-9. [Rules](09-rules.md): not written yet.
+7. [The game's vocabulary](07-the-games-vocabulary.md): queries, actions and actions with outcomes, the game's
+   things, and in a play what a query answers and an outcome given; then, for the programmer who wires the game,
+   the vocabulary file, `extern:`, facts the game writes, facts kept per thing, `const:`, modules, counting, and the
+   game's build.
+8. [Pools](08-pools.md): candidates, the most specific, the least recently said, weights, `(pool N)`; barks, and a
+   night of rooms the game plays.
+9. [Rules](09-rules.md): firing on becoming true, one at a time, a state machine, `since_changed` and `happened`,
+   migrations.
 10. Quests: in cairn's documentation, the package that runs them; not written yet.
 11. Time: in tide's documentation, the package that keeps a game's time; not written yet.
-12. [What the checker proves](12-what-the-checker-proves.md): not written yet.
-13. [Worked scenes](13-worked-scenes.md): not written yet.
-14. [Reference card](14-reference-card.md): not written yet.
+12. [What the checker proves](12-what-the-checker-proves.md): reading a diagnostic, what each kind of message
+    means and what to do, widths and limits, how far the checker can tell, exit statuses, and the loop an AI runs.
+13. [Worked scenes](13-worked-scenes.md): a conversation with interjections, a day of slots, a confession branching
+    deep, a storm with an outcome and rules.
+14. [Reference card](14-reference-card.md): every mark on one page, the program's commands and a transcript's
+    rows, and the grammar.
 
 The stories the chapters show are under [stories](stories/), each beside its chapter's number, with the inputs a
 play is given and what it printed; the mistakes they show are under [mistakes](mistakes/). The language's design of
@@ -40,9 +48,10 @@ its package's own stories and test step, and linked from this index by their URL
 listed in `manual.documents` in `build.zig`.
 
 **The game.** The stories are written for one small game, whose vocabulary is
-[stories/vocabulary.zig](stories/vocabulary.zig): six tags (`music`, `picture`, `sound`, `pause`, `marked`,
-`delivery`) and the delivery's key. A chapter that needs another tag adds it there, with a comment saying what the
-game does with it. Chapters 10 and 11 add their packages to a vocabulary of their own.
+[stories/vocabulary.zig](stories/vocabulary.zig): its tags (`music`, `picture`, `sound`, `pause`, `marked`,
+`delivery`, and a night of rooms' `rooms`, `hours`, `pool` and `then`), the delivery's key, the ids of its things
+and the width of its lines and choices. A chapter that needs another tag adds it there, with a comment saying what
+the game does with it. Chapters 10 and 11 add their packages to a vocabulary of their own.
 
 **The running story.** The ferry at Hollin: Ada, who keeps it; Otto, a pedlar; a boy; the player, who wants to
 cross at night. Chapter 1 is its landing; each chapter after grows it by what it teaches (choices, facts, tags and
@@ -71,6 +80,9 @@ under `mistakes/NN/` (`mistakes/NN/NAME/` for a second), and the run of `riverru
 a ` ```river refused ` block, which the excerpts test holds to a story some pinned `riverrun check` refuses. A
 mistake the checker only warns about checks, so its rows go in a ` ```river ` block, and its pinned run has the
 status 0. The prose names the file, so a reader can open it.
+
+**Zig.** A ` ```zig ` block is a copy of a file of the repository, or of part of one, and the prose names it. The
+test step does not hold it: whoever changes the file changes the block, as chapter 7 shows the vocabulary whole.
 
 **Ids.** A story shown before and after `riverrun tag` is a pair in `manual.tagged`, and the excerpts test holds the
 second to what `riverrun tag` writes into the first. `riverrun tag` is not run by the test step, since it writes

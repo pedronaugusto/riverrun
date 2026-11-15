@@ -403,6 +403,7 @@ const manual = struct {
         "docs/manual/09-rules.md",
         "docs/manual/12-what-the-checker-proves.md",
         "docs/manual/13-worked-scenes.md",
+        "docs/manual/14-reference-card.md",
     };
     const stories = [_][]const u8{
         "docs/manual/stories/01/ferry.river",
@@ -466,6 +467,8 @@ const manual = struct {
         .{ .dir = "docs/manual/stories/13", .args = &.{ "play", "-i", "2", "confession.river" }, .output = "quiet.transcript" },
         .{ .dir = "docs/manual/stories/13", .args = &.{ "play", "--script", "storm.play", "storm.river" }, .output = "storm.transcript" },
         .{ .dir = "docs/manual/stories/13", .args = &.{ "play", "-i", ":set thunder = true", "-i", "1", "-i", "true", "storm.river" }, .output = "saved.transcript" },
+        .{ .dir = "docs/manual/stories/14", .args = &.{ "check", "card.river", "fair.river" }, .output = "card.diagnostics" },
+        .{ .dir = "docs/manual/stories/14", .args = &.{ "play", "--set", "name = \"Pip\"", "--set", "coins = 2", "--set", "rain = easing", "--set", "crossings_left() = 1", "--set", "lamps(near) = 1", "-i", "3", "card.river", "fair.river" }, .output = "card.transcript" },
     };
     const tagged = [_]TaggedStory{.{ .before = "docs/manual/stories/06/bank.river", .after = "docs/manual/stories/06/tagged/bank.river" }};
 };

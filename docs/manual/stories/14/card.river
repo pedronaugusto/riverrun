@@ -1,0 +1,105 @@
+// Every mark of river, one row each where one row shows it: the story this manual's reference card is made from.
+version: 2                                              // which version of the story this is
+
+cast:
+  ada    "Ada"    — keeps the ferry                     // an id, the name the game shows, a note
+    [gender feminine]                                   // a cast entry's tag
+  otto   "Otto"
+    [gender masculine]
+extras: a boy, a tollman                                // speakers with no name, once or twice
+
+facts (player):                                         // facts in a scope the game names
+  coins: int from 0 to 9   (game)                       // a bounded int, which the game writes
+facts:
+  rain: one of pouring, easing   (game)                 // one of a list
+  carrying: set of lantern, needles                     // none, some or all of a list
+  asked: bool                                           // true or false
+  told: int                                             // a whole number
+  name: text   (game)                                   // words the player typed, which the game keeps
+  minute: int   (clock)                                 // an int only the game moves on
+  bell: bool   (moment)                                 // what just happened, gone once rules have seen it
+  owes(person): int from 0 to 9                         // a value for each person
+  boat: one of tied, gone
+
+const:
+  fare = 2                                              // a value every run shares
+
+extern:
+  crossings_left() -> int                               // a query
+  pay(int)                                              // an action
+  talk_down(who: ref of person, coins: int) -> bool (action)   // an action with an outcome
+  lamps(where: one of near, far) -> int   (reads lamps(where))  // a query a rule may ask
+
+== landing                                              // a section
+  [music rain_on_water]                                 // a section's tag
+[boat = tied]                                           // an effect, done when the story comes to it
+Rain on the river.                                      // narration
+ADA: Two coins.                                         // a line
+ADA (without looking up): Same as always.               // a line with its delivery
+OTTO: She heard you.
+  [pause 1.5]                                           // a line's tag
+  [told += 1]                                           // a line's effect, done when the line is said
+OTTO: Hm.
+  [delivery "to himself, and nobody else"]              // a tag's words in quotes, commas and all
+{ rain = pouring }                                      // rows said only when the condition holds
+  Rain, hard enough to hiss.
+{ else }                                                // and when it does not
+  Rain, thinning.
+{ asked } ADA: I told you.                              // one row, said only when the condition holds
+ADA: {coins} coins, {name}.                             // a fact's value in the words
+ADA: { rain = pouring: Not yet. | Soon. }               // words chosen by a condition
+ADA: {coins as one: One coin. | other: {coins} coins.}  // words chosen by a number
+ADA: Tell {otto as masculine: him | other: them}.       // words chosen by a gender
+ADA: That's {fare - 1 + told} more.                     // a sum
+OTTO: {seq: Wet. | Still wet. | Wetter.}                // each in turn, then the last
+OTTO: {cycle: Hm. | Ha. | Ho.}                          // each in turn, round again
+OTTO: Ferry{once: , at last}.                           // each in turn, then nothing
+OTTO: {shuffle: Rain. | Wind. | Mud.}                   // in an order drawn afresh each time round
+Ten \{ braces \}, a \[ bracket \], a \^ and a \#.       // the marks themselves, as words
+-> barks ->                                             // a call, which comes back
+- (ask)                                                 // a gather with a label
+* How much?                                             // a choice offered once
+  [asked = true]                                        // a choice's effect, done when it is taken
+  -> ask                                                // a jump
++ Look at the river.                                    // a choice that stays
+  -> ask
+* { coins >= fare and rain != pouring } Pay.            // a choice offered only when it holds
+  [marked]                                              // a choice's tag
+  [pay(fare)]                                           // an action
+  -> crossing
+* { not asked and seen(ask) > 2 } Offer one coin.       // not, and, the times a label was passed
+  [asked = talk_down(ada, 1)]                           // an action whose outcome a fact keeps
+  { asked: -> crossing | -> ask }                       // a flow chosen by a condition
+* Go home.
+  * Run.                                                // a choice under a choice
+  * Walk.
+  - You go.                                             // a gather: the branches above come together
+  -> end                                                // the end of the story
+
+== crossing
+-> midstream
+= midstream                                             // a part of a section
+  [picture fog]                                         // a part's tag
+  { carrying has lantern or carrying hasnt needles } Light.   // has and hasnt
+  [owes(otto) += 1] [carrying += lantern] [carrying -= needles]   // a value kept per thing; a set added to, taken from
+  -> lamp ->
+  -> fair.gate                                          // a section of another module
+
+== lamp
+The lamp swings at the prow.
+{ crossings_left() > 0 and lamps(near) >= 1 } Lit.      // queries asked
+<-                                                      // back to where the section was called from
+
+== barks (pool 2)                                       // a pool, saying up to two
+= boy          when { rain = pouring }                  // a candidate, said when it holds
+  [weight 3]                                            // drawn three times as often
+  A BOY: Ferry!
+= anyone                                                // a candidate that always holds
+  Nobody says anything.
+
+== the_boat (rules)                                     // rules, which fire as the facts change
+= gone         when { happened(bell) and since_changed(boat, minute) >= 10 }
+  [boat = gone]                                         // a rule's effects
+= kept         when { told > 0 }
+  [migrate 2]                                           // a migration, run when a version-1 save loads
+  [told = 0]

@@ -1,0 +1,8 @@
+module fair                                             // this file's names are `fair.…` to every other file
+facts:
+  sold: int
+
+== gate
+OTTO: That's the fair. Sold {sold} today.
+[sold += 1]
+-> end

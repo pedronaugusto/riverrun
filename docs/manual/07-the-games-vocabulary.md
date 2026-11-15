@@ -228,6 +228,12 @@ const schema: riverrun.check.Schema = .{
         .{ .name = "marked", .on = .{ .choice = true } },
         // how a line is said, `ADA (quietly):`: words for the actor and the translator
         .{ .name = "delivery", .on = .{ .line = true }, .value = .text },
+        // a night the game plays room by room: the rooms the player may be in, the hours it moves them through, the
+        // pool it asks what happens in each room at each hour, and the scene it goes on to when the night is over
+        .{ .name = "rooms", .on = .{ .section = true }, .value = .{ .values_of = "room" }, .count = .many },
+        .{ .name = "hours", .on = .{ .section = true }, .value = .number, .count = .many },
+        .{ .name = "pool", .on = .{ .section = true }, .value = .section },
+        .{ .name = "then", .on = .{ .section = true }, .value = .section, .leads = true },
     },
 };
 
@@ -237,7 +243,10 @@ const things: []const riverrun.check.Things = &.{
     .{ .kind = "person", .ids = &.{ "ada", "otto", "miller" } },
 };
 
-pub const options: riverrun.check.Options = .{ .schema = &schema, .delivery = "delivery", .things = things };
+// the game's subtitles hold 100 columns, and its choices 40
+const width: riverrun.check.Width = .{ .line = 100, .choice = 40 };
+
+pub const options: riverrun.check.Options = .{ .schema = &schema, .delivery = "delivery", .things = things, .width = width };
 ```
 
 It is Zig, not a data file, because a package's kinds and checks are functions: quests and time, chapters 10 and
