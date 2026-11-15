@@ -115,7 +115,7 @@ pub const Schema = struct {
         number,
         /// Letters, digits and `_`.
         word,
-        /// Anything; quote it to hold `·` or `,`.
+        /// Any words; quote them to hold `,`, `]` or `//`: `[title "Who was he?"]`.
         text,
         /// One of these words.
         words: []const []const u8,

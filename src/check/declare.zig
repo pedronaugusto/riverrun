@@ -190,7 +190,7 @@ fn external(c: *Checker, module: sym.ModuleId, e: *const ast.Extern) Error!void 
     if (reads != null and (returns == null or e.action)) try c.err(e.name.span, "`(reads …)` stamps a query: `{s}` is an action", .{e.name.text});
     // `[x(…)]` runs an action and `[x …]` is a tag: one name cannot be both
     if ((returns == null or e.action) and c.isKey(e.name.text)) {
-        try c.err(e.name.span, "`{s}` is an action and a tag the host knows: a name is one or the other", .{e.name.text});
+        try c.err(e.name.span, "`{s}` is an action and a tag the game knows: a name is one or the other", .{e.name.text});
     }
     if (c.externs.items.len == sym.limits.ids) return c.err(e.name.span, "the story has more queries and actions than {d}", .{sym.limits.ids});
     const id = sym.idOf(sym.ExternId, c.externs.items.len);
@@ -320,7 +320,7 @@ fn kindOf(c: *Checker, s: *const ast.Section) Error!sym.Section.Kind {
         .rules => .rules,
         .other => |name| {
             for (c.options.kinds) |k| if (std.mem.eql(u8, k.name, name.text)) return .{ .other = name.text };
-            try c.err(name.span, "`({s})` is not a kind of section: a scene, `(pool)`, or a kind the host registers", .{name.text});
+            try c.err(name.span, "`({s})` is not a kind of section: a scene, `(pool)`, or a kind the game registers", .{name.text});
             return .scene;
         },
     };

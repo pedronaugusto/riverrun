@@ -110,7 +110,7 @@ fn line(c: *Checker, u: *Unit, s: *const ast.Stmt, l: *const ast.Line) Error!voi
 fn delivered(c: *Checker, s: *const ast.Stmt, l: *const ast.Line) Error![]const ast.Tag {
     const d = l.delivery orelse return s.tags;
     const key = c.options.delivery orelse {
-        try c.err(d.span, "`({s})` is a delivery, and the host names no key for one: `Options.delivery`", .{d.words.text});
+        try c.err(d.span, "`({s})` is a delivery, and this game takes none: its vocabulary names no key for one (`Options.delivery`)", .{d.words.text});
         return s.tags;
     };
     const all = try c.arena.alloc(ast.Tag, s.tags.len + 1);

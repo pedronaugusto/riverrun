@@ -28,7 +28,7 @@ pub const Path = struct {
 /// Gives the line or choice `stmt` its id, from its tags.
 pub fn give(c: *Checker, stmt: *const ast.Stmt, path: Path, speaker: ?[]const u8, text: ast.Text) Error!void {
     const id: sym.LineId = if (try written(c, stmt.tags)) |w| .{ .text = w, .written = true } else switch (c.options.mode) {
-        .release => return c.err(stmt.span, "a release needs every line's id, `^…` at its end: `riverrun tag` writes them", .{}),
+        .release => return c.err(rowOf(stmt, text), "a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them", .{}),
         .development => .{ .text = try derive(c, path, speaker, text), .written = false },
     };
     const slot = try c.line_ids.getOrPut(c.arena, id.text);
@@ -37,6 +37,13 @@ pub fn give(c: *Checker, stmt: *const ast.Stmt, path: Path, speaker: ?[]const u8
     }
     slot.value_ptr.* = stmt.span;
     try c.lines.put(c.arena, stmt, id);
+}
+
+// A line's or a choice's own row, its words to their end, without what stands under it.
+fn rowOf(stmt: *const ast.Stmt, text: ast.Text) syntax.Span {
+    var row = stmt.span;
+    if (text.len > 0) row.end = text[text.len - 1].span.end;
+    return row;
 }
 
 fn written(c: *Checker, tagged: []const ast.Tag) Error!?[]const u8 {

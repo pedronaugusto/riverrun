@@ -35,7 +35,7 @@ pub fn measure(text: ast.Text, value: ?u32) usize {
 pub fn check(c: *Checker, span: syntax.Span, text: ast.Text, limit: ?u32, what: []const u8) Checker.Error!void {
     const most = limit orelse return;
     const n = measure(text, c.options.width.value);
-    if (n > most) try c.err(span, "the {s} is {d} columns wide, past the host's {d}", .{ what, n, most });
+    if (n > most) try c.err(span, "the {s} is {d} columns wide, past the game's {d}", .{ what, n, most });
 }
 
 test "width counts columns, not bytes" {

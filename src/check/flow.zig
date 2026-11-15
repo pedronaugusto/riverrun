@@ -164,7 +164,7 @@ fn reach(c: *Checker) Error!void {
     if (c.options.entries.len > 0) {
         for (c.options.entries) |name| {
             const id = c.sectionNamed(sym.root, name) orelse {
-                try c.err(.none, "the host starts the story at `{s}`, and the story has no such section", .{name});
+                try c.err(.none, "the game starts the story at `{s}`, and the story has no such section", .{name});
                 continue;
             };
             if (c.sections.items[id.raw()].kind != .other) try c.entries.append(c.arena, id);

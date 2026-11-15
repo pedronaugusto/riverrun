@@ -173,5 +173,5 @@ test "a release refuses the proof, which has no written ids yet" {
     var checked = try check.run(std.testing.allocator, &p.diags, &p.trees, options);
     defer checked.deinit();
     try std.testing.expectEqual(said(&p.trees), p.diags.errors());
-    for (p.diags.list.items) |d| try std.testing.expectEqualStrings("a release needs every line's id, `^…` at its end: `riverrun tag` writes them", d.message);
+    for (p.diags.list.items) |d| try std.testing.expectEqualStrings("a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them", d.message);
 }

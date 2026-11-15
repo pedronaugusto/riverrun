@@ -1,5 +1,6 @@
-//! A compiled story as JSON, through strand: what `riverrun dump` prints and
-//! what a tool reads when it wants the graph without the binary reader.
+//! A compiled story as JSON, through strand: what a tool reads when it wants
+//! the graph without the binary reader, as `riverrun tag`'s property compares
+//! a story before and after its ids are written.
 //! Ids are kept as numbers, names beside them; conditions and values are
 //! written as their postfix terms in words: `carried 'play has`.
 

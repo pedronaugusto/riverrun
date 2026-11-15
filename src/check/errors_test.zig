@@ -270,7 +270,7 @@ test "a tag is one the host knows, where it may stand, with values of its type" 
     defer o.deinit();
     try o.has(.err, 9, 26, "`heard` takes one of stairs, piano: `door` is not one");
     try o.has(.err, 11, 7, "`at` takes a number: `soon` is not one");
-    try o.has(.err, 13, 4, "`pause` is not a tag the host knows");
+    try o.has(.err, 13, 4, "`pause` is not a tag the game knows");
     try o.has(.err, 15, 4, "`at` is not a tag of a section");
     try std.testing.expectEqual(@as(usize, 4), o.diags.list.items.len);
 }
@@ -310,7 +310,7 @@ test "a line wider than the host allows is refused" {
         \\-> end
     , .{ .width = .{ .line = 40, .value = 13 } });
     defer o.deinit();
-    try o.only(.err, 5, 1, "the line is 66 columns wide, past the host's 40");
+    try o.only(.err, 5, 1, "the line is 66 columns wide, past the game's 40");
 }
 
 test "a name is declared once, and the second says where the first is" {
@@ -329,18 +329,29 @@ test "a name is declared once, and the second says where the first is" {
     try o.has(.err, 7, 4, "the section `a` is declared twice: first at a.river:5:4");
 }
 
-test "a line id is used once, and a release needs one on every line" {
+test "a line id is used once, and a release needs one on every line and choice, placed on its row" {
     var o = try checkOne(
+        \\facts:
+        \\  x: bool
         \\== a
         \\Go. ^k7f3a2
         \\Stay. ^k7f3a2
         \\Wait.
-        \\-> end
+        \\  [x = true]
+        \\* Run. ^m2c9qd
+        \\  -> end
+        \\* Walk.
+        \\  Far. ^p4w8e1
+        \\  -> end
     , .{ .mode = .release });
     defer o.deinit();
-    try o.has(.err, 3, 1, "the line id `k7f3a2` is used twice: first at a.river:2:1");
-    try o.has(.err, 4, 1, "a release needs every line's id, `^…` at its end: `riverrun tag` writes them");
-    try std.testing.expectEqual(@as(usize, 2), o.diags.list.items.len);
+    try o.has(.err, 5, 1, "the line id `k7f3a2` is used twice: first at a.river:4:1");
+    const missing = "a release needs an id on every line and choice, `^…` at the end of its row: `riverrun tag` writes them";
+    try o.has(.err, 6, 1, missing);
+    try o.has(.err, 10, 1, missing);
+    try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
+    // each on its own row, to its words' end, never over what stands under it
+    for (o.diags.list.items[1..], [_]u32{ 6, 8 }) |d, end| try std.testing.expectEqual(end, o.files[0].place(.{ .file = 0, .start = d.span.end, .end = d.span.end }).col);
 }
 
 test "a choice that can never be offered is a warning" {
@@ -479,7 +490,7 @@ test "the host's things are named by their ids, checked against its manifest" {
         \\-> end
     , .{ .things = &.{.{ .kind = "item_kind", .ids = &.{"wolf_pelt"} }} });
     defer o.deinit();
-    try o.only(.err, 6, 34, "the host has no item_kind called `wolf_pelf`");
+    try o.only(.err, 6, 34, "the game has no item_kind called `wolf_pelf`");
 }
 
 test "a clock is an int" {
@@ -612,7 +623,7 @@ test "a thing is said through a query, never as itself" {
         \\-> end
     , .{});
     defer o.deinit();
-    try o.only(.err, 7, 8, "a thing is said through a query the host answers, such as `{name(…)}`");
+    try o.only(.err, 7, 8, "a thing is said through a query the game answers, such as `{name(…)}`");
 }
 
 test "a registered kind adds its tags and builtins to its own sections, and nowhere else" {
@@ -1027,7 +1038,7 @@ test "a name is a tag or an action, never both, and the wrong form is refused na
         \\-> end
     , .{ .schema = &schema });
     defer o.deinit();
-    try o.has(.err, 3, 3, "`cutscene` is an action and a tag the host knows: a name is one or the other");
+    try o.has(.err, 3, 3, "`cutscene` is an action and a tag the game knows: a name is one or the other");
     try o.has(.err, 5, 2, "`picture` is a tag, not an action: write `[picture …]`, without parentheses");
     try o.has(.err, 7, 4, "`show` is an action, not a tag: run it with `[show(…)]`");
     try std.testing.expectEqual(@as(usize, 3), o.diags.list.items.len);
@@ -1063,7 +1074,7 @@ test "a delivery is a tag of the key the host names, typed by its schema, and re
     try typed.only(.err, 5, 8, "`mood` takes one of laughing, quiet: `laughin` is not one");
     var none = try checkOne(story, .{ .schema = &schema });
     defer none.deinit();
-    try none.has(.err, 4, 7, "`(laughing)` is a delivery, and the host names no key for one: `Options.delivery`");
-    try none.has(.err, 5, 7, "`(laughin)` is a delivery, and the host names no key for one: `Options.delivery`");
+    try none.has(.err, 4, 7, "`(laughing)` is a delivery, and this game takes none: its vocabulary names no key for one (`Options.delivery`)");
+    try none.has(.err, 5, 7, "`(laughin)` is a delivery, and this game takes none: its vocabulary names no key for one (`Options.delivery`)");
     try std.testing.expectEqual(@as(usize, 2), none.diags.list.items.len);
 }

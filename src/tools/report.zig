@@ -73,14 +73,14 @@ test "a diagnostic is its path, its range from line and column to line and colum
     const files: []const ast.File = &.{tree};
     try diags.add(gpa, .{ .file = 0, .start = 5, .end = 9 }, .err, "`MUMM` is not a speaker", .{});
     try diags.add(gpa, .{ .file = 0, .start = 9, .end = 9 }, .warning, "here", .{});
-    try diags.add(gpa, .none, .err, "the host starts the story at `x`, and the story has no such section", .{});
+    try diags.add(gpa, .none, .err, "the game starts the story at `x`, and the story has no such section", .{});
     var out: std.Io.Writer.Allocating = .init(gpa);
     defer out.deinit();
     try all(&out.writer, files, &diags);
     try std.testing.expectEqualStrings(
         \\story/a.river:2:1-2:5: error: `MUMM` is not a speaker
         \\story/a.river:2:5-2:5: warning: here
-        \\riverrun: error: the host starts the story at `x`, and the story has no such section
+        \\riverrun: error: the game starts the story at `x`, and the story has no such section
         \\
     , out.written());
 }

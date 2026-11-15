@@ -65,7 +65,7 @@ pub fn check(c: *Checker, module: sym.ModuleId, from: ?sym.SectionId, part: ?u16
                 continue;
             },
             .unknown => {
-                if (!try notAction(c, module, tag)) try c.err(tag.key.span, "`{s}` is not a tag the host knows", .{tag.key.text});
+                if (!try notAction(c, module, tag)) try c.err(tag.key.span, "`{s}` is not a tag the game knows", .{tag.key.text});
                 continue;
             },
         };
@@ -169,7 +169,7 @@ fn values(c: *Checker, where: Where, tag: *const ast.Tag, key: *const Schema.Key
 // The tag's value `i`, one of the values of the story's fact `fact`.
 fn valueOf(c: *Checker, module: sym.ModuleId, tag: *const ast.Tag, key: *const Schema.Key, fact: []const u8, i: usize) Error!void {
     const e = enumNamed(c, module, fact) orelse {
-        return c.err(tag.key.span, "the host's `{s}` takes the values of `{s}`, which the story does not declare as `one of` or `set of`", .{ key.name, fact });
+        return c.err(tag.key.span, "the game's `{s}` takes the values of `{s}`, which the story does not declare as `one of` or `set of`", .{ key.name, fact });
     };
     const v = tag.values[i];
     if (c.valueOf(e, v) == null) try c.err(tag.at(i), "`{s}` takes one of {s}: `{s}` is not one", .{ key.name, try c.valueList(e), v });

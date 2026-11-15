@@ -113,7 +113,7 @@ fn name(c: *Checker, scope: Scope, e: *const ast.Expr, n: []const u8, hint: ?sym
     if (hint != null and hint.? == .ref and lookup(c, scope, n) == null) {
         const kind = hint.?.ref;
         if (!c.knowsThing(kind, n)) {
-            try c.err(e.span, "the host has no {s} called `{s}`", .{ c.kinds.items[kind.raw()], n });
+            try c.err(e.span, "the game has no {s} called `{s}`", .{ c.kinds.items[kind.raw()], n });
             return null;
         }
         return record(c, e, hint.?, .{ .thing = .{ .kind = kind, .id = n } });
@@ -569,7 +569,7 @@ pub fn text(c: *Checker, scope: Scope, t: ast.Text) Error!void {
             if (e.kind != .name and e.kind != .call and !isSum(e)) return c.err(e.span, "`{{…}}` says a fact, a constant, a query's answer or a sum of ints", .{});
             const typ = try infer(c, scope, e, null) orelse continue;
             if (typ == .set_of) try c.err(e.span, "a set cannot be said", .{});
-            if (typ == .ref) try c.err(e.span, "a thing is said through a query the host answers, such as `{{name(…)}}`", .{});
+            if (typ == .ref) try c.err(e.span, "a thing is said through a query the game answers, such as `{{name(…)}}`", .{});
         },
         .choose => |*ch| {
             try condition(c, scope, &ch.cond);

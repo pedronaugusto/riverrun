@@ -374,7 +374,7 @@ const Reader = struct {
         const inner = head.cut(open + 1, head.text.len - 1).trim();
         if (std.mem.startsWith(u8, inner.text, "one of ")) return .{ .type = try r.typeOf(l, inner, &.{}), .span = inner.span(r.file) };
         if (!isName(inner.text)) {
-            try r.report(l, "`{s}` is not what a fact is kept per: a kind of the host's things, or `one of …`", .{inner.text});
+            try r.report(l, "`{s}` is not what a fact is kept per: a kind of the game's things, or `one of …`", .{inner.text});
             return error.Invalid;
         }
         return .{ .type = .{ .ref = r.name(inner) }, .span = inner.span(r.file) };
