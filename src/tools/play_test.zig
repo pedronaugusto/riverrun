@@ -1084,8 +1084,6 @@ const Recording = struct {
     a: std.mem.Allocator,
     list: std.ArrayList(Told) = .empty,
     failed: bool = false,
-    /// The actions the walk answered: with its choices, the inputs it was given.
-    actions: usize = 0,
 
     fn add(r: *Recording, step: @import("riverrun").run.Step) !void {
         try r.list.append(r.a, switch (step) {
@@ -1097,10 +1095,7 @@ const Recording = struct {
             },
             .effects => |list| .{ .effects = list.len },
             .end => .end,
-            .action => {
-                r.actions += 1;
-                return;
-            },
+            .action => return,
         });
     }
 
@@ -1147,10 +1142,10 @@ test "what play tells is what walk tells for the same choices: one runtime, two 
             var chosen: usize = 0;
             var stopped = false;
             var given: usize = 0;
-            // the play is given the inputs the walk was given, its choices and its actions' outcomes, and one more:
+            // the play is given the inputs the walk gave, its choices and every outcome it answered, and one more:
             // the walk counts steps within a section, the play steps between inputs, so a story that waits forever
             // is cut by the walk's count alone, and the play is held to what the walk told within it
-            const inputs = picker.next + walked.actions;
+            const inputs = told.chosen + told.answered;
             while (played_.list.items.len < walked.list.items.len + 1 and given <= inputs) : (given += 1) {
                 while (try p.next()) |e| switch (e) {
                     .line => |l| try played_.add(.{ .line = l }),
@@ -1196,7 +1191,8 @@ test "what play tells is what walk tells for the same choices: one runtime, two 
         .seed = 0x2f0e7,
         .reach = &.{ "compared", "took a choice", "fired a rule" },
         // a story waiting on an action forever: the play was given inputs past the walk's count (hardened-fuzz)
-        .regressions = &.{"2:0:1:4:8:0:0:2:0:0:0:0:8:0:0:2:0:2:0:0:0:0:0:4:1:1"},
+        // and outcomes a rule's actions owe, which the walk answers too (fuzz job)
+        .regressions = &.{ "2:0:1:4:8:0:0:2:0:0:0:0:8:0:0:2:0:2:0:0:0:0:0:4:1:1", "2:2:0:0:0:9:1:1:6:9:9:9:9:2:1:6:0:0:1:1:0:0:0:0:0:3:2:1:4:9:0:0:0:0:3:1:0:0:0:0:1:1:0:1" },
     });
 }
 

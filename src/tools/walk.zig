@@ -59,6 +59,9 @@ pub const Told = struct {
     chosen: u32 = 0,
     ends: u32 = 0,
     fired: u32 = 0,
+    /// Outcomes the walk gave as a game gives them: each action's, from a line, an action step or a rule. With
+    /// `chosen`, the inputs a player would have given.
+    answered: u32 = 0,
     /// Sections the runtime stopped with an error of its own, which a game would be told by name.
     stopped: u32 = 0,
 };
@@ -186,7 +189,10 @@ const Walk = struct {
                     w.told.lines += 1;
                     for (l.effects) |e| _ = try facts.apply(w.store, e);
                     // the outcomes its effects owe, in order, each its type's first value
-                    for (l.effects) |e| if (e == .call) if (e.call.result) |r| try w.session.outcome(flow, facts.Value.initial(w.s.fact(r).kind));
+                    for (l.effects) |e| if (e == .call) if (e.call.result) |r| {
+                        try w.session.outcome(flow, facts.Value.initial(w.s.fact(r).kind));
+                        w.told.answered += 1;
+                    };
                     try w.settle();
                 },
                 .choices => |list| {
@@ -207,6 +213,7 @@ const Walk = struct {
                 .action => |a| {
                     const returns = w.s.externFn(a.call.action).returns orelse return error.NoOutcome;
                     try w.session.outcome(flow, facts.Value.initial(returns.kind));
+                    w.told.answered += 1;
                     try w.settle();
                 },
                 .end => {
@@ -243,6 +250,7 @@ const Walk = struct {
             }
             if (owed.items.len == 0) return;
             for (owed.items) |r| try w.store.set(r, facts.Value.initial(w.s.fact(r).kind));
+            w.told.answered += @intCast(owed.items.len); // safe: at most the rules' calls of one round
         }
     }
 };
